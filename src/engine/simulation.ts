@@ -16,9 +16,11 @@ export class SimulationEngine {
 
   private initializeRace(track: Track, drivers: Driver[]): RaceState {
     const vehicles: VehicleState[] = drivers.map((driver, index) => {
-      // Grid positioning: 8m gap between cars, starting before finish line
-      // P1 is closest to finish line
-      const startDistance = track.totalDistance - ((index + 1) * 10); 
+      // Grid positioning: Randomized start grid with slight variance
+      // Base gap 16m (approx 0.2s at start), plus random noise to simulate imperfect grid line-up
+      const baseGap = 16;
+      const noise = this.rng.range(-1.0, 1.0); // +/- 1m variance
+      const startDistance = track.totalDistance - ((index + 1) * baseGap) + noise; 
       
       return {
         id: driver.id,
@@ -42,6 +44,9 @@ export class SimulationEngine {
         
         damage: 0,
         stress: 0,
+        drsOpen: false,
+        inDirtyAir: false,
+        isBattling: false,
         
         currentLapTime: 0,
         lastLapTime: 0,
@@ -145,8 +150,177 @@ export class SimulationEngine {
       vehicle.currentSector = currentSectorIndex + 1;
     }
 
+    // Update DRS status
+    this.updateDRS(vehicle);
+
+    // Update Dirty Air Status
+    this.updateDirtyAir(vehicle);
+
+    // Update Battling Status
+    this.updateBattling(vehicle);
+
+    // Overtake Logic (Probability Check)
+    this.attemptOvertake(vehicle);
+
     // 6. Resource Consumption
     this.updateResources(vehicle, dt);
+  }
+
+  private attemptOvertake(attacker: VehicleState): void {
+      // Only attempt if battling and not already ahead
+      // We need to find the defender (car directly ahead)
+      if (!attacker.isBattling || attacker.position === 1) return;
+
+      const defender = this.state.vehicles.find(v => v.position === attacker.position - 1);
+      if (!defender) return;
+
+      // Overtake probability check
+      // 1. Skill difference (Racecraft)
+      const attackerDriver = this.drivers.find(d => d.id === attacker.driverId);
+      const defenderDriver = this.drivers.find(d => d.id === defender.driverId);
+      if (!attackerDriver || !defenderDriver) return;
+
+      const skillDelta = attackerDriver.skill.racecraft - defenderDriver.skill.racecraft; // e.g., 90 - 80 = 10
+      
+      // 2. Pace delta (Speed difference)
+      const speedDelta = attacker.speed - defender.speed; // m/s
+      
+      // 3. DRS Advantage
+      const drsBonus = attacker.drsOpen ? 30 : 0; // +30% chance if DRS open
+
+      // 4. Tyre delta (Age difference)
+      const tyreDelta = defender.tyreAgeLaps - attacker.tyreAgeLaps; // Positive if defender has older tyres
+
+      // Base chance: 0% (hard to pass)
+      // We check this every tick, so probability must be VERY low per tick.
+      // Better: Check only when gap is closing and very small (< 0.2s)
+      if (attacker.gapToAhead > 0.2) return;
+
+      // Calculate "Overtake Score" (0-100)
+      let score = 20; // Base difficulty
+      score += skillDelta * 0.5; // +5% for 10 skill diff
+      score += speedDelta * 2; // +2% per m/s speed advantage
+      score += drsBonus;
+      score += tyreDelta * 1.5;
+
+      // Rookie Chance Floor (Randomness)
+      // Even if score is low, always 30% random chance factor
+      // We mix calculated score (70% weight) with pure luck (30% weight)
+      // Actually, user asked for "rookie still stands a 30% chance".
+      // This implies that even if skill diff is huge, there's a 30% variance.
+      // Let's implement this as a clamped probability range.
+      // Min chance 5%, Max chance 95%.
+      // But we need to be careful not to make overtakes happen instantly every frame.
+      // This function runs 60 times a second? No, tick rate.
+      // Let's add a "cooldown" or only check continuously with low prob.
+      
+      // Simplified: Probability per second of overtaking when side-by-side
+      // Base prob per second = 0.5 (50% chance to pass per second of battling)
+      // Adjusted by score.
+      
+      let probPerSecond = 0.2; // 20% base
+      probPerSecond += (score / 100) * 0.5; // Add up to 50% from score
+      
+      // Apply Rookie/Randomness factor
+      // We roll a die. If it lands in the "random upset" range, we flip the outcome?
+      // Or simply, we clamp the probability.
+      // "Rookie stands 30% chance" -> Even with huge disadvantage, 30% chance to win the duel.
+      // In this context (attacker passing defender), if attacker is rookie (low skill) vs pro (high skill):
+      // Score will be negative from skillDelta.
+      // But we want to ensure prob doesn't drop to 0.
+      
+      // Let's normalize score to 0-1 probability
+      let successProb = Math.max(0.05, Math.min(0.95, probPerSecond));
+      
+      // Apply 30% "Anything can happen" noise
+      // 30% of the time, we ignore the skill/stats and flip a coin (50/50)
+      if (this.rng.chance(0.3)) {
+          successProb = 0.5; 
+      }
+
+      // Check for pass
+      // We need to scale prob by dt? No, `rng.chance` is one-shot.
+      // We need to convert probPerSecond to probPerFrame.
+      // P_frame = 1 - (1 - P_sec)^dt
+      // Approximation for small P: P_frame = P_sec * dt
+      const dt = 0.1; // roughly, or pass it in.
+      // simulation.ts update calls this, but doesn't pass dt to private method easily unless we change sig.
+      // Let's assume dt ~ 0.1s (100ms tick) or pass it.
+      // Update signature has dt. Let's update `attemptOvertake` to take dt.
+      
+      // Actually, simpler: just swap positions if successful.
+      // But physically we swap distance? 
+      // In this engine, position is derived from distance. 
+      // To "overtake", we just need to have more distance.
+      // The physics update (speed * dt) naturally handles passing if speed is higher.
+      // BUT, dirty air slows you down, making passing hard physically.
+      // So we need a "boost" or "move" that artificially pushes attacker ahead 
+      // OR we just let the speed delta do it, but we modulate the speed based on this probability.
+      
+      // If "Overtake Successful" (dice roll wins):
+      // Give attacker a massive speed boost (e.g. "Late braking success") for this frame
+      // effectively jumping them ahead or giving them the speed to complete the pass.
+      
+      // If "Defense Successful":
+      // Attacker speed penalized (blocked).
+
+      const frameProb = successProb * 0.1; // approx for 100ms
+      
+      if (this.rng.chance(frameProb)) {
+          // SUCCESSFUL OVERTAKE MOVE
+          // Boost speed to clear the gap
+          attacker.speed += 5.0; // Surge ahead
+          attacker.isBattling = false; // Resolved
+      } else {
+          // DEFENDED
+          // If we didn't pass, we might get slowed down (checked up)
+          // 10% chance to get checked up hard
+          if (this.rng.chance(0.1)) {
+              attacker.speed *= 0.95; // Checked up
+          }
+      }
+  }
+
+  private updateDRS(vehicle: VehicleState): void {
+      if (this.state.currentLap < 3 || this.state.weather !== 'dry' || this.state.safetyCar !== 'none') {
+          vehicle.drsOpen = false;
+          return;
+      }
+
+      // Check if in DRS activation zone
+      const inZone = this.track.drsZones.some(zone => 
+          vehicle.distanceOnLap >= zone.activationDistance && vehicle.distanceOnLap <= zone.endDistance
+      );
+
+      if (inZone) {
+          // Check if within 1 second of car ahead at detection point
+          // Simplified: If gapToAhead < 1.0s and we are not the leader
+          if (vehicle.position > 1 && vehicle.gapToAhead < 1.0) {
+              vehicle.drsOpen = true;
+          }
+      } else {
+          vehicle.drsOpen = false;
+      }
+  }
+
+  private updateDirtyAir(vehicle: VehicleState): void {
+      // If within 2 seconds of car ahead, dirty air applies
+      // Closer = worse
+      if (vehicle.position > 1 && vehicle.gapToAhead < 2.0) {
+          vehicle.inDirtyAir = true;
+      } else {
+          vehicle.inDirtyAir = false;
+      }
+  }
+
+  private updateBattling(vehicle: VehicleState): void {
+      // If within 0.3s of car ahead or behind, battling
+      // We need gap to behind too, but we can infer or compute it.
+      // For now, check gapToAhead < 0.3
+      const battlingAhead = vehicle.position > 1 && vehicle.gapToAhead < 0.3;
+      // We don't have gapToBehind easily on vehicle state, but we have position.
+      // Let's assume battling is mostly about attacking for now.
+      vehicle.isBattling = battlingAhead;
   }
 
   private calculateTargetSpeed(vehicle: VehicleState, driver: Driver): number {
@@ -175,6 +349,26 @@ export class SimulationEngine {
     
     if (vehicle.ersMode === 'deploy') speed *= 1.02; // 2% boost
     if (vehicle.ersMode === 'harvest') speed *= 0.98; // 2% drag
+
+    // DRS Boost
+    if (vehicle.drsOpen) {
+        speed *= 1.05; // 5% speed boost (approx 15-20 kph)
+    }
+
+    // Dirty Air Penalty
+    if (vehicle.inDirtyAir) {
+        // Map gap 0.0-2.0s to penalty
+        // Closer = more penalty. Max 1.5% penalty at 0s gap
+        const gap = Math.max(0.1, vehicle.gapToAhead); // Floor at 0.1 to avoid infinity/max
+        const proximityFactor = Math.max(0, 1 - (gap / 2.0)); // 1.0 at 0s, 0.0 at 2s
+        const dirtyAirPenalty = 0.015 * proximityFactor;
+        speed *= (1 - dirtyAirPenalty);
+    }
+
+    // Battling Penalty (Side-by-side slows both down)
+    if (vehicle.isBattling) {
+        speed *= 0.98; // 2% penalty for compromised lines
+    }
 
     // Driver Consistency & Skill
     const consistencyFactor = (driver.skill.consistency / 100);

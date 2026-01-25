@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useRaceStore } from '../store/raceStore';
 import { useGameLoop } from '../hooks/useGameLoop';
 import { LiveLeaderboard } from '../components/race/LiveLeaderboard';
+import { CircularTrackMap } from '../components/CircularTrackMap';
 
 export const RaceControl: React.FC = () => {
   const { initRace, startRace, isPlaying, raceState } = useRaceStore();
@@ -43,10 +44,10 @@ export const RaceControl: React.FC = () => {
         
         {/* Center: Track Map & Telemetry */}
         <div className="col-span-6 flex flex-col gap-6 min-h-0">
-            <div className="bg-[#111] rounded-xl border border-[#333] h-64 p-4 flex flex-col">
+            <div className="bg-[#111] rounded-xl border border-[#333] h-80 p-4 flex flex-col">
                  <h3 className="text-gray-400 text-sm mb-2 uppercase tracking-widest font-mono">Track Map</h3>
-                 <div className="flex-1 flex items-center justify-center text-gray-600 italic">
-                    Map Visualization
+                 <div className="flex-1 flex items-center justify-center overflow-hidden">
+                    <CircularTrackMap />
                 </div>
             </div>
              <div className="bg-[#111] rounded-xl border border-[#333] flex-1 p-4 flex flex-col min-h-0">

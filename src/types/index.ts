@@ -27,11 +27,18 @@ export interface TrackSector {
   difficulty: number;
 }
 
+export interface DRSZone {
+    detectionDistance: number;
+    activationDistance: number;
+    endDistance: number;
+}
+
 export interface Track {
   id: string;
   name: string;
   totalDistance: number;
   sectors: TrackSector[];
+  drsZones: DRSZone[]; // Added DRS Zones
   pitLane: {
     entryDistance: number;
     exitDistance: number;
@@ -71,6 +78,9 @@ export interface VehicleState {
   // Dynamic factors
   damage: number; // 0-100%
   stress: number; // 0-100%
+  drsOpen: boolean; // DRS Active status
+  inDirtyAir: boolean; // Dirty Air status
+  isBattling: boolean; // Wheel-to-wheel battling
   
   // Timing
   currentLapTime: number;

@@ -2,6 +2,7 @@ import React from 'react';
 import { useRaceStore } from '../../store/raceStore';
 import { clsx } from 'clsx';
 import { DRIVERS } from '../../data/initialData';
+import { formatTime, formatGap } from '../../utils/format';
 
 export const LiveLeaderboard: React.FC = () => {
   const raceState = useRaceStore(state => state.raceState);
@@ -36,7 +37,7 @@ export const LiveLeaderboard: React.FC = () => {
             <div className="col-span-1 text-center font-bold font-mono uppercase text-white">{driver.id}</div>
             <div className="col-span-4 font-medium truncate text-gray-200">{driver.name}</div>
             <div className="col-span-2 text-right font-mono text-[#00FFFF]">
-               {vehicle.position === 1 ? 'LEADER' : `+${vehicle.gapToLeader.toFixed(1)}`}
+               {formatGap(vehicle.gapToLeader)}
             </div>
              <div className="col-span-2 text-center flex items-center justify-center gap-1">
                <span className={clsx(
@@ -51,7 +52,7 @@ export const LiveLeaderboard: React.FC = () => {
                <span className="text-gray-500 text-[10px]">{Math.floor(vehicle.tyreAgeLaps)}L</span>
             </div>
              <div className="col-span-2 text-right font-mono text-gray-400">
-               {vehicle.lastLapTime > 0 ? vehicle.lastLapTime.toFixed(3) : '-'}
+               {formatTime(vehicle.lastLapTime)}
             </div>
           </div>
         );
