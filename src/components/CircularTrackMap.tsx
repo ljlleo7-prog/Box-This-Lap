@@ -27,26 +27,75 @@ export const CircularTrackMap: React.FC = () => {
     <div className="relative w-[300px] h-[300px] bg-neutral-900 rounded-xl border border-neutral-800 flex items-center justify-center shadow-lg">
         <h3 className="absolute top-4 left-4 text-xs font-mono text-neutral-500 uppercase tracking-wider">Live Tracker</h3>
       <svg width="300" height="300" viewBox="0 0 300 300">
-        {/* Track Line */}
+        {/* Base Track Line (Dark) */}
         <circle
           cx={CENTER}
           cy={CENTER}
           r={TRACK_RADIUS}
           fill="none"
-          stroke="#333"
-          strokeWidth="6"
+          stroke="#1a1a1a"
+          strokeWidth="14"
         />
-        
-        {/* Sectors (Optional visualization) */}
+
+        {/* Sectors / Corner Types Visualization */}
         {track.sectors.map((sector, idx) => {
-             // Simple sector markers
-             const startAngle = (sector.startDistance / totalDistance) * 2 * Math.PI - (Math.PI / 2);
-             const x = CENTER + TRACK_RADIUS * Math.cos(startAngle);
-             const y = CENTER + TRACK_RADIUS * Math.sin(startAngle);
+             // Calculate start and end angles
+             // SVG arc starts at 3 o'clock (0 radians). We want 12 o'clock (-PI/2).
+             const startProgress = sector.startDistance / totalDistance;
+             const endProgress = sector.endDistance / totalDistance;
+             
+             // Circumference = 2 * PI * R
+             // Dash array logic for stroke-dasharray
+             const circumference = 2 * Math.PI * TRACK_RADIUS;
+             const sectorLength = (sector.endDistance - sector.startDistance) / totalDistance * circumference;
+             const gapLength = circumference - sectorLength;
+             const dashOffset = circumference * 0.25 - (startProgress * circumference); 
+             
+             // Color Mapping
+             let color = '#444'; // Straight (Default)
+             if (sector.type === 'corner_high_speed') color = '#fbbf24'; // Yellow
+             if (sector.type === 'corner_medium_speed') color = '#f97316'; // Orange
+             if (sector.type === 'corner_low_speed') color = '#ef4444'; // Red
+             if (sector.type === 'straight') color = '#555'; // Grey for straights
+
+             // Check if this sector is part of a DRS Zone
+             const isDRS = track.drsZones.some(zone => 
+                (sector.startDistance >= zone.activationDistance && sector.startDistance < zone.endDistance) ||
+                (sector.endDistance > zone.activationDistance && sector.endDistance <= zone.endDistance)
+             );
+             if (isDRS && sector.type === 'straight') color = '#22c55e'; // Green for DRS straights
+
              return (
-                 <line key={idx} x1={CENTER} y1={CENTER} x2={x} y2={y} stroke="#222" strokeWidth="1" opacity="0.5" />
+                 <circle
+                    key={`sector-${idx}`}
+                    cx={CENTER}
+                    cy={CENTER}
+                    r={TRACK_RADIUS}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="8"
+                    strokeDasharray={`${sectorLength} ${gapLength}`}
+                    strokeDashoffset={dashOffset}
+                    className="transition-colors duration-300"
+                 />
              );
         })}
+
+        {/* Pit Lane (Blue Line inside) */}
+        <circle
+            cx={CENTER}
+            cy={CENTER}
+            r={TRACK_RADIUS - 15}
+            fill="none"
+            stroke="#3b82f6"
+            strokeWidth="4"
+            strokeDasharray={`${(track.pitLane.entryDistance < track.pitLane.exitDistance 
+                ? (track.pitLane.exitDistance - track.pitLane.entryDistance + totalDistance) 
+                : (track.pitLane.exitDistance + totalDistance - track.pitLane.entryDistance)
+                ) / totalDistance * 2 * Math.PI * (TRACK_RADIUS - 15)} ${2 * Math.PI * (TRACK_RADIUS - 15)}`}
+            strokeDashoffset={2 * Math.PI * (TRACK_RADIUS - 15) * 0.25 - (track.pitLane.entryDistance / totalDistance * 2 * Math.PI * (TRACK_RADIUS - 15))}
+            opacity="0.6"
+        />
 
         {/* Start/Finish Line */}
         <line
@@ -57,6 +106,21 @@ export const CircularTrackMap: React.FC = () => {
           stroke="#fff"
           strokeWidth="2"
         />
+
+        {/* Legend */}
+        <g transform="translate(10, 270)">
+            <rect x="0" y="0" width="8" height="8" fill="#ef4444" rx="2" />
+            <text x="12" y="7" fill="#888" fontSize="8" fontFamily="monospace">Slow</text>
+            
+            <rect x="40" y="0" width="8" height="8" fill="#f97316" rx="2" />
+            <text x="52" y="7" fill="#888" fontSize="8" fontFamily="monospace">Med</text>
+            
+            <rect x="80" y="0" width="8" height="8" fill="#fbbf24" rx="2" />
+            <text x="92" y="7" fill="#888" fontSize="8" fontFamily="monospace">Fast</text>
+
+            <rect x="120" y="0" width="8" height="8" fill="#22c55e" rx="2" />
+            <text x="132" y="7" fill="#888" fontSize="8" fontFamily="monospace">DRS</text>
+        </g>
 
         {/* Cars */}
         {vehicles.map((vehicle) => {

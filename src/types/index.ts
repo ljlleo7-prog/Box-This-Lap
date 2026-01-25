@@ -21,9 +21,10 @@ export interface Driver {
 
 export interface TrackSector {
   id: string;
+  name?: string; // e.g. "Copse", "Maggots"
   startDistance: number;
   endDistance: number;
-  isPassZone: boolean;
+  type: 'straight' | 'corner_high_speed' | 'corner_medium_speed' | 'corner_low_speed';
   difficulty: number;
 }
 

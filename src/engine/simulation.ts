@@ -392,14 +392,43 @@ export class SimulationEngine {
         speed *= 1.05; // 5% speed boost (approx 15-20 kph)
     }
 
-    // Dirty Air Penalty
-    if (vehicle.inDirtyAir) {
-        // Map gap 0.0-2.0s to penalty
-        // Closer = more penalty. Max 1.5% penalty at 0s gap
-        const gap = Math.max(0.1, vehicle.gapToAhead); // Floor at 0.1 to avoid infinity/max
-        const proximityFactor = Math.max(0, 1 - (gap / 2.0)); // 1.0 at 0s, 0.0 at 2s
-        const dirtyAirPenalty = 0.015 * proximityFactor;
-        speed *= (1 - dirtyAirPenalty);
+    // Aerodynamic Wake Effects (Slipstream & Dirty Air)
+    // Find current sector for physics context
+    const currentSector = this.track.sectors[vehicle.currentSector - 1];
+
+    if (vehicle.position > 1 && currentSector) {
+        const gap = Math.max(0.1, vehicle.gapToAhead);
+        
+        if (currentSector.type === 'straight') {
+             // Slipstream (Tow): Effective up to ~1.5s gap, strongest < 0.5s
+             if (gap < 1.5) {
+                 // Boost: Max 5% at 0.1s, 0% at 1.5s
+                 const slipstreamFactor = Math.max(0, 1 - (gap / 1.5));
+                 const boost = 0.05 * slipstreamFactor;
+                 speed *= (1 + boost);
+             }
+        } else {
+             // Dirty Air in Corners: Effective up to ~2.0s gap
+             if (gap < 2.0) {
+                 const proximityFactor = Math.max(0, 1 - (gap / 2.0));
+                 let penaltyBase = 0;
+                 
+                 switch(currentSector.type) {
+                     case 'corner_high_speed': 
+                        penaltyBase = 0.05; // 5% loss (significant downforce loss)
+                        break; 
+                     case 'corner_medium_speed': 
+                        penaltyBase = 0.03; // 3% loss
+                        break; 
+                     case 'corner_low_speed': 
+                        penaltyBase = 0.01; // 1% loss (mechanical grip dominant)
+                        break;
+                 }
+                 
+                 const penalty = penaltyBase * proximityFactor;
+                 speed *= (1 - penalty);
+             }
+        }
     }
 
     // Battling Penalty (Side-by-side slows both down)
