@@ -76,6 +76,7 @@ export interface VehicleState {
   paceMode: PaceMode;
   
   // Dynamic factors
+  condition: number; // Day Form (0.98 - 1.02)
   damage: number; // 0-100%
   stress: number; // 0-100%
   drsOpen: boolean; // DRS Active status

@@ -36,8 +36,9 @@ export const LiveLeaderboard: React.FC = () => {
             <div className="col-span-1 font-bold text-center text-gray-400">{vehicle.position}</div>
             <div className="col-span-1 text-center font-bold font-mono uppercase text-white">{driver.id}</div>
             <div className="col-span-4 font-medium truncate text-gray-200">{driver.name}</div>
-            <div className="col-span-2 text-right font-mono text-[#00FFFF]">
+            <div className={clsx("col-span-2 text-right font-mono", vehicle.drsOpen ? "text-green-500 font-bold" : "text-[#00FFFF]")}>
                {formatGap(vehicle.gapToLeader)}
+               {vehicle.drsOpen && <span className="ml-1 text-[8px] bg-green-500 text-black px-1 rounded align-top">DRS</span>}
             </div>
              <div className="col-span-2 text-center flex items-center justify-center gap-1">
                <span className={clsx(

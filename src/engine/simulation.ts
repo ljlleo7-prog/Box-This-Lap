@@ -15,13 +15,32 @@ export class SimulationEngine {
   }
 
   private initializeRace(track: Track, drivers: Driver[]): RaceState {
-    const vehicles: VehicleState[] = drivers.map((driver, index) => {
+    // Qualifying Simulation for Grid Order
+    // Simulate a qualifying lap for each driver
+    const qualifyingResults = drivers.map(driver => {
+        // Base pace + random variance + skill variance
+        // Lower basePace is better.
+        // Consistency affects how close to potential they get.
+        const potential = driver.basePace;
+        const consistencyPenalty = (100 - driver.skill.consistency) * 0.005; // Penalty for low consistency
+        const randomVar = this.rng.range(-0.4, 0.4); // +/- 0.4s random variance
+        const lapTime = potential + consistencyPenalty + randomVar;
+        return { driver, lapTime };
+    }).sort((a, b) => a.lapTime - b.lapTime);
+
+    const vehicles: VehicleState[] = qualifyingResults.map((result, index) => {
+      const driver = result.driver;
       // Grid positioning: Randomized start grid with slight variance
       // Base gap 16m (approx 0.2s at start), plus random noise to simulate imperfect grid line-up
       const baseGap = 16;
       const noise = this.rng.range(-1.0, 1.0); // +/- 1m variance
       const startDistance = track.totalDistance - ((index + 1) * baseGap) + noise; 
       
+      // Random "Day Form" condition (0.98 to 1.02)
+      // > 1.0 means performing better (speed multiplier)
+      // < 1.0 means performing worse
+      const condition = this.rng.range(0.98, 1.02);
+
       return {
         id: driver.id,
         driverId: driver.id,
@@ -42,6 +61,7 @@ export class SimulationEngine {
         ersMode: 'balanced',
         paceMode: 'balanced',
         
+        condition, // Initialized condition
         damage: 0,
         stress: 0,
         drsOpen: false,
@@ -105,6 +125,19 @@ export class SimulationEngine {
     // 1. Calculate Target Speed
     let targetSpeed = this.calculateTargetSpeed(vehicle, driver);
     
+    // START CHAOS: First Lap Uncertainty
+    if (this.state.currentLap === 1 && vehicle.distanceOnLap < 2000) {
+        // Higher variance/instability in first sector
+        const chaos = this.rng.range(0.85, 1.10); // -15% to +10% speed variance
+        
+        // "Check up" logic: If very close to car ahead, chance to check up hard
+        if (vehicle.position > 1 && vehicle.gapToAhead < 0.4 && this.rng.chance(0.05)) {
+             targetSpeed *= 0.7; // Heavy check up / brake check
+        } else {
+             targetSpeed *= chaos;
+        }
+    }
+
     // 2. Apply Acceleration
     // Simple approach: move towards target speed
     const accelRate = 15; // m/s^2 (F1 cars accelerate fast)
@@ -330,6 +363,10 @@ export class SimulationEngine {
     
     let speed = avgSpeed;
 
+    // Apply Day Form Condition
+    // e.g., 1.02 -> 2% faster base speed
+    speed *= vehicle.condition;
+
     // Multipliers
     // Tyre Wear: 0-100. 100% wear = significant slow down
     // Quadratic degradation: wear^2 impact
@@ -370,10 +407,13 @@ export class SimulationEngine {
         speed *= 0.98; // 2% penalty for compromised lines
     }
 
-    // Driver Consistency & Skill
+    // Driver Consistency & Skill (Per-tick noise)
     const consistencyFactor = (driver.skill.consistency / 100);
     // Lower consistency = more random variance
-    const varianceRange = 0.02 * (1 - consistencyFactor + 0.1); // 0.2% to 2.2% variance
+    // Increased variance range for more "randomness" as requested
+    // Old: 0.02 * (1 - consistency + 0.1) -> ~0.2%
+    // New: 0.05 * (1 - consistency + 0.3) -> ~1.5% - 2.5% variance per tick
+    const varianceRange = 0.05 * (1 - consistencyFactor + 0.3); 
     const noise = this.rng.range(-varianceRange, varianceRange);
     speed *= (1 + noise);
 
