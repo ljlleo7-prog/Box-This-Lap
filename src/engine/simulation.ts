@@ -140,8 +140,10 @@ export class SimulationEngine {
 
     // 2. Apply Acceleration
     // Simple approach: move towards target speed
-    const accelRate = 15; // m/s^2 (F1 cars accelerate fast)
-    const brakeRate = 30; // m/s^2
+    // F1 0-200kph ~4.5s (12m/s^2 avg). 200-300 slower.
+    // Braking 300-100 ~2s (27m/s^2 avg). Peak 5g (~50m/s^2).
+    const accelRate = 20; // Increased for snappier acceleration out of corners
+    const brakeRate = 50; // Increased for realistic heavy braking zones
     
     if (vehicle.speed < targetSpeed) {
       vehicle.speed += accelRate * dt;
@@ -357,11 +359,49 @@ export class SimulationEngine {
   }
 
   private calculateTargetSpeed(vehicle: VehicleState, driver: Driver): number {
-    // Base speed from pace (seconds per lap -> m/s)
-    // Avg speed = totalDistance / basePace
-    const avgSpeed = this.track.totalDistance / driver.basePace;
+    // Determine Base Speed by Sector Type
+    let speed = 60; // Fallback
+    const currentSector = this.track.sectors[vehicle.currentSector - 1];
+
+    if (currentSector) {
+        switch (currentSector.type) {
+            case 'straight': 
+                speed = 88; // ~315 kph
+                break;
+            case 'corner_high_speed': 
+                speed = 72; // ~260 kph
+                break;
+            case 'corner_medium_speed': 
+                speed = 50; // ~180 kph
+                break;
+            case 'corner_low_speed': 
+                speed = 25; // ~90 kph
+                break;
+        }
+    } else {
+        // Fallback to average pace if sector not found
+        speed = this.track.totalDistance / driver.basePace;
+    }
+
+    // Apply Driver Sector Performance
+    if (driver.performance && currentSector) {
+        let perfScore = 90;
+        switch (currentSector.type) {
+            case 'straight': perfScore = driver.performance.straight; break;
+            case 'corner_high_speed': perfScore = driver.performance.corneringHigh; break;
+            case 'corner_medium_speed': perfScore = driver.performance.corneringMedium; break;
+            case 'corner_low_speed': perfScore = driver.performance.corneringLow; break;
+        }
+        // Impact: 90 is neutral. Range 70-100.
+        // 100 -> +2.5% speed. 70 -> -5% speed.
+        // Formula: 1 + (score - 90) * 0.0025
+        speed *= (1 + (perfScore - 90) * 0.0025);
+    }
     
-    let speed = avgSpeed;
+    // Apply Base Pace (Global Speed Factor)
+    // 88.0 is standard. Lower is faster.
+    // Factor = 88.0 / basePace
+    speed *= (88.0 / driver.basePace);
 
     // Apply Day Form Condition
     // e.g., 1.02 -> 2% faster base speed
@@ -394,7 +434,7 @@ export class SimulationEngine {
 
     // Aerodynamic Wake Effects (Slipstream & Dirty Air)
     // Find current sector for physics context
-    const currentSector = this.track.sectors[vehicle.currentSector - 1];
+    // const currentSector already defined above
 
     if (vehicle.position > 1 && currentSector) {
         const gap = Math.max(0.1, vehicle.gapToAhead);
@@ -442,7 +482,13 @@ export class SimulationEngine {
     // Increased variance range for more "randomness" as requested
     // Old: 0.02 * (1 - consistency + 0.1) -> ~0.2%
     // New: 0.05 * (1 - consistency + 0.3) -> ~1.5% - 2.5% variance per tick
-    const varianceRange = 0.05 * (1 - consistencyFactor + 0.3); 
+    let varianceRange = 0.05 * (1 - consistencyFactor + 0.3); 
+    
+    // Increased randomness in Low Speed Corners
+    if (currentSector && currentSector.type === 'corner_low_speed') {
+        varianceRange *= 3.0; // Huge variance (up to 6-8%)
+    }
+
     const noise = this.rng.range(-varianceRange, varianceRange);
     speed *= (1 + noise);
 

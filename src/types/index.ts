@@ -10,6 +10,12 @@ export interface Driver {
     tyreManagement: number; // 0-100
     wetWeather: number; // 0-100
   };
+  performance: {
+    corneringHigh: number; // 0-100
+    corneringMedium: number; // 0-100
+    corneringLow: number; // 0-100
+    straight: number; // 0-100
+  };
   personality: {
     aggression: number; // 0-100
     stressResistance: number; // 0-100
