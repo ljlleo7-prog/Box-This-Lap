@@ -44,6 +44,20 @@ export interface Track {
   id: string;
   name: string;
   totalDistance: number;
+  totalLaps: number; // Default race laps
+  tireDegradationFactor: number; // 1.0 = standard, >1.0 = abrasive
+  location?: {
+      lat: number;
+      long: number;
+  };
+  weatherParams?: {
+      volatility: number; // 0-1: How fast weather changes (0 = constant, 1 = chaotic)
+      rainProbability: number; // 0-1: Base probability of rain
+  };
+  weatherChance: { // Probability of rain (Legacy/Simple)
+      rainChance: number; // 0-1
+      rainIntensity: 'light' | 'heavy' | 'mixed';
+  };
   sectors: TrackSector[];
   drsZones: DRSZone[]; // Added DRS Zones
   pitLane: {
@@ -58,8 +72,31 @@ export type TyreCompound = 'soft' | 'medium' | 'hard' | 'wet';
 export type PaceMode = 'conservative' | 'balanced' | 'aggressive';
 export type ERSMode = 'harvest' | 'balanced' | 'deploy';
 export type WeatherCondition = 'dry' | 'light-rain' | 'heavy-rain';
-export type SafetyCarStatus = 'none' | 'vsc' | 'sc';
+
+export interface WeatherForecastItem {
+  timeOffset: number; // Seconds from now
+  cloudCover: number;
+  rainIntensity: number;
+}
+
+export type SafetyCarStatus = 'none' | 'vsc' | 'sc' | 'red-flag';
 export type RaceStatus = 'pre-race' | 'racing' | 'finished';
+
+export interface SectorCondition {
+    sectorId: string;
+    waterDepth: number; // mm
+    rubberLevel: number; // 0-100%
+}
+
+export interface TelemetryDataPoint {
+    distance: number;
+    speed: number;
+}
+
+export interface VehicleTelemetry {
+    lastLapSpeedTrace: TelemetryDataPoint[];
+    currentLapSpeedTrace: TelemetryDataPoint[];
+}
 
 export interface VehicleState {
   id: string; // matches driverId
@@ -97,6 +134,9 @@ export interface VehicleState {
   gapToLeader: number;
   gapToAhead: number;
   position: number;
+
+  // Telemetry
+  telemetry: VehicleTelemetry;
 }
 
 export interface RaceState {
@@ -105,9 +145,16 @@ export interface RaceState {
   currentLap: number;
   totalLaps: number;
   weather: WeatherCondition;
+  weatherMode: 'simulation' | 'real'; // Toggle
+  weatherForecast: WeatherForecastItem[]; // New: Forecast queue
+  cloudCover: number; // 0-100%
+  rainIntensityLevel: number; // 0-100
+  windSpeed: number; // km/h
+  windDirection: number; // degrees
   trackTemp: number;
   airTemp: number;
   rubberLevel: number; // 0-100%
+  sectorConditions: SectorCondition[];
   safetyCar: SafetyCarStatus;
   vehicles: VehicleState[];
   status: RaceStatus;

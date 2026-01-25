@@ -1,7 +1,8 @@
 import React from 'react';
 import { useRaceStore } from '../store/raceStore';
 import { motion } from 'framer-motion';
-import { DRIVERS, TRACKS } from '../data/initialData';
+import { DRIVERS } from '../data/initialData';
+import { TRACKS } from '../data/tracks';
 
 const TRACK_RADIUS = 120;
 const CENTER = 150;

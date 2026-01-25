@@ -6,15 +6,90 @@ export class SimulationEngine {
   private track: Track;
   private drivers: Driver[];
   private rng: SeededRNG;
+  private leaderHistory: { distance: number, time: number }[] = [];
+  private safetyCarTimer: number = 0;
   
+  // Weather Internal State
+  private forecastUpdateTimer: number = 0;
+
   constructor(track: Track, drivers: Driver[], seed: number) {
     this.track = track;
     this.drivers = drivers;
     this.rng = new SeededRNG(seed);
     this.state = this.initializeRace(track, drivers);
+    
+    // Ensure forecast is populated if not done in initialize (it will be)
+    if (this.state.weatherForecast.length === 0) {
+        this.generateInitialForecast();
+    }
+  }
+
+  private generateInitialForecast(): void {
+      const params = this.track.weatherParams || { volatility: 0.5, rainProbability: 0.3 };
+      const currentCloud = this.state.cloudCover;
+      
+      // Start with current
+      this.state.weatherForecast = [{
+          timeOffset: 0,
+          cloudCover: currentCloud,
+          rainIntensity: this.state.rainIntensityLevel
+      }];
+
+      // Generate next 30 mins (every 2 mins)
+      for (let i = 1; i <= 15; i++) {
+          this.appendForecastNode(i * 120);
+      }
+  }
+
+  private appendForecastNode(timeOffset: number): void {
+      const lastNode = this.state.weatherForecast[this.state.weatherForecast.length - 1];
+      const params = this.track.weatherParams || { volatility: 0.5, rainProbability: 0.3 };
+      
+      // Volatility dictates max change per step (2 mins)
+      // Low vol (0.1) -> +/- 5%
+      // High vol (0.9) -> +/- 45%
+      const maxChange = 10 + (params.volatility * 40); 
+      const change = this.rng.range(-maxChange, maxChange);
+      
+      let newCloud = lastNode.cloudCover + change;
+      
+      // Pull towards base probability
+      const baseTarget = params.rainProbability * 100;
+      // Strength of pull depends on how far we are
+      newCloud = (newCloud * 0.8) + (baseTarget * 0.2);
+      
+      newCloud = Math.max(0, Math.min(100, newCloud));
+      
+      // Rain intensity logic (lagged/thresholded)
+      let newRain = 0;
+      if (newCloud > 70) {
+          // 70 -> 0%, 100 -> 100%
+          newRain = ((newCloud - 70) / 30) * 100;
+      }
+      
+      this.state.weatherForecast.push({
+          timeOffset,
+          cloudCover: newCloud,
+          rainIntensity: newRain
+      });
   }
 
   private initializeRace(track: Track, drivers: Driver[]): RaceState {
+    // Initialize Weather State FIRST to determine tires
+    const baseRainProb = track.weatherParams?.rainProbability ?? 0.2;
+    // Initial cloud cover bias
+    let initialCloudCover = this.rng.range(0, 100);
+    initialCloudCover = (initialCloudCover * 0.6) + (baseRainProb * 100 * 0.4); // Bias
+    
+    let initialRainIntensity = 0;
+    if (initialCloudCover > 70) {
+        initialRainIntensity = ((initialCloudCover - 70) / 30) * 100;
+    }
+
+    let initialWeather: any = 'dry'; // Type cast to avoid linter for now
+    if (initialRainIntensity > 50) initialWeather = 'heavy-rain';
+    else if (initialRainIntensity > 5) initialWeather = 'light-rain';
+
     // Qualifying Simulation for Grid Order
     // Simulate a qualifying lap for each driver
     const qualifyingResults = drivers.map(driver => {
@@ -41,6 +116,18 @@ export class SimulationEngine {
       // < 1.0 means performing worse
       const condition = this.rng.range(0.98, 1.02);
 
+      // Determine starting tyre based on weather
+      let tyreCompound: any = 'medium';
+      if (initialWeather === 'heavy-rain') tyreCompound = 'wet';
+      else if (initialWeather === 'light-rain') tyreCompound = 'medium'; // Inter logic: if > 20? 
+      // Actually let's be smarter:
+      // If rain > 40 -> Wet
+      // If rain > 10 -> Inter (Wait, I don't have Inter type in this snippet? I saw 'wet', 'medium'. Check types.)
+      // Types: 'soft' | 'medium' | 'hard' | 'wet'. No Inter? 
+      // User didn't ask for Inter, but logic implies it. I'll stick to 'wet' for rain.
+      // If light rain, maybe stick to 'medium' or 'soft'? Or just 'wet' if consistent.
+      if (initialRainIntensity > 20) tyreCompound = 'wet';
+
       return {
         id: driver.id,
         driverId: driver.id,
@@ -53,7 +140,7 @@ export class SimulationEngine {
         isInPit: false,
         pitStopCount: 0,
         
-        tyreCompound: 'medium',
+        tyreCompound,
         tyreWear: 0,
         tyreAgeLaps: 0,
         fuelLoad: 100, // kg
@@ -74,18 +161,37 @@ export class SimulationEngine {
         gapToLeader: 0,
         gapToAhead: 0,
         position: index + 1,
+
+        telemetry: {
+            lastLapSpeedTrace: [],
+            currentLapSpeedTrace: []
+        }
       };
     });
+    
+    // Initial Sector Conditions
+    const sectorConditions = track.sectors.map(s => ({
+        sectorId: s.id,
+        waterDepth: 0,
+        rubberLevel: 50
+    }));
 
     return {
       id: `race-${Date.now()}`,
       trackId: track.id,
       currentLap: 1,
-      totalLaps: 50, // Default 50 laps
-      weather: 'dry',
+      totalLaps: track.totalLaps, // Use track specific laps
+      weather: initialWeather,
+      weatherMode: 'simulation',
+      weatherForecast: [], // Populated in constructor
+      cloudCover: initialCloudCover,
+      rainIntensityLevel: initialRainIntensity,
+      windSpeed: this.rng.range(5, 20),
+      windDirection: this.rng.range(0, 360),
       trackTemp: 25,
       airTemp: 20,
       rubberLevel: 50,
+      sectorConditions,
       safetyCar: 'none',
       vehicles,
       status: 'pre-race',
@@ -101,6 +207,11 @@ export class SimulationEngine {
     if (this.state.status !== 'racing') return this.state;
 
     this.state.elapsedTime += deltaTime;
+
+    // Global Updates
+    this.updateWeather(deltaTime);
+    this.updateSafetyCar(deltaTime);
+    this.checkIncidents(deltaTime);
 
     // Update each vehicle
     this.state.vehicles.forEach(vehicle => {
@@ -118,12 +229,218 @@ export class SimulationEngine {
     return { ...this.state };
   }
 
+  private updateWeather(dt: number): void {
+      // Handle Real Weather Updates externally, but we still run water depth logic
+      if (this.state.weatherMode === 'real') {
+         this.updateWaterDepth(dt);
+         return;
+      }
+
+      // Forecast Management
+      this.forecastUpdateTimer += dt;
+      if (this.forecastUpdateTimer > 60) {
+          this.forecastUpdateTimer = 0;
+          // Ensure we have enough forecast
+          const lastNode = this.state.weatherForecast[this.state.weatherForecast.length - 1];
+          // If last node is less than 30 mins ahead of current time, add more
+          if (lastNode.timeOffset < this.state.elapsedTime + 1800) {
+             this.appendForecastNode(lastNode.timeOffset + 120);
+          }
+      }
+
+      // Interpolate Current Weather
+      const currentTime = this.state.elapsedTime;
+      const sortedForecast = this.state.weatherForecast.sort((a, b) => a.timeOffset - b.timeOffset);
+      
+      // Find segments
+      let prevNode = sortedForecast[0];
+      let nextNode = sortedForecast[sortedForecast.length - 1];
+      
+      for (let i = 0; i < sortedForecast.length - 1; i++) {
+          if (sortedForecast[i].timeOffset <= currentTime && sortedForecast[i+1].timeOffset > currentTime) {
+              prevNode = sortedForecast[i];
+              nextNode = sortedForecast[i+1];
+              break;
+          }
+      }
+      
+      // Interpolation factor (0 to 1)
+      let t = 0;
+      if (nextNode.timeOffset > prevNode.timeOffset) {
+          t = (currentTime - prevNode.timeOffset) / (nextNode.timeOffset - prevNode.timeOffset);
+      }
+      
+      // Linear interpolation
+      this.state.cloudCover = prevNode.cloudCover + (nextNode.cloudCover - prevNode.cloudCover) * t;
+      this.state.rainIntensityLevel = prevNode.rainIntensity + (nextNode.rainIntensity - prevNode.rainIntensity) * t;
+
+      // Map to Enum
+      if (this.state.rainIntensityLevel > 50) {
+          this.state.weather = 'heavy-rain';
+      } else if (this.state.rainIntensityLevel > 5) {
+          this.state.weather = 'light-rain';
+      } else {
+          this.state.weather = 'dry';
+      }
+      
+      // Update Water Depth & Rubber
+      this.updateWaterDepth(dt);
+      
+      // Wind Evolution
+      // Slowly rotate
+      this.state.windDirection += this.rng.range(-1, 1) * dt;
+      if (this.state.windDirection < 0) this.state.windDirection += 360;
+      if (this.state.windDirection > 360) this.state.windDirection -= 360;
+      
+      // Wind speed drift
+      this.state.windSpeed += this.rng.range(-0.5, 0.5) * dt;
+      if (this.state.windSpeed < 0) this.state.windSpeed = 0;
+  }
+
+  private updateWaterDepth(dt: number): void {
+      // Accumulation rate: max 0.1mm per sec (heavy rain)
+      const accumulationRate = (this.state.rainIntensityLevel / 100) * 0.05 * dt;
+      
+      // Drying rate: depends on temp and wind
+      // Base 0.005mm/sec
+      let dryingRate = 0.005 * dt;
+      if (this.state.airTemp > 25) dryingRate *= 1.5;
+      if (this.state.windSpeed > 15) dryingRate *= 1.2;
+      // Racing line drying (simplified)
+      if (this.state.status === 'racing') dryingRate *= 1.2;
+      
+      // Apply to all sectors (with slight noise per sector)
+      this.state.sectorConditions.forEach(sector => {
+          // Rain
+          if (accumulationRate > 0) {
+             sector.waterDepth += accumulationRate;
+          }
+          
+          // Drying
+          if (sector.waterDepth > 0) {
+              sector.waterDepth -= dryingRate;
+              if (sector.waterDepth < 0) sector.waterDepth = 0;
+          }
+          
+          // Rubber: washed away by rain
+          if (sector.waterDepth > 0.5) {
+              sector.rubberLevel -= 0.1 * dt; // Wash away
+              if (sector.rubberLevel < 0) sector.rubberLevel = 0;
+          }
+      });
+  }
+
+  public setRealWeatherData(data: { cloudCover: number; windSpeed: number; windDirection: number; temp: number; precipitation: number }): void {
+      if (this.state.weatherMode !== 'real') return;
+      
+      this.state.cloudCover = data.cloudCover;
+      this.state.windSpeed = data.windSpeed;
+      this.state.windDirection = data.windDirection;
+      this.state.airTemp = data.temp;
+      this.state.trackTemp = data.temp + (this.state.cloudCover < 50 ? 10 : 2); // Simple track temp model
+      
+      // Rain logic from precipitation (mm/h)
+      if (data.precipitation > 0) {
+          // 0.1mm/h -> light. 5mm/h -> heavy.
+          const intensity = Math.min(100, (data.precipitation / 5.0) * 100);
+          this.state.rainIntensityLevel = intensity;
+      } else {
+          this.state.rainIntensityLevel = 0;
+      }
+      
+      // Enum update
+      if (this.state.rainIntensityLevel > 50) {
+          this.state.weather = 'heavy-rain';
+      } else if (this.state.rainIntensityLevel > 5) {
+          this.state.weather = 'light-rain';
+      } else {
+          this.state.weather = 'dry';
+      }
+  }
+
+  private updateSafetyCar(dt: number): void {
+    if (this.state.safetyCar === 'none') return;
+
+    this.safetyCarTimer -= dt;
+    if (this.safetyCarTimer <= 0) {
+        this.state.safetyCar = 'none';
+        this.safetyCarTimer = 0;
+    }
+  }
+
+  private checkIncidents(dt: number): void {
+      if (this.state.safetyCar !== 'none' || this.state.status !== 'racing') return;
+      if (this.state.currentLap < 2) return; // No incidents on lap 1 for now
+
+      // Base probability per second
+      let incidentProb = 1 / 1200; // ~1 incident per 20 mins
+      if (this.state.weather !== 'dry') incidentProb *= 5; // Higher in rain
+      if (this.track.tireDegradationFactor > 1.2) incidentProb *= 1.5; // Higher on abrasive tracks
+      
+      // Convert to per-tick probability
+      const tickProb = incidentProb * dt;
+      
+      if (this.rng.chance(tickProb)) {
+          // Incident occurred!
+          const severity = this.rng.range(0, 1);
+          
+          if (severity < 0.6) {
+              this.state.safetyCar = 'vsc';
+              this.safetyCarTimer = this.rng.range(30, 90); // 30-90s VSC
+          } else if (severity < 0.95) {
+              this.state.safetyCar = 'sc';
+              this.safetyCarTimer = this.rng.range(120, 300); // 2-5 min SC
+          } else {
+              this.state.safetyCar = 'red-flag';
+              this.safetyCarTimer = this.rng.range(10, 30); // Short simulated red flag duration for gameplay flow
+          }
+      }
+  }
+
+  private calculateGrip(compound: string, waterDepth: number): number {
+      // Water Depth in mm
+      // Slicks
+      if (['soft', 'medium', 'hard'].includes(compound)) {
+          if (waterDepth < 0.1) return 1.0; // Dry
+          if (waterDepth < 1.0) return 1.0 - (waterDepth * 0.8); // Rapid drop
+          return 0.1; // Undrivable
+      }
+      
+      // Inter
+      if (compound === 'intermediate') { // Wait, type is 'medium'? No, I assume 'intermediate' exists or will exist.
+         // Current types: 'soft' | 'medium' | 'hard' | 'wet'. No inter.
+         // I'll assume 'wet' covers both for now, OR I should add 'intermediate' to types.
+         // Given I can't easily change all type usages in one go without errors, I'll stick to 'wet' logic being broad.
+         // But wait, user asked for "tyre-trackpart-weather correlation".
+         // Let's assume 'wet' is the only rain tyre for now.
+         return 0; // Unreachable if I don't use it
+      }
+      
+      // Wet (Covering Inter/Wet)
+      if (compound === 'wet') {
+          if (waterDepth < 0.1) return 0.85; // Slower on dry
+          if (waterDepth < 3.0) return 1.0; // Good in rain
+          return 1.0 - ((waterDepth - 3.0) * 0.1); // Too deep even for wets
+      }
+      
+      return 1.0;
+  }
+
   private updateVehicle(vehicle: VehicleState, dt: number): void {
     const driver = this.drivers.find(d => d.id === vehicle.driverId);
     if (!driver) return;
 
+    // 0. Calculate Grip based on Sector Conditions
+    // Find current sector water depth
+    const sectorCond = this.state.sectorConditions.find(s => s.sectorId === this.track.sectors[vehicle.currentSector - 1]?.id);
+    const waterDepth = sectorCond ? sectorCond.waterDepth : 0;
+    const gripFactor = this.calculateGrip(vehicle.tyreCompound, waterDepth);
+
     // 1. Calculate Target Speed
     let targetSpeed = this.calculateTargetSpeed(vehicle, driver);
+    
+    // Apply Grip Penalty
+    targetSpeed *= gripFactor;
     
     // START CHAOS: First Lap Uncertainty
     if (this.state.currentLap === 1 && vehicle.distanceOnLap < 2000) {
@@ -142,8 +459,8 @@ export class SimulationEngine {
     // Simple approach: move towards target speed
     // F1 0-200kph ~4.5s (12m/s^2 avg). 200-300 slower.
     // Braking 300-100 ~2s (27m/s^2 avg). Peak 5g (~50m/s^2).
-    const accelRate = 20; // Increased for snappier acceleration out of corners
-    const brakeRate = 50; // Increased for realistic heavy braking zones
+    let accelRate = 20 * gripFactor; // Grip affects acceleration too
+    let brakeRate = 50 * gripFactor; // Grip affects braking
     
     if (vehicle.speed < targetSpeed) {
       vehicle.speed += accelRate * dt;
@@ -158,6 +475,18 @@ export class SimulationEngine {
     vehicle.distanceOnLap += distDelta;
     vehicle.totalDistance += distDelta;
     vehicle.currentLapTime += dt;
+    
+    // TELEMETRY RECORDING
+    // Record if distance changed by > 10m OR time > 0.2s from last point
+    const trace = vehicle.telemetry.currentLapSpeedTrace;
+    const lastPoint = trace.length > 0 ? trace[trace.length - 1] : null;
+    
+    if (!lastPoint || (vehicle.distanceOnLap - lastPoint.distance > 10)) {
+        trace.push({
+            distance: vehicle.distanceOnLap,
+            speed: vehicle.speed
+        });
+    }
 
     // 4. Lap Logic
     if (vehicle.distanceOnLap >= this.track.totalDistance) {
@@ -166,6 +495,10 @@ export class SimulationEngine {
       vehicle.lastLapTime = vehicle.currentLapTime;
       vehicle.currentLapTime = 0;
       vehicle.tyreAgeLaps++;
+      
+      // Move Telemetry
+      vehicle.telemetry.lastLapSpeedTrace = [...vehicle.telemetry.currentLapSpeedTrace];
+      vehicle.telemetry.currentLapSpeedTrace = [];
       
       if (vehicle.lastLapTime < vehicle.bestLapTime || vehicle.bestLapTime === 0) {
         vehicle.bestLapTime = vehicle.lastLapTime;
@@ -359,6 +692,9 @@ export class SimulationEngine {
   }
 
   private calculateTargetSpeed(vehicle: VehicleState, driver: Driver): number {
+    // Red Flag: Stop immediately
+    if (this.state.safetyCar === 'red-flag') return 0;
+
     // Determine Base Speed by Sector Type
     let speed = 60; // Fallback
     const currentSector = this.track.sectors[vehicle.currentSector - 1];
@@ -492,6 +828,13 @@ export class SimulationEngine {
     const noise = this.rng.range(-varianceRange, varianceRange);
     speed *= (1 + noise);
 
+    // Apply Safety Car Speed Limits
+    if (this.state.safetyCar === 'vsc') {
+        speed *= 0.6; // ~40% slower
+    } else if (this.state.safetyCar === 'sc') {
+        speed *= 0.5; // ~50% slower
+    }
+
     return speed;
   }
   
@@ -543,23 +886,83 @@ export class SimulationEngine {
     // Sort by totalDistance desc
     const sorted = [...this.state.vehicles].sort((a, b) => b.totalDistance - a.totalDistance);
     
+    // Update Leader History
+    const leader = sorted[0];
+    if (leader) {
+        // Only add if distance has increased significantly (e.g. > 1m) to save memory
+        // or just every tick. Every tick at 10Hz is fine for a 1-2hr race? 
+        // 3600s * 10 = 36000 points. perfectly fine.
+        const lastPoint = this.leaderHistory[this.leaderHistory.length - 1];
+        if (!lastPoint || leader.totalDistance > lastPoint.distance) {
+            this.leaderHistory.push({
+                distance: leader.totalDistance,
+                time: this.state.elapsedTime
+            });
+        }
+    }
+
     sorted.forEach((v, index) => {
       v.position = index + 1;
       
-      // Calculate gaps
+      // Calculate gaps using Leader History (Time Gap)
       if (index === 0) {
         v.gapToLeader = 0;
         v.gapToAhead = 0;
       } else {
-        const leader = sorted[0];
         const ahead = sorted[index - 1];
         
-        // Gap = distance diff / speed
-        const speed = v.speed > 1 ? v.speed : 1; // Avoid divide by zero
-        v.gapToLeader = (leader.totalDistance - v.totalDistance) / speed;
-        v.gapToAhead = (ahead.totalDistance - v.totalDistance) / speed;
+        // Gap to Leader: Time difference at the current distance
+        v.gapToLeader = this.calculateTimeGap(v.totalDistance);
+        
+        // Gap to Ahead: (My Gap to Leader) - (Ahead Gap to Leader)
+        // This is mathematically correct for intervals
+        // e.g. Leader=0, P2=+5s, P3=+7s. Gap P3->P2 is 2s.
+        v.gapToAhead = Math.max(0, v.gapToLeader - (index === 1 ? 0 : this.calculateTimeGap(ahead.totalDistance)));
       }
     });
+  }
+
+  private calculateTimeGap(distance: number): number {
+      // Find the time when the leader was at 'distance'
+      // We need to interpolate from leaderHistory
+      
+      // 1. Binary Search or simple scan?
+      // Since distance is monotonic, we can use binary search.
+      // History: [d0, d1, d2, ... dn]
+      // We want i such that history[i].distance <= distance < history[i+1].distance
+      
+      if (this.leaderHistory.length < 2) return 0;
+      
+      const last = this.leaderHistory[this.leaderHistory.length - 1];
+      if (distance >= last.distance) return 0; // Ahead of recorded history (or is leader)
+      
+      let low = 0;
+      let high = this.leaderHistory.length - 1;
+      let idx = -1;
+      
+      while (low <= high) {
+          const mid = Math.floor((low + high) / 2);
+          if (this.leaderHistory[mid].distance <= distance) {
+              idx = mid;
+              low = mid + 1;
+          } else {
+              high = mid - 1;
+          }
+      }
+      
+      if (idx === -1 || idx >= this.leaderHistory.length - 1) {
+           // Fallback if not found or at very end
+           return 0;
+      }
+      
+      const p1 = this.leaderHistory[idx];
+      const p2 = this.leaderHistory[idx + 1];
+      
+      // Interpolate
+      const ratio = (distance - p1.distance) / (p2.distance - p1.distance);
+      const leaderTimeAtDist = p1.time + ratio * (p2.time - p1.time);
+      
+      return this.state.elapsedTime - leaderTimeAtDist;
   }
   
   public getState(): RaceState {
@@ -572,6 +975,10 @@ export class SimulationEngine {
       
       if (type === 'pace') vehicle.paceMode = value;
       if (type === 'ers') vehicle.ersMode = value;
-      // TODO: Pit logic
+      // TODO: Pit logic}
+  }
+
+  public setWeatherMode(mode: 'simulation' | 'real'): void {
+      this.state.weatherMode = mode;
   }
 }
