@@ -155,6 +155,7 @@ export interface RaceState {
   airTemp: number;
   rubberLevel: number; // 0-100%
   sectorConditions: SectorCondition[];
+  trackWaterDepth: number; // Global average water depth (mm)
   safetyCar: SafetyCarStatus;
   vehicles: VehicleState[];
   status: RaceStatus;

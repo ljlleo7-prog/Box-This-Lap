@@ -28,11 +28,23 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
   };
 
   // Prepare Weather Data
-  const weatherData = raceState.weatherForecast.map(item => ({
-    time: Math.round(item.timeOffset / 60), // Mins
-    cloudCover: Math.round(item.cloudCover),
-    rain: Math.round(item.rainIntensity)
-  })).filter(item => item.time >= Math.floor(raceState.elapsedTime / 60)); // Only future/current
+  const currentPoint = {
+      time: 0,
+      cloudCover: Math.round(raceState.cloudCover),
+      rain: Math.round(raceState.rainIntensityLevel)
+  };
+  
+  const futurePoints = raceState.weatherForecast
+      .filter(item => item.timeOffset > raceState.elapsedTime)
+      .map(item => ({
+          time: (item.timeOffset - raceState.elapsedTime) / 60, // Relative Mins
+          cloudCover: Math.round(item.cloudCover),
+          rain: Math.round(item.rainIntensity)
+      }));
+      
+  const weatherData = [currentPoint, ...futurePoints].sort((a, b) => a.time - b.time); 
+  // Removed strict filtering to prevent line disappearing when between data points
+  // .filter(item => item.time >= Math.floor(raceState.elapsedTime / 60));
 
   // Prepare Speed Data (Last Lap)
   // We need to merge multiple driver traces into one dataset based on distance?
@@ -105,11 +117,19 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                     <ResponsiveContainer width="100%" height="100%" key={`weather-chart-${activeTab}`}>
                         <ComposedChart data={weatherData}>
                             <CartesianGrid stroke="#333" strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="time" stroke="#666" tick={{fontSize: 10}} label={{ value: 'Mins', position: 'insideBottomRight', offset: -5 }} />
+                            <XAxis 
+                                dataKey="time" 
+                                type="number"
+                                domain={[0, 30]}
+                                stroke="#666" 
+                                tick={{fontSize: 10}} 
+                                label={{ value: 'Mins (+)', position: 'insideBottomRight', offset: -5 }} 
+                            />
                             <YAxis stroke="#666" tick={{fontSize: 10}} domain={[0, 100]} />
                             <Tooltip 
                                 contentStyle={{ backgroundColor: '#222', borderColor: '#444', fontSize: '12px' }}
                                 itemStyle={{ padding: 0 }}
+                                labelFormatter={(val) => `+${val} min`}
                             />
                             <Legend verticalAlign="top" height={36}/>
                             <Line type="monotone" dataKey="rain" stroke="#0099ff" strokeWidth={2} dot={false} name="Rain %" />

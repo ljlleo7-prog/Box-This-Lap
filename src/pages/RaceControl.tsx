@@ -16,7 +16,9 @@ export const RaceControl: React.FC = () => {
     setTrack, 
     selectedTrackId,
     toggleWeatherMode,
-    fetchRealWeather
+    fetchRealWeather,
+    gameSpeed,
+    setGameSpeed
   } = useRaceStore();
   
   // Start game loop
@@ -80,6 +82,23 @@ export const RaceControl: React.FC = () => {
         >
           {isPlaying ? 'RACING' : 'START RACE'}
         </button>
+
+        {/* Speed Controls (Test) */}
+        <div className="flex bg-[#222] rounded overflow-hidden border border-[#444]">
+            {[1, 2, 5, 10].map(speed => (
+                <button
+                    key={speed}
+                    onClick={() => setGameSpeed(speed)}
+                    className={`px-3 py-1 text-xs font-mono font-bold transition-colors ${
+                        gameSpeed === speed 
+                        ? 'bg-[#00FFFF] text-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-[#333]'
+                    }`}
+                >
+                    {speed}x
+                </button>
+            ))}
+        </div>
       </header>
 
       {raceState && raceState.safetyCar !== 'none' && (

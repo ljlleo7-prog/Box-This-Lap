@@ -11,6 +11,7 @@ export class SimulationEngine {
   
   // Weather Internal State
   private forecastUpdateTimer: number = 0;
+  private weatherTrend: number = 0; // -1.0 to 1.0 (Momentum)
   
   // Pit Stop State (id -> { timeLeft, totalDuration, stopDuration, laneTime })
   private pitStates: Map<string, { timeLeft: number, totalDuration: number, stopDuration: number, laneTime: number }> = new Map();
@@ -45,21 +46,53 @@ export class SimulationEngine {
   }
 
   private appendForecastNode(timeOffset: number): void {
-      const lastNode = this.state.weatherForecast[this.state.weatherForecast.length - 1];
       const params = this.track.weatherParams || { volatility: 0.5, rainProbability: 0.3 };
       
-      // Volatility dictates max change per step (2 mins)
-      // Low vol (0.1) -> +/- 5%
-      // High vol (0.9) -> +/- 45%
-      const maxChange = 10 + (params.volatility * 40); 
-      const change = this.rng.range(-maxChange, maxChange);
+      // WEATHER GENERATION: MULTI-FREQUENCY NOISE
+      // Replaces simple random walk with a superposition of sine waves to create 
+      // "Natural" weather fronts and storm systems.
       
-      let newCloud = lastNode.cloudCover + change;
+      // Time basis (convert to hours approx for frequency scaling)
+      const t = timeOffset; 
       
-      // Pull towards base probability
-      const baseTarget = params.rainProbability * 100;
-      // Strength of pull depends on how far we are
-      newCloud = (newCloud * 0.8) + (baseTarget * 0.2);
+      // 1. "The Front" (Low Frequency) - Period ~2 hours (7200s)
+      // Controls the overall "Day" weather (Sunny morning, Rainy afternoon)
+      const macroWave = Math.sin(t / 2500);
+      
+      // 2. "The Storm System" (Medium Frequency) - Period ~20 mins (1200s)
+      // Represents individual rain clouds or clearings
+      const mesoWave = Math.sin(t / 500 + this.rng.range(0, 10)); // Offset by random
+      
+      // 3. "The Gusts" (High Frequency) - Period ~3 mins (180s)
+      // Adds volatility and unpredictability
+      const microWave = Math.sin(t / 80);
+      
+      // Combine Waves
+      // Volatility param affects how much the faster waves contribute
+      const noise = (macroWave * 0.5) + (mesoWave * 0.3 * params.volatility) + (microWave * 0.2 * params.volatility);
+      
+      // Map to Cloud Cover (0-100)
+      // Center around rainProbability (e.g. 0.3 -> 30% chance of rain -> 70% cloud?)
+      // Actually: rainProb is chance of rain.
+      // If rainProb = 0.3, we want the system to be above "Rain Threshold" (70 cloud) 30% of the time.
+      // Normalize noise (-1 to 1) to (0 to 1)
+      const normNoise = (noise + 1) / 2;
+      
+      // Bias shift
+      // If we want 30% rain, we need value > 0.7 30% of time.
+      // normNoise is roughly Uniform(0,1) distribution (actually Bell-ish).
+      // Let's just linearly map base probability.
+      
+      let baseCloud = 30; // Default sunny-ish
+      if (params.rainProbability > 0.5) baseCloud = 60; // Default overcast
+      
+      // Apply noise
+      let newCloud = baseCloud + (noise * 50); // +/- 50 variation
+      
+      // Add "Trend Momentum" from previous node to smooth discontinuities if we just switched algo?
+      // No, this is a generative function based on t. It is deterministic for a given t sequence 
+      // IF we kept phase. But here we use 't' which is absolute time offset.
+      // So it will be smooth naturally!
       
       newCloud = Math.max(0, Math.min(100, newCloud));
       
@@ -68,6 +101,8 @@ export class SimulationEngine {
       if (newCloud > 70) {
           // 70 -> 0%, 100 -> 100%
           newRain = ((newCloud - 70) / 30) * 100;
+          // Non-linear rain: usually light or heavy, rarely perfectly linear
+          newRain = Math.pow(newRain / 100, 2) * 100; // Quadratic curve (more light rain, spikes to heavy)
       }
       
       this.state.weatherForecast.push({
@@ -206,6 +241,7 @@ export class SimulationEngine {
       airTemp: 20,
       rubberLevel: 50,
       sectorConditions,
+      trackWaterDepth: 0, // Global average
       safetyCar: 'none',
       vehicles,
       status: 'pre-race',
@@ -254,9 +290,16 @@ export class SimulationEngine {
       this.forecastUpdateTimer += dt;
       if (this.forecastUpdateTimer > 60) {
           this.forecastUpdateTimer = 0;
-          // Ensure we have enough forecast
+          
+          // 1. Cleanup Past Nodes (Keep 1 for interpolation context)
+          // "Only forecast the future"
+          while (this.state.weatherForecast.length > 1 && this.state.weatherForecast[1].timeOffset <= this.state.elapsedTime) {
+             this.state.weatherForecast.shift();
+          }
+
+          // 2. Ensure we have enough forecast
           const lastNode = this.state.weatherForecast[this.state.weatherForecast.length - 1];
-          // If last node is less than 30 mins ahead of current time, add more
+          // Maintain 30 min horizon (1800s)
           if (lastNode.timeOffset < this.state.elapsedTime + 1800) {
              this.appendForecastNode(lastNode.timeOffset + 120);
           }
@@ -312,36 +355,49 @@ export class SimulationEngine {
   }
 
   private updateWaterDepth(dt: number): void {
-      // Accumulation rate: max 0.1mm per sec (heavy rain)
-      const accumulationRate = (this.state.rainIntensityLevel / 100) * 0.05 * dt;
+      const rainIntensity = this.state.rainIntensityLevel;
       
-      // Drying rate: depends on temp and wind
-      // Base 0.005mm/sec
-      let dryingRate = 0.005 * dt;
-      if (this.state.airTemp > 25) dryingRate *= 1.5;
-      if (this.state.windSpeed > 15) dryingRate *= 1.2;
-      // Racing line drying (simplified)
-      if (this.state.status === 'racing') dryingRate *= 1.2;
+      // Accumulation Rate: 1mm per hour per 10% intensity (approx)
+      // 100% rain -> 10mm/hour (Heavy Storm)
+      const accumulationRate = (rainIntensity / 100) * (10 / 3600); // mm per second
       
-      // Apply to all sectors (with slight noise per sector)
+      // Drainage Rate: Track naturally drains water
+      // e.g. 2mm/hour
+      const drainageRate = 2.0 / 3600;
+      
+      // Evaporation Rate: Based on ambient conditions
+      // Dry/Windy = faster. 
+      // Simplified: Base rate + bonus if not raining
+      let evaporationRate = 0.5 / 3600;
+      if (rainIntensity < 5) evaporationRate *= 4; // Dries fast when rain stops
+      
+      // Net Change
+      let delta = 0;
+      if (rainIntensity > 0) {
+          delta = accumulationRate;
+          // While raining, drainage works against it, but evaporation is negligible
+          delta -= drainageRate;
+      } else {
+          // Drying phase
+          delta = -(drainageRate + evaporationRate);
+      }
+      
+      const depthChange = delta * dt;
+
+      // Apply to all sectors
       this.state.sectorConditions.forEach(sector => {
-          // Rain
-          if (accumulationRate > 0) {
-             sector.waterDepth += accumulationRate;
-          }
-          
-          // Drying
-          if (sector.waterDepth > 0) {
-              sector.waterDepth -= dryingRate;
-              if (sector.waterDepth < 0) sector.waterDepth = 0;
-          }
+          sector.waterDepth += depthChange;
+          sector.waterDepth = Math.max(0, sector.waterDepth);
           
           // Rubber: washed away by rain
           if (sector.waterDepth > 0.5) {
-              sector.rubberLevel -= 0.1 * dt; // Wash away
-              if (sector.rubberLevel < 0) sector.rubberLevel = 0;
+              sector.rubberLevel -= 0.001 * dt;
           }
       });
+
+      // Update global average
+      this.state.trackWaterDepth += depthChange;
+      this.state.trackWaterDepth = Math.max(0, this.state.trackWaterDepth);
   }
 
   public setRealWeatherData(data: { cloudCover: number; windSpeed: number; windDirection: number; temp: number; precipitation: number }): void {
@@ -517,6 +573,44 @@ export class SimulationEngine {
           // Dry (< 10)
           if (compound === 'wet' || compound === 'intermediate') pitNeeded = true;
       }
+
+      // FORECAST INTELLIGENCE (Prevent short-sighted pitting)
+      if (pitNeeded) {
+          // Look ahead 5 minutes (300s)
+          const lookahead = 300;
+          let futureRain = 0;
+          let count = 0;
+          
+          this.state.weatherForecast.forEach(f => {
+              if (f.timeOffset > this.state.elapsedTime && f.timeOffset < this.state.elapsedTime + lookahead) {
+                  futureRain += f.rainIntensity;
+                  count++;
+              }
+          });
+          
+          const avgFutureRain = count > 0 ? futureRain / count : rain;
+          
+          // Determine ideal compound for FUTURE
+          let futureIdeal = 'slick';
+          if (avgFutureRain > 60) futureIdeal = 'wet';
+          else if (avgFutureRain > 10) futureIdeal = 'intermediate';
+          
+          const currentType = (compound === 'wet' || compound === 'intermediate') ? compound : 'slick';
+          
+          // If we are currently on the tyre that matches the FUTURE, stay out!
+          if (currentType === futureIdeal) {
+              // EXCEPTION: Safety critical
+              // If we are on Slicks in Heavy Rain (>60), we MUST pit regardless of forecast
+              // If we are on Slicks in Light Rain (>20), it's risky but maybe manageable if forecast says Dry soon
+              if (currentType === 'slick' && rain > 40) {
+                  // Too dangerous, must pit
+                  pitNeeded = true;
+              } else {
+                  // Smart decision: Stay out
+                  pitNeeded = false;
+              }
+          }
+      }
       
       // 2. Tyre Wear
       if (vehicle.tyreWear > 70) {
@@ -528,29 +622,62 @@ export class SimulationEngine {
       }
   }
 
-  private calculateGrip(compound: string, waterDepth: number): number {
-      // Slicks
+  private calculateGrip(compound: string, waterDepth: number, speedKph: number = 200): number {
+      // 1. Base Compound Grip vs Water (Advanced Physics)
+      // Uses smooth exponential/gaussian decay curves instead of piecewise linear
+      let baseGrip = 1.0;
+      
       if (['soft', 'medium', 'hard'].includes(compound)) {
-          if (waterDepth < 0.1) return 1.0;
-          if (waterDepth < 1.0) return 1.0 - (waterDepth * 0.8);
-          return 0.1;
+          // Exponential decay. 
+          // 0mm -> 1.0
+          // 0.5mm -> 0.36
+          // 1.0mm -> 0.13 (Un-drivable)
+          // Slicks are useless > 1mm
+          baseGrip = Math.exp(-2.0 * waterDepth); 
+      } else if (compound === 'intermediate') {
+          // Bell curve centered at 1.5mm
+          // Optimal window: 0.5mm to 2.5mm
+          const optimal = 1.5;
+          const width = 1.5;
+          // Peak at 0.95 (Inter is never as sticky as Slick in dry)
+          baseGrip = 0.95 * Math.exp(-Math.pow(waterDepth - optimal, 2) / (2 * width * width));
+          
+          // Penalize dry usage (shredding/overheating)
+          // If water < 0.2mm, drop grip
+          if (waterDepth < 0.2) baseGrip *= 0.85; 
+      } else if (compound === 'wet') {
+          // Sigmoid / High Plateau
+          // Dry (0mm): 0.7 (Overheating, blocks moving)
+          // Wet (2mm+): 0.9 (Good mechanical grip)
+          // Deep (4mm+): 0.85 (Holds up)
+          
+          if (waterDepth < 1.0) {
+               // Transition from bad to good
+               baseGrip = 0.7 + (waterDepth * 0.2); // 0.7 -> 0.9
+          } else {
+               // Slow decay in deep water
+               baseGrip = 0.9 - ((waterDepth - 1.0) * 0.03); 
+          }
       }
       
-      // Inter
-      if (compound === 'intermediate') {
-          if (waterDepth < 0.1) return 0.92; // Slightly slower on dry
-          if (waterDepth < 2.5) return 1.0; // Optimal range
-          return 1.0 - ((waterDepth - 2.5) * 0.2); // Too deep
+      // 2. Aquaplaning (Dynamic Speed Penalty)
+      // Only affects if water > 1mm (Standing water)
+      if (waterDepth > 1.0) {
+          // Hydroplane speed approx: 90 + (100 / waterDepth)
+          // 2mm -> 140 kph
+          // 5mm -> 110 kph
+          const hydroSpeed = 90 + (100 / waterDepth);
+          
+          if (speedKph > hydroSpeed) {
+               const excess = speedKph - hydroSpeed;
+               // Exponential loss of contact patch
+               // e.g. 20kph over limit -> grip * 0.36
+               const hydroFactor = Math.exp(-excess * 0.05); 
+               baseGrip *= hydroFactor;
+          }
       }
       
-      // Wet
-      if (compound === 'wet') {
-          if (waterDepth < 1.0) return 0.85; // Slow on dry/damp
-          if (waterDepth < 4.0) return 1.0; // Optimal for heavy rain
-          return 1.0 - ((waterDepth - 4.0) * 0.1);
-      }
-      
-      return 1.0;
+      return Math.max(0.1, baseGrip); // Safety floor
   }
 
   private updateVehicle(vehicle: VehicleState, dt: number): void {
@@ -599,6 +726,10 @@ export class SimulationEngine {
     let accelRate = 20 * gripFactor; // Grip affects acceleration too
     let brakeRate = 50 * gripFactor; // Grip affects braking
     
+    // SAFETY CLAMP: Prevent negative rates if grip calculation fails
+    accelRate = Math.max(1.0, accelRate);
+    brakeRate = Math.max(1.0, brakeRate);
+
     if (vehicle.speed < targetSpeed) {
       vehicle.speed += accelRate * dt;
       if (vehicle.speed > targetSpeed) vehicle.speed = targetSpeed;
@@ -606,6 +737,11 @@ export class SimulationEngine {
       vehicle.speed -= brakeRate * dt; // Braking
       if (vehicle.speed < targetSpeed) vehicle.speed = targetSpeed;
     }
+    
+    // ABSOLUTE SAFETY CLAMP (Prevent Infinity/NaN/Explosion)
+    if (isNaN(vehicle.speed) || !isFinite(vehicle.speed)) vehicle.speed = 0;
+    if (vehicle.speed > 150) vehicle.speed = 150; // Max 540 kph
+    if (vehicle.speed < 0) vehicle.speed = 0;
 
     // 3. Update Distance
     const distDelta = vehicle.speed * dt;
