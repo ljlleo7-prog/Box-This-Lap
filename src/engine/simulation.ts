@@ -11,6 +11,9 @@ export class SimulationEngine {
   
   // Weather Internal State
   private forecastUpdateTimer: number = 0;
+  
+  // Pit Stop State (id -> { timeLeft, totalDuration, stopDuration, laneTime })
+  private pitStates: Map<string, { timeLeft: number, totalDuration: number, stopDuration: number, laneTime: number }> = new Map();
 
   constructor(track: Track, drivers: Driver[], seed: number) {
     this.track = track;
@@ -117,16 +120,27 @@ export class SimulationEngine {
       const condition = this.rng.range(0.98, 1.02);
 
       // Determine starting tyre based on weather
-      let tyreCompound: any = 'medium';
-      if (initialWeather === 'heavy-rain') tyreCompound = 'wet';
-      else if (initialWeather === 'light-rain') tyreCompound = 'medium'; // Inter logic: if > 20? 
-      // Actually let's be smarter:
-      // If rain > 40 -> Wet
-      // If rain > 10 -> Inter (Wait, I don't have Inter type in this snippet? I saw 'wet', 'medium'. Check types.)
-      // Types: 'soft' | 'medium' | 'hard' | 'wet'. No Inter? 
-      // User didn't ask for Inter, but logic implies it. I'll stick to 'wet' for rain.
-      // If light rain, maybe stick to 'medium' or 'soft'? Or just 'wet' if consistent.
-      if (initialRainIntensity > 20) tyreCompound = 'wet';
+      let tyreCompound: any = 'soft';
+      
+      if (initialRainIntensity > 60) {
+          tyreCompound = 'wet';
+      } else if (initialRainIntensity > 15) {
+          tyreCompound = 'intermediate';
+      } else {
+          // Dry Strategy Randomness
+          // Base: 40% Soft, 40% Medium, 20% Hard
+          // Modified by Driver Aggression (0-100)
+          const aggression = driver.personality.aggression;
+          const roll = this.rng.range(0, 100);
+          
+          // Higher aggression -> more likely Soft
+          const softThreshold = 40 + (aggression * 0.2); // 40-60%
+          const mediumThreshold = softThreshold + 40 - (aggression * 0.1); // +30-40%
+          
+          if (roll < softThreshold) tyreCompound = 'soft';
+          else if (roll < mediumThreshold) tyreCompound = 'medium';
+          else tyreCompound = 'hard';
+      }
 
       return {
         id: driver.id,
@@ -397,30 +411,143 @@ export class SimulationEngine {
       }
   }
 
+  private handlePitStop(vehicle: VehicleState, dt: number): void {
+      // Initialize state if not present
+      if (!this.pitStates.has(vehicle.id)) {
+          // 1. Calculate Stop Duration (Mechanics)
+          let stopDuration = this.rng.range(2.0, 2.8);
+          // 1% chance of error (4-10s)
+          if (this.rng.chance(0.01)) {
+              stopDuration = this.rng.range(4.0, 10.0);
+          }
+          
+          // 2. Lane Time (Fixed ~20s)
+          const laneTime = 20;
+          const totalDuration = laneTime + stopDuration;
+          
+          this.pitStates.set(vehicle.id, {
+              timeLeft: totalDuration,
+              totalDuration,
+              stopDuration,
+              laneTime
+          });
+      }
+      
+      const state = this.pitStates.get(vehicle.id)!;
+      state.timeLeft -= dt;
+      
+      const timeElapsed = state.totalDuration - state.timeLeft;
+      const stopStart = state.laneTime / 2;
+      const stopEnd = stopStart + state.stopDuration;
+      
+      // Speed Logic: Slow in lane, 0 when stopped
+    if (timeElapsed < stopStart || timeElapsed > stopEnd) {
+        vehicle.speed = 22; // 80kph
+    } else {
+        vehicle.speed = 0;
+    }
+
+    // UPDATE POSITION (Fix Teleporting)
+    // Even in pit, we must move the car distance-wise so it traverses the pit lane on the map
+    const distDelta = vehicle.speed * dt;
+    vehicle.distanceOnLap += distDelta;
+    vehicle.totalDistance += distDelta;
+    vehicle.currentLapTime += dt;
+
+    // Lap Logic (Crossing Line in Pit)
+    if (vehicle.distanceOnLap >= this.track.totalDistance) {
+        vehicle.distanceOnLap -= this.track.totalDistance;
+        vehicle.lapCount++;
+        vehicle.lastLapTime = vehicle.currentLapTime;
+        vehicle.currentLapTime = 0;
+        vehicle.tyreAgeLaps++;
+        
+        // Update race current lap if leader
+        if (vehicle.position === 1) {
+             this.state.currentLap = vehicle.lapCount;
+        }
+    }
+    
+    if (state.timeLeft <= 0) {
+          // Pit Complete
+          this.pitStates.delete(vehicle.id);
+          vehicle.isInPit = false;
+          vehicle.pitStopCount++;
+          
+          // Service Car
+          const rain = this.state.rainIntensityLevel;
+          if (rain > 60) vehicle.tyreCompound = 'wet';
+          else if (rain > 10) vehicle.tyreCompound = 'intermediate';
+          else {
+               // Dry Logic
+               const lapsLeft = this.state.totalLaps - this.state.currentLap;
+               if (lapsLeft < 15) vehicle.tyreCompound = 'soft';
+               else {
+                   const roll = this.rng.range(0, 100);
+                   if (roll < 50) vehicle.tyreCompound = 'medium';
+                   else vehicle.tyreCompound = 'hard';
+               }
+          }
+          
+          vehicle.tyreWear = 0;
+          vehicle.tyreAgeLaps = 0;
+      }
+  }
+
+  private updateStrategyAI(vehicle: VehicleState, driver: Driver): void {
+      // Only check near end of lap (Pit Entry Zone)
+      const distToFinish = this.track.totalDistance - vehicle.distanceOnLap;
+      if (distToFinish > 100 || distToFinish < 0) return;
+      
+      // Don't pit if already decided
+      if (vehicle.isInPit) return;
+      
+      let pitNeeded = false;
+      const rain = this.state.rainIntensityLevel;
+      const compound = vehicle.tyreCompound;
+      
+      // 1. Weather / Tyre Mismatch
+      if (rain > 60) {
+          if (compound !== 'wet') pitNeeded = true;
+      } else if (rain > 10) {
+          if (compound !== 'intermediate' && compound !== 'wet') pitNeeded = true;
+          // If on Wet, stick with it unless it really dries up or we want optimal speed?
+          // Simplification: If rain > 10, Inter is best, Wet is passable. Slicks are bad.
+      } else {
+          // Dry (< 10)
+          if (compound === 'wet' || compound === 'intermediate') pitNeeded = true;
+      }
+      
+      // 2. Tyre Wear
+      if (vehicle.tyreWear > 70) {
+          pitNeeded = true;
+      }
+      
+      if (pitNeeded) {
+          vehicle.isInPit = true;
+      }
+  }
+
   private calculateGrip(compound: string, waterDepth: number): number {
-      // Water Depth in mm
       // Slicks
       if (['soft', 'medium', 'hard'].includes(compound)) {
-          if (waterDepth < 0.1) return 1.0; // Dry
-          if (waterDepth < 1.0) return 1.0 - (waterDepth * 0.8); // Rapid drop
-          return 0.1; // Undrivable
+          if (waterDepth < 0.1) return 1.0;
+          if (waterDepth < 1.0) return 1.0 - (waterDepth * 0.8);
+          return 0.1;
       }
       
       // Inter
-      if (compound === 'intermediate') { // Wait, type is 'medium'? No, I assume 'intermediate' exists or will exist.
-         // Current types: 'soft' | 'medium' | 'hard' | 'wet'. No inter.
-         // I'll assume 'wet' covers both for now, OR I should add 'intermediate' to types.
-         // Given I can't easily change all type usages in one go without errors, I'll stick to 'wet' logic being broad.
-         // But wait, user asked for "tyre-trackpart-weather correlation".
-         // Let's assume 'wet' is the only rain tyre for now.
-         return 0; // Unreachable if I don't use it
+      if (compound === 'intermediate') {
+          if (waterDepth < 0.1) return 0.92; // Slightly slower on dry
+          if (waterDepth < 2.5) return 1.0; // Optimal range
+          return 1.0 - ((waterDepth - 2.5) * 0.2); // Too deep
       }
       
-      // Wet (Covering Inter/Wet)
+      // Wet
       if (compound === 'wet') {
-          if (waterDepth < 0.1) return 0.85; // Slower on dry
-          if (waterDepth < 3.0) return 1.0; // Good in rain
-          return 1.0 - ((waterDepth - 3.0) * 0.1); // Too deep even for wets
+          if (waterDepth < 1.0) return 0.85; // Slow on dry/damp
+          if (waterDepth < 4.0) return 1.0; // Optimal for heavy rain
+          return 1.0 - ((waterDepth - 4.0) * 0.1);
       }
       
       return 1.0;
@@ -429,6 +556,15 @@ export class SimulationEngine {
   private updateVehicle(vehicle: VehicleState, dt: number): void {
     const driver = this.drivers.find(d => d.id === vehicle.driverId);
     if (!driver) return;
+
+    // Handle Pit Stop Logic
+    if (vehicle.isInPit) {
+        this.handlePitStop(vehicle, dt);
+        return;
+    }
+
+    // Check Strategy (AI)
+    this.updateStrategyAI(vehicle, driver);
 
     // 0. Calculate Grip based on Sector Conditions
     // Find current sector water depth
@@ -445,11 +581,12 @@ export class SimulationEngine {
     // START CHAOS: First Lap Uncertainty
     if (this.state.currentLap === 1 && vehicle.distanceOnLap < 2000) {
         // Higher variance/instability in first sector
-        const chaos = this.rng.range(0.85, 1.10); // -15% to +10% speed variance
+        const chaos = this.rng.range(0.95, 1.05); // Reduced from 0.85-1.10 to 0.95-1.05
         
         // "Check up" logic: If very close to car ahead, chance to check up hard
-        if (vehicle.position > 1 && vehicle.gapToAhead < 0.4 && this.rng.chance(0.05)) {
-             targetSpeed *= 0.7; // Heavy check up / brake check
+        // Reduced probability (0.05 -> 0.01) and severity (0.7 -> 0.9) to prevent leader getaway
+        if (vehicle.position > 1 && vehicle.gapToAhead < 0.4 && this.rng.chance(0.01)) {
+             targetSpeed *= 0.9; // Mild check up
         } else {
              targetSpeed *= chaos;
         }
@@ -729,15 +866,15 @@ export class SimulationEngine {
             case 'corner_low_speed': perfScore = driver.performance.corneringLow; break;
         }
         // Impact: 90 is neutral. Range 70-100.
-        // 100 -> +2.5% speed. 70 -> -5% speed.
-        // Formula: 1 + (score - 90) * 0.0025
-        speed *= (1 + (perfScore - 90) * 0.0025);
+        // 100 -> +1.5% speed. 70 -> -3% speed.
+        // Formula: 1 + (score - 90) * 0.0015
+        speed *= (1 + (perfScore - 90) * 0.0015);
     }
     
     // Apply Base Pace (Global Speed Factor)
     // 88.0 is standard. Lower is faster.
-    // Factor = 88.0 / basePace
-    speed *= (88.0 / driver.basePace);
+    // Dampened factor: 0.5% per point difference instead of full ratio
+    speed *= (1 + (88.0 - driver.basePace) * 0.005);
 
     // Apply Day Form Condition
     // e.g., 1.02 -> 2% faster base speed
@@ -772,7 +909,8 @@ export class SimulationEngine {
     // Find current sector for physics context
     // const currentSector already defined above
 
-    if (vehicle.position > 1 && currentSector) {
+    // Disable Dirty Air on Lap 1 to prevent leader runaway
+    if (vehicle.position > 1 && currentSector && this.state.currentLap > 1) {
         const gap = Math.max(0.1, vehicle.gapToAhead);
         
         if (currentSector.type === 'straight') {

@@ -132,8 +132,11 @@ export const CircularTrackMap: React.FC = () => {
           const progress = vehicle.distanceOnLap / totalDistance;
           const angle = (progress * 2 * Math.PI) - (Math.PI / 2);
           
-          const x = CENTER + TRACK_RADIUS * Math.cos(angle);
-          const y = CENTER + TRACK_RADIUS * Math.sin(angle);
+          // Use smaller radius if in pit
+          const radius = vehicle.isInPit ? TRACK_RADIUS - 15 : TRACK_RADIUS;
+          
+          const x = CENTER + radius * Math.cos(angle);
+          const y = CENTER + radius * Math.sin(angle);
 
           return (
             <g key={vehicle.id}>

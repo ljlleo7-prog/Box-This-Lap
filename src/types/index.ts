@@ -68,7 +68,7 @@ export interface Track {
   };
 }
 
-export type TyreCompound = 'soft' | 'medium' | 'hard' | 'wet';
+export type TyreCompound = 'soft' | 'medium' | 'hard' | 'intermediate' | 'wet';
 export type PaceMode = 'conservative' | 'balanced' | 'aggressive';
 export type ERSMode = 'harvest' | 'balanced' | 'deploy';
 export type WeatherCondition = 'dry' | 'light-rain' | 'heavy-rain';

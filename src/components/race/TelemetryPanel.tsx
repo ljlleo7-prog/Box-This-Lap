@@ -101,8 +101,8 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                       <span>Current: {raceState.weather.toUpperCase()}</span>
                       <span>Rain: {Math.round(raceState.rainIntensityLevel)}%</span>
                   </div>
-                  <div className="flex-1 min-h-0">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="flex-1 min-h-0" key="weather-chart-container">
+                    <ResponsiveContainer width="100%" height="100%" key={`weather-chart-${activeTab}`}>
                         <ComposedChart data={weatherData}>
                             <CartesianGrid stroke="#333" strokeDasharray="3 3" vertical={false} />
                             <XAxis dataKey="time" stroke="#666" tick={{fontSize: 10}} label={{ value: 'Mins', position: 'insideBottomRight', offset: -5 }} />
