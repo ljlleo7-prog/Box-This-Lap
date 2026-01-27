@@ -160,7 +160,7 @@ export class RaceLogicSystem {
       state.vehicles.forEach(vehicle => {
           this.handlePitStopLogic(vehicle, state, track, dt);
           this.updateDRS(vehicle, state, track);
-          this.attemptOvertake(vehicle, state, drivers);
+          this.attemptOvertake(vehicle, state, track, drivers);
       });
 
       this.updatePositions(state, track);
@@ -398,7 +398,7 @@ export class RaceLogicSystem {
       });
   }
 
-  private attemptOvertake(attacker: VehicleState, state: RaceState, drivers: Driver[]): void {
+  private attemptOvertake(attacker: VehicleState, state: RaceState, track: Track, drivers: Driver[]): void {
       // Only attempt if battling and not already ahead
       // We need to find the defender (car directly ahead)
       if (!attacker.isBattling || attacker.position === 1) return;
@@ -423,6 +423,11 @@ export class RaceLogicSystem {
       // 4. Tyre delta (Age difference)
       const tyreDelta = defender.tyreAgeLaps - attacker.tyreAgeLaps; // Positive if defender has older tyres
 
+      // 5. Track Difficulty (Overtaking)
+      // High difficulty reduces score
+      const overtakingDiff = track.overtakingDifficulty || 0.5;
+      const difficultyPenalty = overtakingDiff * 20; // 0-20 penalty
+
       // Base chance: 0% (hard to pass)
       // We check this every tick, so probability must be VERY low per tick.
       // Better: Check only when gap is closing and very small (< 0.2s)
@@ -434,6 +439,7 @@ export class RaceLogicSystem {
       score += speedDelta * 2; // +2% per m/s speed advantage
       score += drsBonus;
       score += tyreDelta * 1.5;
+      score -= difficultyPenalty;
 
       // Rookie Chance Floor (Randomness)
       

@@ -6,6 +6,9 @@ export const SILVERSTONE: Track = {
     totalDistance: 5891, // meters
     totalLaps: 52,
     tireDegradationFactor: 1.2, // High speed corners kill tires
+    overtakingDifficulty: 0.5, // Medium
+    trackDifficulty: 0.7, // High speed precision required
+    baseTemperature: 20, // British Summer
     location: { lat: 52.0786, long: -1.0169 },
     weatherParams: { volatility: 0.7, rainProbability: 0.4 },
     weatherChance: { rainChance: 0.4, rainIntensity: 'mixed' }, // Typical UK weather

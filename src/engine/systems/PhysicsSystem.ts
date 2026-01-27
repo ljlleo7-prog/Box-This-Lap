@@ -169,6 +169,45 @@ export class PhysicsSystem {
     // e.g., 1.02 -> 2% faster base speed
     speed *= vehicle.condition;
 
+    // TEMPERATURE & TRACK DIFFICULTY LOGIC
+    // 1. Temperature Adaptation
+    // Rain cools the track. Base temp is ambient/track average.
+    const currentTemp = (track.baseTemperature || 25) - (state.rainIntensityLevel * 0.15);
+    const optimalTemp = 25; // Standard optimal operating window center
+    const tempDelta = Math.abs(currentTemp - optimalTemp);
+    
+    // Adaptability: Higher is better. 100 = No penalty from temp.
+    const adaptability = driver.performance.temperatureAdaptability || 85;
+    // Penalty: 0.5% per degree off, scaled by lack of adaptability
+    // e.g. 10 deg off, 80% adapt -> 10 * 0.005 * 0.2 = 0.01 (1%)
+    const tempPenalty = tempDelta * 0.005 * (1 - (adaptability / 100));
+    speed *= (1 - tempPenalty);
+
+    // 2. Track Difficulty
+    // Harder tracks are slower and punish mistakes more
+    // User Update: Difficulty shall only penalize those without good enough racing skills
+    // We use 'consistency' as the primary metric for handling track difficulty (error avoidance)
+    
+    const difficulty = track.trackDifficulty || 0.5;
+    
+    // Skill Mitigation: 0-1 (1 = 100 consistency, perfect mitigation)
+    const consistency = driver.skill.consistency || 80;
+    const skillMitigation = consistency / 100;
+    
+    // Penalty Calculation
+    // Maximum penalty on the hardest track (difficulty=1.0) for a rookie (consistency=50)
+    // could be significant (e.g., 5-8%).
+    // For a pro (consistency=95+), it should be negligible.
+    
+    const maxDifficultyPenalty = 0.08; // 8% max speed loss
+    
+    // Effective Penalty = Difficulty * MaxPenalty * (1 - SkillMitigation)
+    // Example 1: Monaco (0.95), Max Verstappen (98 cons): 0.95 * 0.08 * 0.02 = 0.0015 (0.15% loss)
+    // Example 2: Monaco (0.95), Rookie (70 cons): 0.95 * 0.08 * 0.30 = 0.0228 (2.28% loss)
+    
+    const difficultyPenalty = difficulty * maxDifficultyPenalty * (1 - skillMitigation);
+    speed *= (1 - difficultyPenalty);
+    
     // Multipliers
     // Tyre Wear: 0-100. 100% wear = significant slow down
     // Quadratic degradation: wear^2 impact

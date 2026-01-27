@@ -15,6 +15,7 @@ export interface Driver {
     corneringMedium: number; // 0-100
     corneringLow: number; // 0-100
     straight: number; // 0-100
+    temperatureAdaptability: number; // 0-100: How well car handles temp deviations
   };
   personality: {
     aggression: number; // 0-100
@@ -46,6 +47,9 @@ export interface Track {
   totalDistance: number;
   totalLaps: number; // Default race laps
   tireDegradationFactor: number; // 1.0 = standard, >1.0 = abrasive
+  overtakingDifficulty: number; // 0-1 (0 = easy, 1 = impossible)
+  trackDifficulty: number; // 0-1 (0 = easy, 1 = hard/punishing)
+  baseTemperature: number; // Celsius (Average ambient)
   location?: {
       lat: number;
       long: number;

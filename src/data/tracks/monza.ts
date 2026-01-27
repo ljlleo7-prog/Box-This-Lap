@@ -6,6 +6,9 @@ export const MONZA: Track = {
     totalDistance: 5793,
     totalLaps: 53,
     tireDegradationFactor: 0.8, // Low deg, mainly thermal from traction
+    overtakingDifficulty: 0.2, // Low - High speed straights
+    trackDifficulty: 0.4, // Medium-Low - Technical chicanes but simple layout
+    baseTemperature: 25, // Warm Italian late summer
     location: { lat: 45.6197, long: 9.2811 },
     weatherParams: { volatility: 0.3, rainProbability: 0.2 },
     weatherChance: { rainChance: 0.2, rainIntensity: 'heavy' }, // Usually sunny, but storms happen

@@ -6,6 +6,9 @@ export const SPA: Track = {
     totalDistance: 7004,
     totalLaps: 44,
     tireDegradationFactor: 1.4, // High loads
+    overtakingDifficulty: 0.4, // Medium - Kemmel is easy, S2 is hard
+    trackDifficulty: 0.8, // High - Technical, long, varied
+    baseTemperature: 18, // Cool Ardennes
     location: { lat: 50.4372, long: 5.9714 },
     weatherParams: { volatility: 0.9, rainProbability: 0.6 },
     weatherChance: { rainChance: 0.6, rainIntensity: 'mixed' }, // Ardennes weather
