@@ -149,10 +149,10 @@ export class SimulationEngine {
       const noise = this.rng.range(-1.0, 1.0); // +/- 1m variance
       const startDistance = track.totalDistance - ((index + 1) * baseGap) + noise; 
       
-      // Random "Day Form" condition (0.98 to 1.02)
+      // Random "Day Form" condition (0.99 to 1.01) - Reduced variance to keep field closer
       // > 1.0 means performing better (speed multiplier)
       // < 1.0 means performing worse
-      const condition = this.rng.range(0.98, 1.02);
+      const condition = this.rng.range(0.99, 1.01);
 
       // Determine starting tyre based on weather
       let tyreCompound: any = 'soft';
@@ -203,6 +203,7 @@ export class SimulationEngine {
         drsOpen: false,
         inDirtyAir: false,
         isBattling: false,
+        blueFlag: false,
         
         currentLapTime: 0,
         lastLapTime: 0,
@@ -210,6 +211,7 @@ export class SimulationEngine {
         gapToLeader: 0,
         gapToAhead: 0,
         position: index + 1,
+        hasFinished: false,
 
         telemetry: {
             lastLapSpeedTrace: [],
@@ -245,6 +247,8 @@ export class SimulationEngine {
       safetyCar: 'none',
       vehicles,
       status: 'pre-race',
+      checkeredFlag: false,
+      winnerId: null,
       elapsedTime: 0,
     };
   }
@@ -270,9 +274,28 @@ export class SimulationEngine {
 
     // Sort positions
     this.updatePositions();
+
+    // Update spatial awareness (gaps, blue flags, dirty air)
+    this.updateSpatialAwareness();
     
-    // Check race finish
-    if (this.state.vehicles.every(v => v.lapCount > this.state.totalLaps)) {
+    // Check race finish conditions
+    
+    // 1. Check if leader has finished
+    if (!this.state.checkeredFlag) {
+        // Sort by position to ensure we find the actual leader
+        const leader = this.state.vehicles.find(v => v.position === 1);
+        if (leader && leader.lapCount >= this.state.totalLaps) {
+             this.state.checkeredFlag = true;
+             this.state.winnerId = leader.driverId;
+             leader.hasFinished = true;
+        }
+    }
+
+    // 2. Check if all active cars have finished
+    const activeVehicles = this.state.vehicles.filter(v => v.damage < 100);
+    const allFinished = activeVehicles.every(v => v.hasFinished);
+    
+    if (this.state.checkeredFlag && allFinished) {
       this.state.status = 'finished';
     }
 
@@ -765,6 +788,12 @@ export class SimulationEngine {
     if (vehicle.distanceOnLap >= this.track.totalDistance) {
       vehicle.distanceOnLap -= this.track.totalDistance;
       vehicle.lapCount++;
+      
+      // Checkered Flag Logic: Any lap completion after flag means finish
+      if (this.state.checkeredFlag && !vehicle.hasFinished) {
+          vehicle.hasFinished = true;
+      }
+
       vehicle.lastLapTime = vehicle.currentLapTime;
       vehicle.currentLapTime = 0;
       vehicle.tyreAgeLaps++;
@@ -795,10 +824,10 @@ export class SimulationEngine {
     this.updateDRS(vehicle);
 
     // Update Dirty Air Status
-    this.updateDirtyAir(vehicle);
+    // Removed local update, handled in updateSpatialAwareness
 
     // Update Battling Status
-    this.updateBattling(vehicle);
+    // Removed local update, handled in updateSpatialAwareness
 
     // Overtake Logic (Probability Check)
     this.attemptOvertake(vehicle);
@@ -936,32 +965,20 @@ export class SimulationEngine {
       if (inZone) {
           // Check if within 1 second of car ahead at detection point
           // Simplified: If gapToAhead < 1.0s and we are not the leader
+          // NOTE: gapToAhead here is still based on Race Position (Lap + Dist).
+          // For DRS, we usually care about race position (lapping cars don't give DRS usually? Or do they?)
+          // In F1, you get DRS from lapped cars too.
+          // So we should check PHYSICAL gap.
+          // But `gapToAhead` is currently strictly race-position based in `updatePositions`.
+          // Let's rely on physical proximity calculated in `updateSpatialAwareness`.
+          // We don't store "gap to physical ahead" on the vehicle state permanently, but we could use `inDirtyAir` or similar?
+          // No, let's just stick to position-based DRS for now to avoid breaking it, as requested primarily for Dirty Air/Battling.
           if (vehicle.position > 1 && vehicle.gapToAhead < 1.0) {
               vehicle.drsOpen = true;
           }
       } else {
           vehicle.drsOpen = false;
       }
-  }
-
-  private updateDirtyAir(vehicle: VehicleState): void {
-      // If within 2 seconds of car ahead, dirty air applies
-      // Closer = worse
-      if (vehicle.position > 1 && vehicle.gapToAhead < 2.0) {
-          vehicle.inDirtyAir = true;
-      } else {
-          vehicle.inDirtyAir = false;
-      }
-  }
-
-  private updateBattling(vehicle: VehicleState): void {
-      // If within 0.3s of car ahead or behind, battling
-      // We need gap to behind too, but we can infer or compute it.
-      // For now, check gapToAhead < 0.3
-      const battlingAhead = vehicle.position > 1 && vehicle.gapToAhead < 0.3;
-      // We don't have gapToBehind easily on vehicle state, but we have position.
-      // Let's assume battling is mostly about attacking for now.
-      vehicle.isBattling = battlingAhead;
   }
 
   private calculateTargetSpeed(vehicle: VehicleState, driver: Driver): number {
@@ -1002,15 +1019,15 @@ export class SimulationEngine {
             case 'corner_low_speed': perfScore = driver.performance.corneringLow; break;
         }
         // Impact: 90 is neutral. Range 70-100.
-        // 100 -> +1.5% speed. 70 -> -3% speed.
-        // Formula: 1 + (score - 90) * 0.0015
-        speed *= (1 + (perfScore - 90) * 0.0015);
+        // 100 -> +1.0% speed. 70 -> -2% speed.
+        // Formula: 1 + (score - 90) * 0.001
+        speed *= (1 + (perfScore - 90) * 0.001);
     }
     
     // Apply Base Pace (Global Speed Factor)
     // 88.0 is standard. Lower is faster.
-    // Dampened factor: 0.5% per point difference instead of full ratio
-    speed *= (1 + (88.0 - driver.basePace) * 0.005);
+    // Dampened factor: 0.2% per point difference to compress field
+    speed *= (1 + (88.0 - driver.basePace) * 0.002);
 
     // Apply Day Form Condition
     // e.g., 1.02 -> 2% faster base speed
@@ -1086,6 +1103,50 @@ export class SimulationEngine {
         speed *= 0.98; // 2% penalty for compromised lines
     }
 
+    // Blue Flag Penalty (Yielding logic)
+    if (vehicle.blueFlag) {
+        // Driver Personality Check: Do they yield?
+        // High Team Player / Low Aggression -> Yields easily
+        // Low Team Player / High Aggression -> Ignores
+        const yieldChance = (driver.personality.teamPlayer + (100 - driver.personality.aggression)) / 200;
+        
+        // We use a deterministic check based on time or random?
+        // Ideally, they either decide to yield or not.
+        // Let's assume they yield 90% of the time if "Good", 10% if "Bad".
+        // Since this runs every tick, we need a stable state or probability per frame?
+        // No, we can just apply a speed penalty.
+        // If they yield: -20% speed (Lift off)
+        // If they don't: -0% speed (But causing dirty air/battling to the guy behind)
+        
+        // Simple Logic: 
+        // Base Yield Probability: 0.8
+        // Modified by personality.
+        // If yieldChance > 0.5 -> They are likely to yield.
+        
+        // Let's make it consistent per "blue flag event".
+        // But for now, let's just use the factor to scale the penalty.
+        // Higher yield chance -> More likely to be slow.
+        
+        // Actually, the user said: "sometimes they don't want to and will waste both of their pace and increase combat risk."
+        // If they ignore blue flag, `isBattling` should be true (which we set in spatial update based on proximity).
+        // If they yield, they should slow down significantly to let the car pass quickly.
+        
+        // Let's determine "Ignoring" behavior:
+        const ignoreProb = 1.0 - yieldChance;
+        const isIgnoring = this.rng.chance(ignoreProb * 0.1); // 10% chance per tick to "decide" to ignore? No.
+        
+        // Better: Just apply a "Yield Penalty".
+        // If they are "Good", they slow down a lot (speed * 0.8).
+        // If they are "Bad", they slow down a little or not at all (speed * 0.99).
+        
+        const complianceLevel = yieldChance; // 0.0 to 1.0
+        // Penalty = 1.0 - (0.2 * complianceLevel)
+        // If compliance 1.0 -> speed * 0.8 (Yields)
+        // If compliance 0.0 -> speed * 1.0 (Ignores)
+        
+        speed *= (1.0 - (0.2 * complianceLevel));
+    }
+
     // Driver Consistency & Skill (Per-tick noise)
     const consistencyFactor = (driver.skill.consistency / 100);
     // Lower consistency = more random variance
@@ -1157,43 +1218,111 @@ export class SimulationEngine {
   }
 
   private updatePositions(): void {
-    // Sort by totalDistance desc
-    const sorted = [...this.state.vehicles].sort((a, b) => b.totalDistance - a.totalDistance);
-    
-    // Update Leader History
-    const leader = sorted[0];
-    if (leader) {
-        // Only add if distance has increased significantly (e.g. > 1m) to save memory
-        // or just every tick. Every tick at 10Hz is fine for a 1-2hr race? 
-        // 3600s * 10 = 36000 points. perfectly fine.
-        const lastPoint = this.leaderHistory[this.leaderHistory.length - 1];
-        if (!lastPoint || leader.totalDistance > lastPoint.distance) {
-            this.leaderHistory.push({
-                distance: leader.totalDistance,
-                time: this.state.elapsedTime
-            });
-        }
-    }
-
-    sorted.forEach((v, index) => {
-      v.position = index + 1;
-      
-      // Calculate gaps using Leader History (Time Gap)
-      if (index === 0) {
-        v.gapToLeader = 0;
-        v.gapToAhead = 0;
-      } else {
-        const ahead = sorted[index - 1];
-        
-        // Gap to Leader: Time difference at the current distance
-        v.gapToLeader = this.calculateTimeGap(v.totalDistance);
-        
-        // Gap to Ahead: (My Gap to Leader) - (Ahead Gap to Leader)
-        // This is mathematically correct for intervals
-        // e.g. Leader=0, P2=+5s, P3=+7s. Gap P3->P2 is 2s.
-        v.gapToAhead = Math.max(0, v.gapToLeader - (index === 1 ? 0 : this.calculateTimeGap(ahead.totalDistance)));
-      }
+    // Standard race position logic
+    this.state.vehicles.sort((a, b) => {
+        if (a.lapCount !== b.lapCount) return b.lapCount - a.lapCount;
+        return b.distanceOnLap - a.distanceOnLap;
     });
+    
+    this.state.vehicles.forEach((v, i) => {
+        v.position = i + 1;
+        // Calculate gap to leader
+        if (i === 0) {
+            v.gapToLeader = 0;
+            v.gapToAhead = 0;
+        } else {
+            const leader = this.state.vehicles[0];
+            // Approx time gap
+            // This is "Leaderboard Gap", not physical gap
+            const lapDiff = leader.lapCount - v.lapCount;
+            const distDiff = (leader.distanceOnLap - v.distanceOnLap) + (lapDiff * this.track.totalDistance);
+            const avgSpeed = (leader.speed + v.speed) / 2 || 60;
+            v.gapToLeader = distDiff / avgSpeed;
+            
+            // Gap to ahead (Leaderboard sense)
+            const ahead = this.state.vehicles[i - 1];
+            const lapDiffAhead = ahead.lapCount - v.lapCount;
+            const distDiffAhead = (ahead.distanceOnLap - v.distanceOnLap) + (lapDiffAhead * this.track.totalDistance);
+            v.gapToAhead = distDiffAhead / avgSpeed;
+        }
+    });
+  }
+
+  private updateSpatialAwareness(): void {
+      // 1. Sort by physical location on track (ignore laps)
+      // distanceOnLap descending = order on track
+      const sortedByLocation = [...this.state.vehicles].sort((a, b) => b.distanceOnLap - a.distanceOnLap);
+      
+      const trackLength = this.track.totalDistance;
+
+      sortedByLocation.forEach((vehicle, index) => {
+          // Find car physically ahead
+          // If index 0 (furthest along track), ahead is the last car (closest to start) but wrapped around
+          let aheadVehicle: VehicleState;
+          let physicalDistGap = 0;
+
+          if (index === 0) {
+              aheadVehicle = sortedByLocation[sortedByLocation.length - 1];
+              // Gap is (TrackEnd - MyDist) + AheadDist
+              physicalDistGap = (trackLength - vehicle.distanceOnLap) + aheadVehicle.distanceOnLap;
+          } else {
+              aheadVehicle = sortedByLocation[index - 1];
+              // Gap is AheadDist - MyDist
+              physicalDistGap = aheadVehicle.distanceOnLap - vehicle.distanceOnLap;
+          }
+
+          // Convert distance gap to time gap (Physical Gap)
+          // Use vehicle's own speed to estimate time to arrival
+          const closingSpeed = Math.max(10, vehicle.speed); // Prevent div by zero
+          const physicalTimeGap = physicalDistGap / closingSpeed;
+
+          // 2. Dirty Air Logic (Physical Proximity)
+          // If within 1.5s of ANY car ahead physically
+          if (physicalTimeGap < 1.5) {
+              vehicle.inDirtyAir = true;
+          } else {
+              vehicle.inDirtyAir = false;
+          }
+
+          // 3. Battling Logic (Physical Proximity)
+          // If within 0.4s
+          if (physicalTimeGap < 0.4) {
+              vehicle.isBattling = true;
+          } else {
+              vehicle.isBattling = false;
+          }
+
+          // 4. Blue Flag Logic
+          // If the car physically behind me is LAPPING me
+          // I am 'vehicle'. 'aheadVehicle' is in front of me.
+          // Who is behind me? The one at index + 1 (or 0 if I am last)
+          
+          // Let's look backwards to find if I'm being lapped
+          let behindVehicle: VehicleState;
+          let gapFromBehind = 0;
+          
+          if (index === sortedByLocation.length - 1) {
+              behindVehicle = sortedByLocation[0];
+              gapFromBehind = (trackLength - behindVehicle.distanceOnLap) + vehicle.distanceOnLap; // Wrap logic reversed?
+              // No: Behind (big dist) -> Me (small dist).
+              // Behind is at 4900. Me at 100.
+              // Gap = (5000 - 4900) + 100 = 200m.
+              gapFromBehind = (trackLength - behindVehicle.distanceOnLap) + vehicle.distanceOnLap;
+          } else {
+              behindVehicle = sortedByLocation[index + 1];
+              gapFromBehind = vehicle.distanceOnLap - behindVehicle.distanceOnLap;
+          }
+          
+          const gapTimeFromBehind = gapFromBehind / Math.max(10, behindVehicle.speed);
+
+          // Check for Blue Flag condition
+          // If car behind is close (< 1.2s) AND is on a higher lap (lapping me)
+          if (gapTimeFromBehind < 1.2 && behindVehicle.lapCount > vehicle.lapCount) {
+              vehicle.blueFlag = true;
+          } else {
+              vehicle.blueFlag = false;
+          }
+      });
   }
 
   private calculateTimeGap(distance: number): number {

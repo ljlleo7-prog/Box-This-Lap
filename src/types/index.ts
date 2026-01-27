@@ -126,6 +126,7 @@ export interface VehicleState {
   drsOpen: boolean; // DRS Active status
   inDirtyAir: boolean; // Dirty Air status
   isBattling: boolean; // Wheel-to-wheel battling
+  blueFlag: boolean; // Being lapped warning
   
   // Timing
   currentLapTime: number;
@@ -134,6 +135,7 @@ export interface VehicleState {
   gapToLeader: number;
   gapToAhead: number;
   position: number;
+  hasFinished: boolean; // Flag to indicate if the driver has crossed the line after checkered flag
 
   // Telemetry
   telemetry: VehicleTelemetry;
@@ -159,6 +161,8 @@ export interface RaceState {
   safetyCar: SafetyCarStatus;
   vehicles: VehicleState[];
   status: RaceStatus;
+  checkeredFlag: boolean; // Flag to indicate if the leader has finished
+  winnerId: string | null; // ID of the winner
   elapsedTime: number; // Total race time in seconds
 }
 
