@@ -36,18 +36,35 @@ export class PhysicsSystem {
       }
 
       // 2. Apply Acceleration
-      // Simple approach: move towards target speed
-      // F1 0-200kph ~4.5s (12m/s^2 avg). 200-300 slower.
-      // Braking 300-100 ~2s (27m/s^2 avg). Peak 5g (~50m/s^2).
-      let accelRate = 20 * gripFactor; // Grip affects acceleration too
-      let brakeRate = 50 * gripFactor; // Grip affects braking
+      // Realistic Physics Model (G-Force based)
+      // Acceleration: Traction limited at low speed, Drag limited at high speed
+      // Braking: Grip limited (Mechanical + Aero Downforce)
       
-      // SAFETY CLAMP: Prevent negative rates if grip calculation fails
-      accelRate = Math.max(1.0, accelRate);
-      brakeRate = Math.max(1.0, brakeRate);
+      // Fix: Leader (pos 1) has gapToAhead = 0, which physics interprets as "touching car ahead" (max slipstream).
+      // We must force gap to be infinite for leader.
+      const effectiveGap = (vehicle.position === 1) ? 100 : vehicle.gapToAhead;
+      
+      const maxAccel = this.calculateMaxAcceleration(vehicle.speed, vehicle.drsOpen, effectiveGap, track.sectors[vehicle.currentSector - 1]?.type) * gripFactor;
+      const maxBrake = this.calculateMaxBraking(vehicle.speed) * gripFactor;
+      
+      // Safety Clamp
+      // We allow negative maxAccel now (Drag limited speed), but we should ensure it doesn't exceed braking capability if negative
+      const accelRate = maxAccel; 
+      const brakeRate = Math.max(1.0, maxBrake);
 
       if (vehicle.speed < targetSpeed) {
+        // Accelerating phase
+        // If accelRate is negative (Drag > Power), speed will naturally decrease
         vehicle.speed += accelRate * dt;
+        
+        // If we are decelerating due to drag, we shouldn't overshoot downwards below targetSpeed unnecessarily, 
+        // but targetSpeed is usually higher than current speed here.
+        // Wait, if speed < targetSpeed, we WANT to accelerate.
+        // If accelRate is negative, we decelerate.
+        // This is correct: We are trying to reach targetSpeed, but Physics says NO, you must slow down.
+        // Eventually speed settles at equilibrium where accelRate = 0.
+        
+        // Clamp: If we somehow overshoot targetSpeed (unlikely in this branch), clamp it.
         if (vehicle.speed > targetSpeed) vehicle.speed = targetSpeed;
       } else {
         vehicle.speed -= brakeRate * dt; // Braking
@@ -126,19 +143,23 @@ export class PhysicsSystem {
     const currentSector = track.sectors[vehicle.currentSector - 1];
 
     if (currentSector) {
-        switch (currentSector.type) {
-            case 'straight': 
-                speed = 88; // ~315 kph
-                break;
-            case 'corner_high_speed': 
-                speed = 72; // ~260 kph
-                break;
-            case 'corner_medium_speed': 
-                speed = 50; // ~180 kph
-                break;
-            case 'corner_low_speed': 
-                speed = 25; // ~90 kph
-                break;
+        if (currentSector.maxSpeed) {
+            speed = currentSector.maxSpeed;
+        } else {
+            switch (currentSector.type) {
+                case 'straight': 
+                    speed = 105; // ~378 kph (Let physics limit the top speed)
+                    break;
+                case 'corner_high_speed': 
+                    speed = 72; // ~260 kph
+                    break;
+                case 'corner_medium_speed': 
+                    speed = 50; // ~180 kph
+                    break;
+                case 'corner_low_speed': 
+                    speed = 25; // ~90 kph
+                    break;
+            }
         }
     } else {
         // Fallback to average pace if sector not found
@@ -171,8 +192,8 @@ export class PhysicsSystem {
 
     // TEMPERATURE & TRACK DIFFICULTY LOGIC
     // 1. Temperature Adaptation
-    // Rain cools the track. Base temp is ambient/track average.
-    const currentTemp = (track.baseTemperature || 25) - (state.rainIntensityLevel * 0.15);
+    // Use simulated track temp if available, otherwise fallback to calculation
+    const currentTemp = state.trackTemp || ((track.baseTemperature || 25) - (state.rainIntensityLevel * 0.15));
     const optimalTemp = 25; // Standard optimal operating window center
     const tempDelta = Math.abs(currentTemp - optimalTemp);
     
@@ -346,6 +367,85 @@ export class PhysicsSystem {
     }
 
     return speed;
+  }
+
+  private calculateMaxAcceleration(speed: number, drsOpen: boolean = false, gapToAhead: number = 100, sectorType: string = 'straight'): number {
+      // F1 Acceleration Physics (Power - Drag)
+      // Mass ~ 800kg
+      const mass = 800;
+      
+      // POWER
+      // Approx 1000hp ~ 750kW.
+      // ERS deployment adds ~120kW.
+      // We assume constant power band for simplicity, but efficiency drops at very high speed.
+      // Power = Force * Velocity => ThrustForce = Power / Velocity
+      const powerWatts = 750000; // 750 kW
+      
+      // Thrust Force
+      // At low speed, thrust is huge, but limited by Traction (Grip)
+      // At high speed, thrust = Power / Speed
+      let thrustForce = 0;
+      if (speed < 10) {
+          thrustForce = powerWatts / 10; // Cap at 10m/s to avoid infinity
+      } else {
+          thrustForce = powerWatts / speed;
+      }
+      
+      // Traction Limit (Mechanical Grip)
+      // Approx 1.3G at low speed (Simulating race fuel/tires)
+      const tractionLimitForce = mass * 9.81 * 1.3;
+      
+      // Effective Thrust is min(EngineThrust, TractionLimit)
+      thrustForce = Math.min(thrustForce, tractionLimitForce);
+      
+      // DRAG
+      // Force = 0.5 * rho * Cd * A * v^2
+      // rho = 1.225 kg/m^3
+      // Cd * A (CdA) ~ 1.5 m^2 (High Downforce setup)
+      const rho = 1.225;
+      let CdA = 1.5; 
+      
+      // DRS Effect: Reduces drag by ~25%
+      if (drsOpen) {
+          CdA *= 0.75;
+      }
+      
+      // Slipstream Effect: Reduces drag if following closely
+      // Only on straights
+      if (sectorType === 'straight' && gapToAhead < 1.0) {
+          // Max reduction 30% at 0.1s gap
+          const slipstreamFactor = Math.max(0, 1 - gapToAhead); 
+          CdA *= (1 - (0.3 * slipstreamFactor));
+      }
+      
+      const dragForce = 0.5 * rho * CdA * speed * speed;
+      
+      // Net Force
+      const netForce = thrustForce - dragForce;
+      
+      // Acceleration = Force / Mass
+      let accel = netForce / mass;
+      
+      // Friction / Rolling Resistance (constant small deceleration)
+      // Approx 0.1 m/s^2
+      accel -= 0.1;
+      
+      return accel; // Return true acceleration (can be negative if Drag > Power)
+  }
+
+  private calculateMaxBraking(speed: number): number {
+      // F1 Braking Curve
+      // Low speed: Mechanical Grip limited (~1.5G)
+      // High speed: Aero Downforce limited (~5G - 6G)
+      
+      const mechanicalGrip = 15; // ~1.5G (15 m/s^2)
+      
+      // Downforce increases with square of speed
+      // Factor tuned so at 85 m/s (300kph), we add ~35 m/s^2 (~3.5G) -> Total ~5G
+      const aeroFactor = 0.005; 
+      const aeroBraking = aeroFactor * speed * speed;
+      
+      return mechanicalGrip + aeroBraking;
   }
 
   private calculateGrip(compound: string, waterDepth: number, speedKph: number = 200): number {

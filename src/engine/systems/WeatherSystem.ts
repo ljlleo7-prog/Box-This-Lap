@@ -76,6 +76,33 @@ export class WeatherSystem {
       } else {
           state.weather = 'dry';
       }
+
+      // Update Temperatures (Air & Track)
+      const baseTemp = track.baseTemperature || 25;
+      
+      // Air Temp: Cooled by rain and clouds
+      // Rain cooling: up to 5C
+      const rainCooling = (state.rainIntensityLevel / 100) * 5;
+      // Cloud cooling: up to 3C
+      const cloudCooling = (state.cloudCover / 100) * 3;
+      
+      // Smooth transition for air temp would be better, but direct calculation is okay for now
+      state.airTemp = baseTemp - rainCooling - cloudCooling;
+
+      // Track Temp: Affected by sun (cloud cover) and rain
+      // Solar heating: Up to 15C above air temp when sunny (0 clouds)
+      const solarHeating = (1 - (state.cloudCover / 100)) * 15;
+      
+      let targetTrackTemp = state.airTemp + solarHeating;
+      
+      // Rain drastically cools the track
+      if (state.rainIntensityLevel > 5) {
+          // If raining, track temp drops towards air temp rapidly
+          targetTrackTemp = state.airTemp + 1; // Small offset
+      }
+      
+      // Apply to state (with some lag/inertia could be nice, but instant is fine for this iteration)
+      state.trackTemp = targetTrackTemp;
       
       // Update Water Depth & Rubber
       this.updateWaterDepth(state, dt);

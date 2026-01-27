@@ -33,6 +33,7 @@ export interface TrackSector {
   endDistance: number;
   type: 'straight' | 'corner_high_speed' | 'corner_medium_speed' | 'corner_low_speed';
   difficulty: number;
+  maxSpeed?: number; // Optional override for corner speed limit (m/s)
 }
 
 export interface DRSZone {
