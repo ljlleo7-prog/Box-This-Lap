@@ -83,11 +83,11 @@ export class PhysicsSystem {
       vehicle.currentLapTime += dt;
       
       // TELEMETRY RECORDING
-      // Record if distance changed by > 10m OR time > 0.2s from last point
+      // Record if distance changed by > 50m (reduced from 10m for performance)
       const trace = vehicle.telemetry.currentLapSpeedTrace;
       const lastPoint = trace.length > 0 ? trace[trace.length - 1] : null;
       
-      if (!lastPoint || (vehicle.distanceOnLap - lastPoint.distance > 10)) {
+      if (!lastPoint || (vehicle.distanceOnLap - lastPoint.distance > 50)) {
           trace.push({
               distance: vehicle.distanceOnLap,
               speed: vehicle.speed
@@ -167,7 +167,8 @@ export class PhysicsSystem {
     }
 
     // Apply Driver Sector Performance
-    if (driver.performance && currentSector) {
+    // NOTE: In VSC/SC, we skip performance penalties to maintain delta (speed limit dominant)
+    if (driver.performance && currentSector && state.safetyCar === 'none') {
         let perfScore = 90;
         switch (currentSector.type) {
             case 'straight': perfScore = driver.performance.straight; break;
@@ -233,7 +234,8 @@ export class PhysicsSystem {
     // Tyre Wear: 0-100. 100% wear = significant slow down
     // Quadratic degradation: wear^2 impact
     // 100% wear = 5% slower (approx 4.5s lost per lap)
-    const wearFactor = Math.pow(vehicle.tyreWear / 100, 2); 
+    const wearRatio = vehicle.tyreWear / 100;
+    const wearFactor = wearRatio * wearRatio; 
     speed *= (1 - (wearFactor * 0.05));
 
     // Fuel: lighter is faster
@@ -294,9 +296,66 @@ export class PhysicsSystem {
         }
     }
 
-    // Battling Penalty (Side-by-side slows both down)
-    if (vehicle.isBattling) {
-        speed *= 0.98; // 2% penalty for compromised lines
+    // Battling / Traffic Logic (Interaction with car ahead)
+    if (vehicle.isBattling && state.safetyCar === 'none') {
+        // Find car ahead
+        const ahead = state.vehicles.find(v => v.position === vehicle.position - 1);
+        if (ahead) {
+            // Determine "Attack Intensity" using a Sigmoid Curve
+            // This blends between "Stuck Mode" (0) and "Attack Mode" (1)
+            
+            const paceDelta = vehicle.speed - ahead.speed; // m/s
+            const aggression = driver.personality.aggression / 100; // 0-1
+            const racecraft = driver.skill.racecraft / 100; // 0-1
+            
+            // Score Calculation
+            // Base offset: It's hard to pass (negative bias)
+            // Aggression and Racecraft help overcome this.
+            // Pace Delta is the main driver.
+            
+            // Z-score components:
+            // Pace Delta: Direct contribution.
+            // Aggression: Adds "virtual speed" (willingness to risk). Max +2.5
+            // Racecraft: Adds "efficiency" (finding gaps). Max +1.5
+            // Bias: -3.0 (Center point - needs significant advantage to attack)
+            
+            const z = paceDelta + (aggression * 2.5) + (racecraft * 1.5) - 3.0;
+            
+            // Sigmoid Function: 1 / (1 + e^-z)
+            // If z = 0, Intensity = 0.5
+            // If z = -2, Intensity ~ 0.12
+            // If z = +2, Intensity ~ 0.88
+            const attackIntensity = 1.0 / (1.0 + Math.exp(-z));
+            
+            // Calculate Speeds
+            
+            // 1. Stuck Speed: Limited by car ahead + check-up effect
+            // If we are strictly stuck, we match speed or go slightly slower
+            let stuckSpeed = ahead.speed;
+            if (vehicle.speed > ahead.speed) {
+                 stuckSpeed *= 0.98; // Check-up penalty
+            }
+            
+            // 2. Free Speed: Our natural speed (calculated above)
+            // But attacking offline in corners costs grip
+            let freeSpeed = speed;
+            if (currentSector && currentSector.type !== 'straight') {
+                // Offline penalty scales with intensity
+                freeSpeed *= (1.0 - (0.05 * attackIntensity));
+            }
+            
+            // BLEND
+            // If Intensity 1.0 -> Free Speed
+            // If Intensity 0.0 -> Stuck Speed
+            // We only blend if Free Speed > Stuck Speed. 
+            // If we are naturally slower than Stuck Speed, we just go our slow speed (falling back).
+            
+            if (freeSpeed > stuckSpeed) {
+                speed = (stuckSpeed * (1.0 - attackIntensity)) + (freeSpeed * attackIntensity);
+            } else {
+                speed = freeSpeed; // We are falling back anyway
+            }
+        }
     }
 
     // Blue Flag Penalty (Yielding logic)
@@ -356,14 +415,45 @@ export class PhysicsSystem {
         varianceRange *= 3.0; // Huge variance (up to 6-8%)
     }
 
+    // REDUCED NOISE UNDER SAFETY CAR / VSC
+    if (state.safetyCar !== 'none') {
+        varianceRange *= 0.1; // 10% of normal variance -> very stable
+    }
+
     const noise = this.rng.range(-varianceRange, varianceRange);
     speed *= (1 + noise);
 
     // Apply Safety Car Speed Limits
     if (state.safetyCar === 'vsc') {
-        speed *= 0.6; // ~40% slower
+        // VSC: Strict speed limit (Delta maintenance)
+        // Cap speed at a low value (e.g. 40% of max, or fixed ~160kph/44m/s - INCREASED as requested)
+        const vscLimit = 44; // ~160kph
+        // We also apply a 60% factor to cornering speeds to ensure safety, but cap at vscLimit
+        speed = Math.min(speed * 0.7, vscLimit);
     } else if (state.safetyCar === 'sc') {
-        speed *= 0.5; // ~50% slower
+        // SC: Bunch up logic
+        const scPace = 35; // ~126 kph base pace for SC
+        let scTarget = scPace;
+
+        if (vehicle.position !== 1) {
+            // Catch up logic
+            const targetGap = 0.5; // seconds
+            const currentGap = vehicle.gapToAhead;
+
+            if (currentGap > targetGap) {
+                // Allow higher speed to catch up, up to 1.6x SC pace (~200kph)
+                // Proportional to gap: larger gap = faster catchup
+                const catchupRatio = Math.min(currentGap, 5.0) / 5.0; // 0 to 1
+                const speedBoost = 1.0 + (0.6 * catchupRatio); // 1.0 to 1.6
+                scTarget = scPace * speedBoost;
+            } else if (currentGap < 0.3) {
+                // Too close, back off
+                scTarget = scPace * 0.8;
+            }
+        }
+        
+        // Ensure we don't exceed the physical track limit (corner speed)
+        speed = Math.min(speed, scTarget);
     }
 
     return speed;
@@ -401,9 +491,9 @@ export class PhysicsSystem {
       // DRAG
       // Force = 0.5 * rho * Cd * A * v^2
       // rho = 1.225 kg/m^3
-      // Cd * A (CdA) ~ 1.5 m^2 (High Downforce setup)
+      // Cd * A (CdA) ~ 1.6 m^2 (Increased from 1.5 for realistic top speeds)
       const rho = 1.225;
-      let CdA = 1.5; 
+      let CdA = 1.6; 
       
       // DRS Effect: Reduces drag by ~25%
       if (drsOpen) {
@@ -413,9 +503,11 @@ export class PhysicsSystem {
       // Slipstream Effect: Reduces drag if following closely
       // Only on straights
       if (sectorType === 'straight' && gapToAhead < 1.0) {
-          // Max reduction 30% at 0.1s gap
+          // Max reduction 15% at 0.0s gap (Reduced from 30%)
+          // If DRS is open, slipstream is less effective (dirty air less impactful on stalled wing)
+          const maxSlipstream = drsOpen ? 0.08 : 0.15;
           const slipstreamFactor = Math.max(0, 1 - gapToAhead); 
-          CdA *= (1 - (0.3 * slipstreamFactor));
+          CdA *= (1 - (maxSlipstream * slipstreamFactor));
       }
       
       const dragForce = 0.5 * rho * CdA * speed * speed;

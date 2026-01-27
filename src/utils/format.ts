@@ -10,6 +10,6 @@ export function formatTime(seconds: number): string {
 
 export function formatGap(seconds: number): string {
   if (seconds === 0) return 'LEADER';
-  if (seconds < 0) return `+${Math.abs(seconds).toFixed(3)}`;
-  return `+${seconds.toFixed(3)}`;
+  if (seconds < 0) return `+${Math.abs(seconds).toFixed(1)}`;
+  return `+${seconds.toFixed(1)}`;
 }

@@ -9,6 +9,7 @@ export class SimulationEngine {
   private state: RaceState;
   private track: Track;
   private drivers: Driver[];
+  private driverMap: Map<string, Driver>;
   private rng: SeededRNG;
 
   // Sub-systems
@@ -20,6 +21,7 @@ export class SimulationEngine {
   constructor(track: Track, drivers: Driver[], seed: number) {
     this.track = track;
     this.drivers = drivers;
+    this.driverMap = new Map(drivers.map(d => [d.id, d]));
     this.rng = new SeededRNG(seed);
 
     // Initialize Systems
@@ -50,11 +52,11 @@ export class SimulationEngine {
     // 2. Race Logic Update (Safety Car, Incidents, Pit Logic, Positions, Spatial)
     // Note: RaceLogic updates Pit Stops which moves cars in pit lane.
     // It also handles Overtaking attempts (speed modification).
-    this.raceLogicSystem.updateRaceLogic(this.state, this.track, this.drivers, deltaTime);
+    this.raceLogicSystem.updateRaceLogic(this.state, this.track, this.driverMap, deltaTime);
 
     // 3. Vehicle Physics & Strategy Update
     this.state.vehicles.forEach(vehicle => {
-      const driver = this.drivers.find(d => d.id === vehicle.driverId);
+      const driver = this.driverMap.get(vehicle.driverId);
       if (!driver) return;
 
       // Strategy (AI decision to pit)

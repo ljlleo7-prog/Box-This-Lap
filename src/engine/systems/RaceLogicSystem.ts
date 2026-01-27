@@ -152,9 +152,9 @@ export class RaceLogicSystem {
     };
   }
 
-  public updateRaceLogic(state: RaceState, track: Track, drivers: Driver[], dt: number): void {
-      this.updateSafetyCar(state, dt);
-      this.checkIncidents(state, track, dt);
+  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number): void {
+      this.updateSafetyCar(state, track, dt);
+      this.checkIncidents(state, track, drivers, dt);
       
       // Update each vehicle's race logic
       state.vehicles.forEach(vehicle => {
@@ -168,41 +168,176 @@ export class RaceLogicSystem {
       this.checkRaceFinish(state);
   }
 
-  private updateSafetyCar(state: RaceState, dt: number): void {
+  private updateSafetyCar(state: RaceState, track: Track, dt: number): void {
     if (state.safetyCar === 'none') return;
 
     this.safetyCarTimer -= dt;
     if (this.safetyCarTimer <= 0) {
+        if (state.safetyCar === 'red-flag') {
+            this.performRedFlagRestart(state, track);
+        }
         state.safetyCar = 'none';
         this.safetyCarTimer = 0;
     }
   }
 
-  private checkIncidents(state: RaceState, track: Track, dt: number): void {
+  private performRedFlagRestart(state: RaceState, track: Track): void {
+      // Sort active vehicles by position
+      const activeVehicles = state.vehicles
+          .filter(v => v.damage < 100 && !v.hasFinished)
+          .sort((a, b) => a.position - b.position);
+
+      // Reset positions to a standing start formation or rolling restart
+      // We'll place them just before the start line
+      const gridSpacing = 16; // meters
+      let currentDist = track.totalDistance - 50; // Start 50m before line
+
+      activeVehicles.forEach((vehicle, index) => {
+          // Reset distance
+          vehicle.distanceOnLap = currentDist - (index * gridSpacing);
+          if (vehicle.distanceOnLap < 0) {
+              vehicle.distanceOnLap += track.totalDistance;
+          }
+          
+          // Unlap cars: Set lap count to leader's lap count
+          // (Simplify: Everyone restarts on lead lap for excitement, or keep laps? 
+          // Real F1 unlaps. Let's unlap.)
+          if (index === 0) {
+              // Leader
+          } else {
+              vehicle.lapCount = activeVehicles[0].lapCount;
+          }
+          
+          // Reset speed
+          vehicle.speed = 0;
+          
+          // Reset gaps
+          vehicle.gapToLeader = 0; // Will be recalculated
+          vehicle.gapToAhead = 0;
+          
+          // Reset internal states
+          vehicle.isBattling = false;
+          vehicle.inDirtyAir = false;
+          vehicle.blueFlag = false;
+      });
+  }
+
+  private checkIncidents(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number): void {
       if (state.safetyCar !== 'none' || state.status !== 'racing') return;
       if (state.currentLap < 2) return; // No incidents on lap 1 for now
 
-      // Base probability per second
-      let incidentProb = 1 / 1200; // ~1 incident per 20 mins
-      if (state.weather !== 'dry') incidentProb *= 5; // Higher in rain
-      if (track.tireDegradationFactor > 1.2) incidentProb *= 1.5; // Higher on abrasive tracks
+      // Bottom-up Incident Logic: Check each driver's risk
+      const activeVehicles = state.vehicles.filter(v => v.damage < 100 && !v.hasFinished);
       
-      // Convert to per-tick probability
-      const tickProb = incidentProb * dt;
-      
-      if (this.rng.chance(tickProb)) {
-          // Incident occurred!
-          const severity = this.rng.range(0, 1);
+      for (const vehicle of activeVehicles) {
+          const driver = drivers.get(vehicle.driverId);
+          if (!driver) continue;
+
+          // 1. Base Probability (Time-based)
+          // Target: ~1-2 incidents per race (90 mins) across 20 cars.
+          // Base rate per car approx 1 incident per 15-20 hours of driving.
+          // 1 / 60000 per second
+          let risk = 0.00001 * dt; 
+
+          // 2. Situational Multipliers
+          // Battling is dangerous
+          if (vehicle.isBattling) {
+              risk *= 4;
+              
+              // NEW: Add risk based on Attack Intensity
+              // If driver is aggressive and faster than car ahead, risk increases
+              // We need to estimate if they are "Attacking" or "Stuck"
+              // (Simplification: If battling and Aggression > 50, add risk)
+              if (driver.personality.aggression > 60) {
+                  risk *= 1.5; 
+              }
+          }
           
-          if (severity < 0.6) {
-              state.safetyCar = 'vsc';
-              this.safetyCarTimer = this.rng.range(30, 90); // 30-90s VSC
-          } else if (severity < 0.95) {
-              state.safetyCar = 'sc';
-              this.safetyCarTimer = this.rng.range(120, 300); // 2-5 min SC
-          } else {
-              state.safetyCar = 'red-flag';
-              this.safetyCarTimer = this.rng.range(10, 30); // Short simulated red flag duration for gameplay flow
+          // Dirty Air
+          if (vehicle.inDirtyAir) risk *= 1.5; // Reduced from 2
+
+          // 3. Tyre State
+          // High wear (>70%) increases risk exponentially
+          if (vehicle.tyreWear > 70) {
+              risk *= 1 + ((vehicle.tyreWear - 70) / 15); // Reduced slope
+          }
+
+          // 4. Weather
+          if (state.weather !== 'dry') {
+               // Rain risk
+               if (vehicle.tyreCompound === 'soft' || vehicle.tyreCompound === 'medium' || vehicle.tyreCompound === 'hard') {
+                   // Wrong tyres! High risk but not instant death
+                   risk *= 10; // Reduced from 50
+               } else {
+                   // Wet/Inter
+                   risk *= 2; // Reduced from 3
+               }
+          }
+
+          // 5. Driver Skill & Traits
+          // Consistency: Low consistency = Higher Risk
+          const consistencyFactor = driver.skill.consistency / 100; // 0-1
+          risk *= (1 + (1 - consistencyFactor) * 3); // Reduced max multiplier from 6 to 3
+
+          // Stress: High stress / Low resistance
+          const stressFactor = vehicle.stress / 100;
+          const resistance = driver.personality.stressResistance / 100;
+          if (stressFactor > 0.8) {
+              risk *= (1 + (1 - resistance) * 2); // Reduced from 3
+          }
+
+          // 6. Track Difficulty
+          const difficulty = track.trackDifficulty || 0.5;
+          risk *= (1 + difficulty * 0.5); // Reduced impact
+
+          // Final Check
+          if (this.rng.chance(risk)) {
+               // INCIDENT TRIGGERED!
+               // Now decide severity based on context
+               let severityScore = 0; // 0-100
+
+               // Speed factor (High speed = worse crash)
+               if (vehicle.speed > 60) severityScore += 40; // > 216kph
+               if (vehicle.speed > 80) severityScore += 20; // > 288kph
+
+               // Sector type
+               const currentSector = track.sectors[vehicle.currentSector - 1];
+               if (currentSector) {
+                   if (currentSector.type === 'corner_high_speed') severityScore += 30;
+                   if (currentSector.type === 'straight') severityScore += 10;
+               }
+               
+               // Random chaos
+               severityScore += this.rng.range(0, 30);
+
+               // Determine Flag
+               if (severityScore > 80) {
+                   // Major Crash -> Red Flag
+                   state.safetyCar = 'red-flag';
+                   this.safetyCarTimer = this.rng.range(15, 45);
+                   vehicle.damage = 100; // DNF
+                   vehicle.speed = 0;
+               } else if (severityScore > 50) {
+                   // Crash -> Safety Car
+                   state.safetyCar = 'sc';
+                   this.safetyCarTimer = this.rng.range(180, 400); // 3-6 mins
+                   
+                   if (this.rng.chance(0.7)) {
+                       vehicle.damage = 100; // DNF
+                       vehicle.speed = 0;
+                   } else {
+                       vehicle.damage += this.rng.range(30, 60); // Major damage
+                   }
+               } else {
+                   // Spin / Minor -> VSC
+                   state.safetyCar = 'vsc';
+                   this.safetyCarTimer = this.rng.range(45, 120);
+                   vehicle.damage += this.rng.range(5, 20); // Wing damage
+                   vehicle.speed *= 0.3; // Slow down from spin
+               }
+               
+               // Only one incident per tick to avoid chaos
+               return;
           }
       }
   }
@@ -217,6 +352,11 @@ export class RaceLogicSystem {
           // 1% chance of error (4-10s)
           if (this.rng.chance(0.01)) {
               stopDuration = this.rng.range(4.0, 10.0);
+          }
+          
+          // Damage Repair (Wing change)
+          if (vehicle.damage > 10) {
+              stopDuration += 10.0; // Significant time loss for repairs
           }
           
           // 2. Lane Time (Fixed ~20s)
@@ -289,6 +429,7 @@ export class RaceLogicSystem {
           
           vehicle.tyreWear = 0;
           vehicle.tyreAgeLaps = 0;
+          vehicle.damage = 0; // Repaired
       }
   }
 
@@ -398,7 +539,7 @@ export class RaceLogicSystem {
       });
   }
 
-  private attemptOvertake(attacker: VehicleState, state: RaceState, track: Track, drivers: Driver[]): void {
+  private attemptOvertake(attacker: VehicleState, state: RaceState, track: Track, drivers: Map<string, Driver>): void {
       // Only attempt if battling and not already ahead
       // We need to find the defender (car directly ahead)
       if (!attacker.isBattling || attacker.position === 1) return;
@@ -408,8 +549,8 @@ export class RaceLogicSystem {
 
       // Overtake probability check
       // 1. Skill difference (Racecraft)
-      const attackerDriver = drivers.find(d => d.id === attacker.driverId);
-      const defenderDriver = drivers.find(d => d.id === defender.driverId);
+      const attackerDriver = drivers.get(attacker.driverId);
+      const defenderDriver = drivers.get(defender.driverId);
       if (!attackerDriver || !defenderDriver) return;
 
       const skillDelta = attackerDriver.skill.racecraft - defenderDriver.skill.racecraft; // e.g., 90 - 80 = 10

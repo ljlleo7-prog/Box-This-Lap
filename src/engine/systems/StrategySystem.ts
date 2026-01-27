@@ -69,6 +69,11 @@ export class StrategySystem {
           pitNeeded = true;
       }
       
+      // 3. Damage Repair
+      if (vehicle.damage > 10) {
+          pitNeeded = true;
+      }
+
       if (pitNeeded) {
           vehicle.isInPit = true;
       }
