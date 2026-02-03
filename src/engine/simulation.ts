@@ -31,7 +31,7 @@ export class SimulationEngine {
     this.strategySystem = new StrategySystem();
 
     // Initialize State
-    this.state = this.raceLogicSystem.initializeRace(track, drivers);
+    this.state = this.raceLogicSystem.initializeRace(track, drivers, this.strategySystem);
     
     // Ensure forecast is populated
     this.weatherSystem.initializeForecast(this.state, this.track);
@@ -52,7 +52,7 @@ export class SimulationEngine {
     // 2. Race Logic Update (Safety Car, Incidents, Pit Logic, Positions, Spatial)
     // Note: RaceLogic updates Pit Stops which moves cars in pit lane.
     // It also handles Overtaking attempts (speed modification).
-    this.raceLogicSystem.updateRaceLogic(this.state, this.track, this.driverMap, deltaTime);
+    this.raceLogicSystem.updateRaceLogic(this.state, this.track, this.driverMap, deltaTime, this.strategySystem);
 
     // 3. Vehicle Physics & Strategy Update
     this.state.vehicles.forEach(vehicle => {
@@ -60,7 +60,7 @@ export class SimulationEngine {
       if (!driver) return;
 
       // Strategy (AI decision to pit)
-      this.strategySystem.updateStrategyAI(vehicle, this.state, this.track);
+      this.strategySystem.updateStrategyAI(vehicle, this.state, this.track, driver);
 
       // Physics (Movement, Grip, Speed, Fuel, Tyres)
       // Only update physics if NOT in pit (Pit logic handles movement in pit lane)

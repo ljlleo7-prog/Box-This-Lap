@@ -90,11 +90,16 @@ export const CircularTrackMap: React.FC = () => {
             fill="none"
             stroke="#3b82f6"
             strokeWidth="4"
-            strokeDasharray={`${(track.pitLane.entryDistance < track.pitLane.exitDistance 
-                ? (track.pitLane.exitDistance - track.pitLane.entryDistance + totalDistance) 
-                : (track.pitLane.exitDistance + totalDistance - track.pitLane.entryDistance)
+            strokeDasharray={`${
+                (track.pitLane.entryDistance < track.pitLane.exitDistance 
+                    ? (track.pitLane.exitDistance - track.pitLane.entryDistance) 
+                    : (track.pitLane.exitDistance + totalDistance - track.pitLane.entryDistance)
                 ) / totalDistance * 2 * Math.PI * (TRACK_RADIUS - 15)} ${2 * Math.PI * (TRACK_RADIUS - 15)}`}
-            strokeDashoffset={2 * Math.PI * (TRACK_RADIUS - 15) * 0.25 - (track.pitLane.entryDistance / totalDistance * 2 * Math.PI * (TRACK_RADIUS - 15))}
+            strokeDashoffset={
+                // Start at 12 o'clock (0.25 offset)
+                // Rotate CW by entry distance angle
+                (0.25 - (track.pitLane.entryDistance / totalDistance)) * 2 * Math.PI * (TRACK_RADIUS - 15)
+            }
             opacity="0.6"
         />
 

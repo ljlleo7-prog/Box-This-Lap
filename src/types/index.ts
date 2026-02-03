@@ -103,6 +103,18 @@ export interface VehicleTelemetry {
     currentLapSpeedTrace: TelemetryDataPoint[];
 }
 
+export interface StrategyStint {
+    compound: TyreCompound;
+    startLap: number;
+    endLap: number; // Target end lap
+    paceMode?: PaceMode;
+}
+
+export interface StrategyPlan {
+    stints: StrategyStint[];
+    currentStintIndex: number;
+}
+
 export interface VehicleState {
   id: string; // matches driverId
   driverId: string;
@@ -114,6 +126,7 @@ export interface VehicleState {
   currentSector: number;
   isInPit: boolean;
   pitStopCount: number;
+  boxThisLap: boolean; // Driver intends to pit this lap
   
   // Status
   tyreCompound: TyreCompound;
@@ -128,6 +141,8 @@ export interface VehicleState {
   condition: number; // Day Form (0.98 - 1.02)
   damage: number; // 0-100%
   stress: number; // 0-100%
+  morale: number; // 0-100 (Dynamic confidence)
+  concentration: number; // 0-100 (Focus level)
   drsOpen: boolean; // DRS Active status
   inDirtyAir: boolean; // Dirty Air status
   isBattling: boolean; // Wheel-to-wheel battling
@@ -140,7 +155,11 @@ export interface VehicleState {
   gapToLeader: number;
   gapToAhead: number;
   position: number;
+  lastPosition: number; // Added to track position changes
   hasFinished: boolean; // Flag to indicate if the driver has crossed the line after checkered flag
+
+  // Strategy
+  strategyPlan: StrategyPlan;
 
   // Telemetry
   telemetry: VehicleTelemetry;

@@ -1,17 +1,25 @@
 import { RaceState, VehicleState, Track, Driver } from '../../types';
 import { SeededRNG } from '../rng';
+import { StrategySystem } from './StrategySystem';
 
 export class RaceLogicSystem {
   private rng: SeededRNG;
   private safetyCarTimer: number = 0;
-  // Pit Stop State (id -> { timeLeft, totalDuration, stopDuration, laneTime })
-  private pitStates: Map<string, { timeLeft: number, totalDuration: number, stopDuration: number, laneTime: number }> = new Map();
+  // Pit Stop State (id -> { timeLeft, totalDuration, stopDuration, laneTime, entryDist, laneTrackDist })
+  private pitStates: Map<string, { 
+      timeLeft: number, 
+      totalDuration: number, 
+      stopDuration: number, 
+      laneTime: number,
+      entryDist: number,
+      laneTrackDist: number
+  }> = new Map();
 
   constructor(rng: SeededRNG) {
     this.rng = rng;
   }
 
-  public initializeRace(track: Track, drivers: Driver[]): RaceState {
+  public initializeRace(track: Track, drivers: Driver[], strategySystem: StrategySystem): RaceState {
     // Initialize Weather State FIRST to determine tires
     const baseRainProb = track.weatherParams?.rainProbability ?? 0.2;
     // Initial cloud cover bias
@@ -53,28 +61,9 @@ export class RaceLogicSystem {
       // < 1.0 means performing worse
       const condition = this.rng.range(0.99, 1.01);
 
-      // Determine starting tyre based on weather
-      let tyreCompound: any = 'soft';
-      
-      if (initialRainIntensity > 60) {
-          tyreCompound = 'wet';
-      } else if (initialRainIntensity > 15) {
-          tyreCompound = 'intermediate';
-      } else {
-          // Dry Strategy Randomness
-          // Base: 40% Soft, 40% Medium, 20% Hard
-          // Modified by Driver Aggression (0-100)
-          const aggression = driver.personality.aggression;
-          const roll = this.rng.range(0, 100);
-          
-          // Higher aggression -> more likely Soft
-          const softThreshold = 40 + (aggression * 0.2); // 40-60%
-          const mediumThreshold = softThreshold + 40 - (aggression * 0.1); // +30-40%
-          
-          if (roll < softThreshold) tyreCompound = 'soft';
-          else if (roll < mediumThreshold) tyreCompound = 'medium';
-          else tyreCompound = 'hard';
-      }
+      // Generate Strategy
+      const strategyPlan = strategySystem.initializeStrategy(driver, track, track.totalLaps, initialRainIntensity / 100);
+      const tyreCompound = strategyPlan.stints[0].compound;
 
       return {
         id: driver.id,
@@ -87,6 +76,7 @@ export class RaceLogicSystem {
         currentSector: 3, // Start in last sector
         isInPit: false,
         pitStopCount: 0,
+        boxThisLap: false,
         
         tyreCompound,
         tyreWear: 0,
@@ -99,6 +89,8 @@ export class RaceLogicSystem {
         condition, // Initialized condition
         damage: 0,
         stress: 0,
+        morale: driver.morale || 80, // Initialize with driver's base morale
+        concentration: 100, // Start fully focused
         drsOpen: false,
         inDirtyAir: false,
         isBattling: false,
@@ -110,7 +102,10 @@ export class RaceLogicSystem {
         gapToLeader: 0,
         gapToAhead: 0,
         position: index + 1,
+        lastPosition: index + 1, // Initial position
         hasFinished: false,
+
+        strategyPlan,
 
         telemetry: {
             lastLapSpeedTrace: [],
@@ -152,20 +147,71 @@ export class RaceLogicSystem {
     };
   }
 
-  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number): void {
+  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, strategySystem: StrategySystem): void {
       this.updateSafetyCar(state, track, dt);
       this.checkIncidents(state, track, drivers, dt);
       
       // Update each vehicle's race logic
       state.vehicles.forEach(vehicle => {
-          this.handlePitStopLogic(vehicle, state, track, dt);
+          this.handlePitStopLogic(vehicle, state, track, dt, strategySystem);
           this.updateDRS(vehicle, state, track);
           this.attemptOvertake(vehicle, state, track, drivers);
       });
 
       this.updatePositions(state, track);
+      this.updateMoraleAndConcentration(state, dt); // Update driver morale and concentration
       this.updateSpatialAwareness(state, track);
       this.checkRaceFinish(state);
+  }
+
+  private updateMoraleAndConcentration(state: RaceState, dt: number): void {
+      state.vehicles.forEach(vehicle => {
+          // --- MORALE LOGIC ---
+          // 1. Natural Decay/Recovery towards Baseline (80)
+          const baselineMorale = 80;
+          const diffMorale = baselineMorale - vehicle.morale;
+          vehicle.morale += diffMorale * 0.01 * dt;
+
+          // 2. Situational Effects on Morale
+          if (vehicle.inDirtyAir) vehicle.morale -= 0.5 * dt;
+          if (vehicle.gapToAhead < 0.5 && vehicle.position > 1) vehicle.morale += 0.2 * dt;
+
+          // Clamp Morale
+          vehicle.morale = Math.max(0, Math.min(100, vehicle.morale));
+          
+          
+          // --- CONCENTRATION LOGIC ---
+          // Base Recovery Rate (Drivers naturally regain focus)
+          // Takes about 10-20s to recover full focus from a drop
+          let recoveryRate = 5.0 * dt; 
+          
+          // Situational Drains
+          
+          // 1. Start Chaos (First Lap, Sector 1) - Massive Drain
+          if (state.currentLap === 1 && vehicle.currentSector === 1) {
+              // High traffic stress
+              // Drain depends on traffic density (neighbors)
+              // But simple approximation: constant drain + random noise
+              recoveryRate = -10.0 * dt; // Net loss of 10/s
+          }
+          
+          // 2. Battling (High focus demand, mental fatigue or simply "using" focus)
+          // Actually, battling consumes concentration capacity.
+          if (vehicle.isBattling) {
+              recoveryRate -= 2.0 * dt;
+          }
+          
+          // 3. Dirty Air (Frustration/Visibility)
+          if (vehicle.inDirtyAir) {
+              recoveryRate -= 1.0 * dt;
+          }
+          
+          // Apply Change
+          vehicle.concentration += recoveryRate;
+          
+          // Clamp Concentration
+          vehicle.concentration = Math.max(0, Math.min(100, vehicle.concentration));
+      });
   }
 
   private updateSafetyCar(state: RaceState, track: Track, dt: number): void {
@@ -240,6 +286,16 @@ export class RaceLogicSystem {
           let risk = 0.00001 * dt; 
 
           // 2. Situational Multipliers
+          
+          // CONCENTRATION IMPACT (New)
+          // Low concentration increases risk exponentially
+          // 100 -> 1x
+          // 50 -> 2x
+          // 20 -> 5x
+          // 0 -> 10x
+          const concentrationFactor = 1.0 + (100 - vehicle.concentration) / 10.0;
+          risk *= concentrationFactor;
+
           // Battling is dangerous
           if (vehicle.isBattling) {
               risk *= 4;
@@ -342,8 +398,10 @@ export class RaceLogicSystem {
       }
   }
 
-  private handlePitStopLogic(vehicle: VehicleState, state: RaceState, track: Track, dt: number): void {
+  private handlePitStopLogic(vehicle: VehicleState, state: RaceState, track: Track, dt: number, strategySystem: StrategySystem): void {
       if (!vehicle.isInPit) return;
+
+      const speedLimit = track.pitLane?.speedLimit ?? 22.2; // 80kph default
 
       // Initialize state if not present
       if (!this.pitStates.has(vehicle.id)) {
@@ -359,15 +417,35 @@ export class RaceLogicSystem {
               stopDuration += 10.0; // Significant time loss for repairs
           }
           
-          // 2. Lane Time (Fixed ~20s)
-          const laneTime = 20;
+          // 2. Lane Time Calculation
+          // Calculate track distance to cover (Entry -> Exit)
+          const entryDist = track.pitLane?.entryDistance ?? (track.totalDistance - 200);
+          const exitDist = track.pitLane?.exitDistance ?? 200;
+          
+          let laneTrackDist = 0;
+          if (exitDist < entryDist) {
+              laneTrackDist = (track.totalDistance - entryDist) + exitDist;
+          } else {
+              laneTrackDist = exitDist - entryDist;
+          }
+          
+          // Use provided stopTime as lane travel time, or calculate from speed limit
+          // stopTime in track data usually represents the "loss" or "time in lane".
+          // We treat it as the driving time component.
+          let laneTime = track.pitLane?.stopTime ?? (laneTrackDist / speedLimit);
+          
+          // Minimum safe duration
+          if (laneTime < 5) laneTime = 5;
+
           const totalDuration = laneTime + stopDuration;
           
           this.pitStates.set(vehicle.id, {
               timeLeft: totalDuration,
               totalDuration,
               stopDuration,
-              laneTime
+              laneTime,
+              entryDist,
+              laneTrackDist
           });
       }
       
@@ -378,23 +456,39 @@ export class RaceLogicSystem {
       const stopStart = pitState.laneTime / 2;
       const stopEnd = stopStart + pitState.stopDuration;
       
-      // Speed Logic: Slow in lane, 0 when stopped
-    if (timeElapsed < stopStart || timeElapsed > stopEnd) {
-        vehicle.speed = 22; // 80kph
-    } else {
-        vehicle.speed = 0;
-    }
+      // Calculate Absolute Progress Distance in Pit Lane
+      let progressDist = 0;
+      if (timeElapsed < stopStart) {
+          // Driving to box
+          progressDist = (timeElapsed / pitState.laneTime) * pitState.laneTrackDist;
+          vehicle.speed = speedLimit;
+      } else if (timeElapsed < stopEnd) {
+          // Stopped
+          progressDist = 0.5 * pitState.laneTrackDist; // Exactly halfway (or at stop point)
+          vehicle.speed = 0;
+      } else {
+          // Driving from box
+          const moveTime = timeElapsed - pitState.stopDuration;
+          progressDist = (moveTime / pitState.laneTime) * pitState.laneTrackDist;
+          vehicle.speed = speedLimit;
+      }
 
-    // UPDATE POSITION (Fix Teleporting)
-    // Even in pit, we must move the car distance-wise so it traverses the pit lane on the map
-    const distDelta = vehicle.speed * dt;
-    vehicle.distanceOnLap += distDelta;
-    vehicle.totalDistance += distDelta;
-    vehicle.currentLapTime += dt;
+      // Update Map Position
+      // Pos = Entry + Progress
+      let targetPos = pitState.entryDist + progressDist;
+      
+      // Handle Wrap
+      if (targetPos >= track.totalDistance) {
+          targetPos -= track.totalDistance;
+      }
 
-    // Lap Logic (Crossing Line in Pit)
-    if (vehicle.distanceOnLap >= track.totalDistance) {
-        vehicle.distanceOnLap -= track.totalDistance;
+      // Detect Wrap for Lap Count
+      const oldDist = vehicle.distanceOnLap;
+      vehicle.distanceOnLap = targetPos;
+
+      // Lap Logic (Crossing Line in Pit)
+      // Detect wrap: oldDist > 90% && targetPos < 10%
+      if (oldDist > (track.totalDistance * 0.9) && targetPos < (track.totalDistance * 0.1)) {
         vehicle.lapCount++;
         vehicle.lastLapTime = vehicle.currentLapTime;
         vehicle.currentLapTime = 0;
@@ -404,27 +498,33 @@ export class RaceLogicSystem {
         if (vehicle.position === 1) {
              state.currentLap = vehicle.lapCount;
         }
-    }
+      }
+      
+      // Update Odometer
+      if (vehicle.speed > 0) {
+        vehicle.totalDistance += (vehicle.speed * dt);
+      }
+      
+      vehicle.currentLapTime += dt;
     
     if (pitState.timeLeft <= 0) {
           // Pit Complete
           this.pitStates.delete(vehicle.id);
           vehicle.isInPit = false;
+          
+          // Snap to exit distance to avoid visual drift
+          if (track.pitLane) {
+              vehicle.distanceOnLap = track.pitLane.exitDistance;
+          }
+
+          vehicle.boxThisLap = false;
           vehicle.pitStopCount++;
           
           // Service Car
-          const rain = state.rainIntensityLevel;
-          if (rain > 60) vehicle.tyreCompound = 'wet';
-          else if (rain > 10) vehicle.tyreCompound = 'intermediate';
-          else {
-               // Dry Logic
-               const lapsLeft = state.totalLaps - state.currentLap;
-               if (lapsLeft < 15) vehicle.tyreCompound = 'soft';
-               else {
-                   const roll = this.rng.range(0, 100);
-                   if (roll < 50) vehicle.tyreCompound = 'medium';
-                   else vehicle.tyreCompound = 'hard';
-               }
+          vehicle.tyreCompound = strategySystem.getPitCompound(vehicle, state, track.totalLaps);
+          // Update Plan Progress
+          if (vehicle.strategyPlan) {
+              vehicle.strategyPlan.currentStintIndex++;
           }
           
           vehicle.tyreWear = 0;
@@ -441,25 +541,58 @@ export class RaceLogicSystem {
     });
     
     state.vehicles.forEach((v, i) => {
+        // Track position changes
+        v.lastPosition = v.position;
         v.position = i + 1;
-        // Calculate gap to leader
+
+        // Instant Morale Impact from Overtaking
+        if (v.position < v.lastPosition) {
+            // Overtook someone! (Position number decreased)
+            // Big Boost
+            v.morale = Math.min(100, v.morale + 10);
+            
+            // Concentration Hit (Excitement/Adrenaline spike can lower focus temporarily)
+            v.concentration = Math.max(0, v.concentration - 5);
+            
+        } else if (v.position > v.lastPosition) {
+            // Got Overtaken!
+            // Big Drop
+            v.morale = Math.max(0, v.morale - 10);
+            
+            // Concentration Hit (Stress/Panic)
+            v.concentration = Math.max(0, v.concentration - 10);
+        }
+
+        // Calculate gap to ahead (Leaderboard sense)
         if (i === 0) {
             v.gapToLeader = 0;
             v.gapToAhead = 0;
         } else {
-            const leader = state.vehicles[0];
-            // Approx time gap
-            // This is "Leaderboard Gap", not physical gap
-            const lapDiff = leader.lapCount - v.lapCount;
-            const distDiff = (leader.distanceOnLap - v.distanceOnLap) + (lapDiff * track.totalDistance);
-            const avgSpeed = (leader.speed + v.speed) / 2 || 60;
-            v.gapToLeader = distDiff / avgSpeed;
-            
-            // Gap to ahead (Leaderboard sense)
             const ahead = state.vehicles[i - 1];
-            const lapDiffAhead = ahead.lapCount - v.lapCount;
-            const distDiffAhead = (ahead.distanceOnLap - v.distanceOnLap) + (lapDiffAhead * track.totalDistance);
-            v.gapToAhead = distDiffAhead / avgSpeed;
+            
+            // Gap to Ahead = (Ahead Total Dist - My Total Dist) / My Speed
+            // Using Total Distance simplifies logic (handles laps automatically)
+            // Note: v.totalDistance is odometer. We should use "Race Distance" (Laps * TrackLen + CurrentDist)
+            // But v.totalDistance is physical distance driven. If they go off track, it might differ?
+            // Safer to recalculate "Race Distance"
+            const raceDist = (v.lapCount * track.totalDistance) + v.distanceOnLap;
+            const raceDistAhead = (ahead.lapCount * track.totalDistance) + ahead.distanceOnLap;
+            
+            const distDiffAhead = raceDistAhead - raceDist;
+            
+            // Use chasing car's speed (Time to catch)
+            // Fallback to 60m/s if stopped to avoid infinite gap
+            const speed = Math.max(v.speed, 20); 
+            v.gapToAhead = distDiffAhead / speed;
+            
+            // Gap to Leader = Sum of all gaps ahead? Or direct calc?
+            // Direct calc is cleaner:
+            const leader = state.vehicles[0];
+            const raceDistLeader = (leader.lapCount * track.totalDistance) + leader.distanceOnLap;
+            const distDiffLeader = raceDistLeader - raceDist;
+            
+            // Standard: Gap to leader is Time for ME to reach Leader's position
+            v.gapToLeader = distDiffLeader / speed;
         }
     });
   }

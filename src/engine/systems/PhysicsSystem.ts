@@ -1,5 +1,6 @@
-import { VehicleState, Driver, RaceState, Track } from '../../types';
+import { VehicleState, Driver, RaceState, Track, TyreCompound } from '../../types';
 import { SeededRNG } from '../rng';
+import { TyreModel } from './TyreModel';
 
 export class PhysicsSystem {
   private rng: SeededRNG;
@@ -9,6 +10,9 @@ export class PhysicsSystem {
   }
 
   public updateVehiclePhysics(vehicle: VehicleState, driver: Driver, state: RaceState, track: Track, dt: number): void {
+      // If in pit, PhysicsSystem yields control to RaceLogicSystem (which handles pit lane movement)
+      if (vehicle.isInPit) return;
+
       // 0. Calculate Grip based on Sector Conditions
       // Find current sector water depth
       const sectorCond = state.sectorConditions.find(s => s.sectorId === track.sectors[vehicle.currentSector - 1]?.id);
@@ -22,13 +26,24 @@ export class PhysicsSystem {
       targetSpeed *= gripFactor;
       
       // START CHAOS: First Lap Uncertainty
+      // Concentration affects this heavily now.
       if (state.currentLap === 1 && vehicle.distanceOnLap < 2000) {
           // Higher variance/instability in first sector
-          const chaos = this.rng.range(0.95, 1.05); // Reduced from 0.85-1.10 to 0.95-1.05
+          
+          // Concentration Effect: Lower concentration = more chaos (instability)
+          // 100 conc -> 0.98-1.02 (tight)
+          // 50 conc -> 0.90-1.10 (loose)
+          const instability = 0.02 + ((100 - vehicle.concentration) / 100) * 0.1;
+          
+          const chaos = this.rng.range(1.0 - instability, 1.0 + instability);
           
           // "Check up" logic: If very close to car ahead, chance to check up hard
           // Reduced probability (0.05 -> 0.01) and severity (0.7 -> 0.9) to prevent leader getaway
-          if (vehicle.position > 1 && vehicle.gapToAhead < 0.4 && this.rng.chance(0.01)) {
+          // BUT: Low concentration increases check-up chance!
+          let checkUpChance = 0.01;
+          if (vehicle.concentration < 50) checkUpChance = 0.05; // Nervous driver
+          
+          if (vehicle.position > 1 && vehicle.gapToAhead < 0.4 && this.rng.chance(checkUpChance)) {
                targetSpeed *= 0.9; // Mild check up
           } else {
                targetSpeed *= chaos;
@@ -94,7 +109,19 @@ export class PhysicsSystem {
           });
       }
 
-      // 4. Lap Logic
+      // 4. Pit Entry Logic (Before Lap Logic to handle wrap-around)
+      if (vehicle.boxThisLap && track.pitLane) {
+          const entryDist = track.pitLane.entryDistance;
+          // Check if we have crossed the entry line WITHIN A REASONABLE WINDOW
+          // We don't want to "teleport" back to the pit if we decided to box late (after passing entry).
+          // If we missed the window, we must wait for the next lap.
+          // Window: [Entry, Entry + 50m]
+          if (vehicle.distanceOnLap >= entryDist && vehicle.distanceOnLap < (entryDist + 50)) {
+             vehicle.isInPit = true;
+          }
+      }
+
+      // 5. Lap Logic
       if (vehicle.distanceOnLap >= track.totalDistance) {
         vehicle.distanceOnLap -= track.totalDistance;
         vehicle.lapCount++;
@@ -122,7 +149,7 @@ export class PhysicsSystem {
         }
       }
       
-      // 5. Update Sector
+      // 6. Update Sector
       const currentSectorIndex = track.sectors.findIndex(
         s => vehicle.distanceOnLap >= s.startDistance && vehicle.distanceOnLap < s.endDistance
       );
@@ -130,8 +157,8 @@ export class PhysicsSystem {
         vehicle.currentSector = currentSectorIndex + 1;
       }
 
-      // 6. Resource Consumption
-      this.updateResources(vehicle, dt);
+      // 7. Resource Consumption
+      this.updateResources(vehicle, dt, track);
   }
 
   private calculateTargetSpeed(vehicle: VehicleState, driver: Driver, state: RaceState, track: Track): number {
@@ -177,15 +204,23 @@ export class PhysicsSystem {
             case 'corner_low_speed': perfScore = driver.performance.corneringLow; break;
         }
         // Impact: 90 is neutral. Range 70-100.
-        // 100 -> +1.0% speed. 70 -> -2% speed.
-        // Formula: 1 + (score - 90) * 0.001
-        speed *= (1 + (perfScore - 90) * 0.001);
+        // 100 -> +0.5% speed. 70 -> -1% speed.
+        // Formula: 1 + (score - 90) * 0.0005 (Reduced from 0.001 to tighten field)
+        speed *= (1 + (perfScore - 90) * 0.0005);
     }
     
     // Apply Base Pace (Global Speed Factor)
     // 88.0 is standard. Lower is faster.
-    // Dampened factor: 0.2% per point difference to compress field
-    speed *= (1 + (88.0 - driver.basePace) * 0.002);
+    // Dampened factor: 0.08% per point difference to compress field (Reduced from 0.2%)
+    speed *= (1 + (88.0 - driver.basePace) * 0.0008);
+
+    // Apply Morale System (Dynamic Performance)
+    // Morale: 0-100, Base 80.
+    // High Morale (100) -> +1% speed
+    // Low Morale (0) -> -4% speed
+    const morale = vehicle.morale !== undefined ? vehicle.morale : 80;
+    const moraleEffect = (morale - 80) * 0.0005;
+    speed *= (1 + moraleEffect);
 
     // Apply Day Form Condition
     // e.g., 1.02 -> 2% faster base speed
@@ -231,12 +266,10 @@ export class PhysicsSystem {
     speed *= (1 - difficultyPenalty);
     
     // Multipliers
-    // Tyre Wear: 0-100. 100% wear = significant slow down
-    // Quadratic degradation: wear^2 impact
-    // 100% wear = 5% slower (approx 4.5s lost per lap)
-    const wearRatio = vehicle.tyreWear / 100;
-    const wearFactor = wearRatio * wearRatio; 
-    speed *= (1 - (wearFactor * 0.05));
+    // Tyre Wear: 0-100.
+    // Use the sophisticated TyreModel grip factor (dry grip only here, weather handled separately)
+    const gripFactor = TyreModel.getGripFactor(vehicle.tyreCompound as TyreCompound, vehicle.tyreWear, 0);
+    speed *= gripFactor;
 
     // Fuel: lighter is faster
     // 100kg -> 0kg. 0.3s per 10kg => 3s per 100kg.
@@ -598,23 +631,17 @@ export class PhysicsSystem {
       return Math.max(0.1, baseGrip); // Safety floor
   }
 
-  private updateResources(vehicle: VehicleState, dt: number): void {
+  private updateResources(vehicle: VehicleState, dt: number, track: Track): void {
     // Tyre wear
-    // Base wear per second
-    // Softs wear faster than hards.
-    let baseWearRate = 0.05; // % per second
+    // Use the sophisticated TyreModel
+    const wearRate = TyreModel.getWearRate(
+        vehicle.tyreCompound as TyreCompound,
+        track,
+        vehicle.paceMode,
+        vehicle.tyreWear
+    );
     
-    switch(vehicle.tyreCompound) {
-        case 'soft': baseWearRate = 0.08; break;
-        case 'medium': baseWearRate = 0.05; break;
-        case 'hard': baseWearRate = 0.03; break;
-        case 'wet': baseWearRate = 0.04; break;
-    }
-
-    if (vehicle.paceMode === 'aggressive') baseWearRate *= 1.3;
-    if (vehicle.paceMode === 'conservative') baseWearRate *= 0.7;
-    
-    vehicle.tyreWear += baseWearRate * dt;
+    vehicle.tyreWear += wearRate * dt;
     if (vehicle.tyreWear > 100) vehicle.tyreWear = 100;
 
     // Fuel burn

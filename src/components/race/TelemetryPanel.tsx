@@ -8,7 +8,7 @@ interface TelemetryPanelProps {
 }
 
 export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => {
-  const [activeTab, setActiveTab] = useState<'weather' | 'speed'>('weather');
+  const [activeTab, setActiveTab] = useState<'weather' | 'speed' | 'psychology'>('weather');
   const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>([]);
 
   // Default to leader if no drivers selected
@@ -102,6 +102,12 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                 className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'speed' ? 'bg-[#444] text-white' : 'text-gray-400 hover:text-gray-200'}`}
             >
                 SPEED
+            </button>
+            <button 
+                onClick={() => setActiveTab('psychology')}
+                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'psychology' ? 'bg-[#444] text-white' : 'text-gray-400 hover:text-gray-200'}`}
+            >
+                PSYCHOLOGY
             </button>
         </div>
       </div>
@@ -220,6 +226,82 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                             })}
                         </LineChart>
                     </ResponsiveContainer>
+                  </div>
+              </div>
+          )}
+
+          {activeTab === 'psychology' && (
+              <div className="flex flex-col gap-4 h-full">
+                  <div className="flex-1 min-h-0 bg-[#1e1e1e] rounded p-2 border border-[#333]">
+                      <h4 className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Driver Morale (0-100)</h4>
+                      <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                              <XAxis dataKey="name" type="category" allowDuplicatedCategory={false} stroke="#666" fontSize={10} hide />
+                              <YAxis domain={[0, 100]} stroke="#666" fontSize={10} />
+                              <Tooltip 
+                                  contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }}
+                                  labelStyle={{ color: '#888' }}
+                              />
+                              <Legend />
+                              {/* Using Bar chart for current state comparison across drivers might be better, 
+                                  but we want to see trends? 
+                                  Since we don't have historical morale trace yet, let's show current values as Bars */}
+                              <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                              <YAxis type="number" domain={[0, 100]} hide />
+                              <XAxis type="category" dataKey="name" hide />
+                          </ComposedChart>
+                      </ResponsiveContainer>
+                      
+                      {/* Alternative: Simple Bar Visuals for selected drivers */}
+                      <div className="flex flex-col gap-2 overflow-y-auto h-full p-2">
+                        {activeDriverIds.map(id => {
+                            const vehicle = raceState.vehicles.find(v => v.id === id);
+                            const driver = DRIVERS.find(d => d.id === id);
+                            if (!vehicle || !driver) return null;
+                            
+                            const morale = vehicle.morale || 0;
+                            const concentration = vehicle.concentration !== undefined ? vehicle.concentration : 100;
+                            
+                            return (
+                                <div key={id} className="flex flex-col gap-1 mb-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span style={{ color: driver.color }}>{driver.name}</span>
+                                    </div>
+                                    
+                                    {/* Morale Bar */}
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] w-16 text-gray-400">Morale</span>
+                                        <div className="flex-1 h-2 bg-gray-800 rounded overflow-hidden">
+                                            <div 
+                                                className="h-full transition-all duration-300"
+                                                style={{ 
+                                                    width: `${morale}%`, 
+                                                    backgroundColor: morale > 80 ? '#4ade80' : morale < 50 ? '#ef4444' : '#fbbf24'
+                                                }}
+                                            />
+                                        </div>
+                                        <span className="text-[10px] w-6 text-right">{Math.round(morale)}</span>
+                                    </div>
+
+                                    {/* Concentration Bar */}
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] w-16 text-gray-400">Focus</span>
+                                        <div className="flex-1 h-2 bg-gray-800 rounded overflow-hidden">
+                                            <div 
+                                                className="h-full transition-all duration-300"
+                                                style={{ 
+                                                    width: `${concentration}%`, 
+                                                    backgroundColor: concentration > 80 ? '#3b82f6' : concentration < 50 ? '#f97316' : '#60a5fa'
+                                                }}
+                                            />
+                                        </div>
+                                        <span className="text-[10px] w-6 text-right">{Math.round(concentration)}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                      </div>
                   </div>
               </div>
           )}
