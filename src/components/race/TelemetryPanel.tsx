@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RaceState } from '../../types';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, ComposedChart, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, ComposedChart, Legend, Bar } from 'recharts';
 import { DRIVERS } from '../../data/initialData';
 
 interface TelemetryPanelProps {
@@ -232,29 +232,11 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
 
           {activeTab === 'psychology' && (
               <div className="flex flex-col gap-4 h-full">
-                  <div className="flex-1 min-h-0 bg-[#1e1e1e] rounded p-2 border border-[#333]">
-                      <h4 className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Driver Morale (0-100)</h4>
-                      <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                              <XAxis dataKey="name" type="category" allowDuplicatedCategory={false} stroke="#666" fontSize={10} hide />
-                              <YAxis domain={[0, 100]} stroke="#666" fontSize={10} />
-                              <Tooltip 
-                                  contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }}
-                                  labelStyle={{ color: '#888' }}
-                              />
-                              <Legend />
-                              {/* Using Bar chart for current state comparison across drivers might be better, 
-                                  but we want to see trends? 
-                                  Since we don't have historical morale trace yet, let's show current values as Bars */}
-                              <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                              <YAxis type="number" domain={[0, 100]} hide />
-                              <XAxis type="category" dataKey="name" hide />
-                          </ComposedChart>
-                      </ResponsiveContainer>
-                      
-                      {/* Alternative: Simple Bar Visuals for selected drivers */}
-                      <div className="flex flex-col gap-2 overflow-y-auto h-full p-2">
+                  {/* Top Section: Detailed Bars for Selected Drivers */}
+                  <div className="flex-1 min-h-0 bg-[#1e1e1e] rounded p-4 border border-[#333] overflow-y-auto">
+                        <h4 className="text-sm text-gray-300 mb-4 uppercase tracking-wider font-semibold border-b border-gray-700 pb-2">Driver Focus & Morale</h4>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {activeDriverIds.map(id => {
                             const vehicle = raceState.vehicles.find(v => v.id === id);
                             const driver = DRIVERS.find(d => d.id === id);
@@ -264,15 +246,19 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                             const concentration = vehicle.concentration !== undefined ? vehicle.concentration : 100;
                             
                             return (
-                                <div key={id} className="flex flex-col gap-1 mb-2">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span style={{ color: driver.color }}>{driver.name}</span>
+                                <div key={id} className="bg-[#2a2a2a] p-3 rounded border border-[#444]">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="font-bold text-sm" style={{ color: driver.color }}>{driver.name}</span>
+                                        <span className="text-xs text-gray-500">#{vehicle.position}</span>
                                     </div>
                                     
                                     {/* Morale Bar */}
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] w-16 text-gray-400">Morale</span>
-                                        <div className="flex-1 h-2 bg-gray-800 rounded overflow-hidden">
+                                    <div className="mb-3">
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-gray-400">Confidence</span>
+                                            <span className="text-gray-300">{Math.round(morale)}%</span>
+                                        </div>
+                                        <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
                                             <div 
                                                 className="h-full transition-all duration-300"
                                                 style={{ 
@@ -281,13 +267,15 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                                                 }}
                                             />
                                         </div>
-                                        <span className="text-[10px] w-6 text-right">{Math.round(morale)}</span>
                                     </div>
 
                                     {/* Concentration Bar */}
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] w-16 text-gray-400">Focus</span>
-                                        <div className="flex-1 h-2 bg-gray-800 rounded overflow-hidden">
+                                    <div>
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-gray-400">Focus</span>
+                                            <span className="text-gray-300">{Math.round(concentration)}%</span>
+                                        </div>
+                                        <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
                                             <div 
                                                 className="h-full transition-all duration-300"
                                                 style={{ 
@@ -296,15 +284,42 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => 
                                                 }}
                                             />
                                         </div>
-                                        <span className="text-[10px] w-6 text-right">{Math.round(concentration)}</span>
                                     </div>
                                 </div>
                             );
                         })}
-                      </div>
+                        </div>
                   </div>
-              </div>
-          )}
+
+                  {/* Bottom Section: Chart (Optional or hidden if redundant) */}
+                  {/* Keeping chart small at bottom or removing it? Let's keep it but smaller */}
+                  <div className="h-1/3 min-h-[150px] bg-[#1e1e1e] rounded p-2 border border-[#333]">
+                       <h4 className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Field Overview</h4>
+                       <ResponsiveContainer width="100%" height="100%">
+                           <ComposedChart data={activeDriverIds.map(id => {
+                               const v = raceState.vehicles.find(v => v.id === id);
+                               const d = DRIVERS.find(d => d.id === id);
+                               return {
+                                   name: d?.name || id,
+                                   morale: v?.morale || 0,
+                                   concentration: v?.concentration || 0
+                               };
+                           })}>
+                               <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                               <XAxis dataKey="name" stroke="#666" fontSize={10} />
+                               <YAxis domain={[0, 100]} stroke="#666" fontSize={10} />
+                               <Tooltip 
+                                   contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }}
+                                   labelStyle={{ color: '#888' }}
+                               />
+                               <Legend />
+                               <Bar dataKey="morale" fill="#4ade80" name="Morale" barSize={20} />
+                               <Bar dataKey="concentration" fill="#3b82f6" name="Focus" barSize={20} />
+                           </ComposedChart>
+                       </ResponsiveContainer>
+                  </div>
+               </div>
+           )}
       </div>
     </div>
   );

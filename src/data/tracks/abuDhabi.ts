@@ -62,6 +62,6 @@ export const ABU_DHABI: Track = {
     entryDistance: 4800,
     exitDistance: 350, // Tunnel exit into T2
     speedLimit: 22.2, // 80 km/h
-    stopTime: 21.0
+    stopTime: 30.0
   }
 };

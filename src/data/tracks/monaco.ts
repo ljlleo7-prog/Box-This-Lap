@@ -69,6 +69,6 @@ export const MONACO: Track = {
     entryDistance: 3200, // Rascasse
     exitDistance: 200, // Sainte Devote
     speedLimit: 16.6, // 60 km/h
-    stopTime: 23.0
+    stopTime: 25.0
   }
 };

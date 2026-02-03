@@ -49,6 +49,6 @@ export const BAHRAIN: Track = {
         entryDistance: 5300,
         exitDistance: 350,
         speedLimit: 22.2, // 80 km/h
-        stopTime: 22
+        stopTime: 28
     }
 };

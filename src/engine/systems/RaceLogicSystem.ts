@@ -5,6 +5,7 @@ import { StrategySystem } from './StrategySystem';
 export class RaceLogicSystem {
   private rng: SeededRNG;
   private safetyCarTimer: number = 0;
+  private pendingSafetyCar: { type: 'sc' | 'vsc' | 'red-flag', timer: number } | null = null;
   // Pit Stop State (id -> { timeLeft, totalDuration, stopDuration, laneTime, entryDist, laneTrackDist })
   private pitStates: Map<string, { 
       timeLeft: number, 
@@ -137,6 +138,7 @@ export class RaceLogicSystem {
       airTemp: 20,
       rubberLevel: 50,
       sectorConditions,
+      sectorFlags: [],
       trackWaterDepth: 0, // Global average
       safetyCar: 'none',
       vehicles,
@@ -153,6 +155,12 @@ export class RaceLogicSystem {
       
       // Update each vehicle's race logic
       state.vehicles.forEach(vehicle => {
+          // Skip DNF cars for performance and safety
+          if (vehicle.damage >= 100) {
+              vehicle.speed = 0;
+              return;
+          }
+
           this.handlePitStopLogic(vehicle, state, track, dt, strategySystem);
           this.updateDRS(vehicle, state, track);
           this.attemptOvertake(vehicle, state, track, drivers);
@@ -165,56 +173,110 @@ export class RaceLogicSystem {
   }
 
   private updateMoraleAndConcentration(state: RaceState, dt: number): void {
-      state.vehicles.forEach(vehicle => {
-          // --- MORALE LOGIC ---
-          // 1. Natural Decay/Recovery towards Baseline (80)
-          const baselineMorale = 80;
-          const diffMorale = baselineMorale - vehicle.morale;
-          vehicle.morale += diffMorale * 0.01 * dt;
+       state.vehicles.forEach(vehicle => {
+           // --- MORALE LOGIC ---
+           const baselineMorale = 80;
+           let moraleTarget = baselineMorale;
+           let moraleChangeRate = 0.01;
 
-          // 2. Situational Effects on Morale
-          if (vehicle.inDirtyAir) vehicle.morale -= 0.5 * dt;
-          if (vehicle.gapToAhead < 0.5 && vehicle.position > 1) vehicle.morale += 0.2 * dt;
+           // SC / VSC Bonus for Morale (Reset mental state)
+           if (state.safetyCar !== 'none') {
+               moraleTarget = 90; // Drift towards higher baseline
+               moraleChangeRate = 0.05; // Faster recovery
+           }
 
-          // Clamp Morale
-          vehicle.morale = Math.max(0, Math.min(100, vehicle.morale));
-          
-          
-          // --- CONCENTRATION LOGIC ---
-          // Base Recovery Rate (Drivers naturally regain focus)
-          // Takes about 10-20s to recover full focus from a drop
-          let recoveryRate = 5.0 * dt; 
-          
-          // Situational Drains
-          
-          // 1. Start Chaos (First Lap, Sector 1) - Massive Drain
-          if (state.currentLap === 1 && vehicle.currentSector === 1) {
-              // High traffic stress
-              // Drain depends on traffic density (neighbors)
-              // But simple approximation: constant drain + random noise
-              recoveryRate = -10.0 * dt; // Net loss of 10/s
-          }
-          
-          // 2. Battling (High focus demand, mental fatigue or simply "using" focus)
-          // Actually, battling consumes concentration capacity.
-          if (vehicle.isBattling) {
-              recoveryRate -= 2.0 * dt;
-          }
-          
-          // 3. Dirty Air (Frustration/Visibility)
-          if (vehicle.inDirtyAir) {
-              recoveryRate -= 1.0 * dt;
-          }
-          
-          // Apply Change
-          vehicle.concentration += recoveryRate;
-          
-          // Clamp Concentration
-          vehicle.concentration = Math.max(0, Math.min(100, vehicle.concentration));
-      });
-  }
+           // 1. Natural Decay/Recovery
+           const diffMorale = moraleTarget - vehicle.morale;
+           vehicle.morale += diffMorale * moraleChangeRate * dt;
+
+           // 2. Situational Effects on Morale (Only during racing)
+           if (state.safetyCar === 'none') {
+               if (vehicle.inDirtyAir) vehicle.morale -= 0.5 * dt;
+               if (vehicle.gapToAhead < 0.5 && vehicle.position > 1) vehicle.morale += 0.2 * dt;
+           }
+
+           // Clamp Morale
+           vehicle.morale = Math.max(0, Math.min(100, vehicle.morale));
+           
+           
+           // --- CONCENTRATION LOGIC ---
+           // Slower dynamics for realism
+           let baseRecovery = 1.5 * dt; // Base recovery: ~1.5%/s (approx 60s to full recover)
+           let currentDrain = 0;
+
+           if (state.safetyCar !== 'none') {
+               // Safety Car / VSC: Moderate Recovery
+               baseRecovery = 5.0 * dt; 
+               currentDrain = 0;
+           } else {
+               // Racing Logic
+               
+               // 1. Start Chaos (First Lap, Sector 1)
+               if (state.currentLap === 1 && vehicle.currentSector === 1) {
+                   currentDrain += 5.0 * dt; // High drain, but manageable
+               }
+
+               // 2. Battling vs Proximity
+               if (vehicle.isBattling) {
+                   // Active fighting
+                   currentDrain += 2.0 * dt; 
+               } else if (vehicle.position > 1 && vehicle.gapToAhead < 1.5) {
+                   // Proximity Stress (DRS Train)
+                   const proximity = Math.max(0, 1.5 - vehicle.gapToAhead) / 1.5;
+                   currentDrain += (proximity * 2.5) * dt;
+               }
+
+               // 3. Dirty Air (Frustration)
+               if (vehicle.inDirtyAir) {
+                   currentDrain += 1.0 * dt; 
+               }
+
+               // 4. Tyre State (New)
+               // Old tyres require more mental capacity to manage grip
+               if (vehicle.tyreWear > 50) {
+                   const tyreStress = (vehicle.tyreWear - 50) / 50; // 0 to 1
+                   currentDrain += tyreStress * 1.5 * dt;
+               }
+
+               // 5. Weather (New)
+               // Wet conditions are mentally taxing
+               if (state.weather !== 'dry') {
+                   currentDrain += 1.0 * dt;
+               }
+           }
+           
+           // Apply Net Change
+           vehicle.concentration += (baseRecovery - currentDrain);
+           
+           // Clamp Concentration
+           vehicle.concentration = Math.max(0, Math.min(100, vehicle.concentration));
+       });
+   }
 
   private updateSafetyCar(state: RaceState, track: Track, dt: number): void {
+    // Handle Pending Safety Car (Yellow Flag Phase)
+    if (this.pendingSafetyCar) {
+        this.pendingSafetyCar.timer -= dt;
+        if (this.pendingSafetyCar.timer <= 0) {
+            // Deploy SC/VSC/Red Flag
+            state.safetyCar = this.pendingSafetyCar.type;
+            
+            // Set duration based on type
+            if (state.safetyCar === 'red-flag') {
+                 this.safetyCarTimer = this.rng.range(15, 45);
+            } else if (state.safetyCar === 'sc') {
+                this.safetyCarTimer = this.rng.range(180, 400);
+            } else if (state.safetyCar === 'vsc') {
+                this.safetyCarTimer = this.rng.range(45, 120);
+            }
+
+            // Clear pending and flags
+            this.pendingSafetyCar = null;
+            state.sectorFlags = [];
+        }
+        return;
+    }
+
     if (state.safetyCar === 'none') return;
 
     this.safetyCarTimer -= dt;
@@ -228,7 +290,19 @@ export class RaceLogicSystem {
   }
 
   private performRedFlagRestart(state: RaceState, track: Track): void {
-      // Sort active vehicles by position
+      // 1. Handle DNF/Retired Cars
+      // Move them to the pits/garage so they don't block the track or appear at crash site
+      const retiredVehicles = state.vehicles.filter(v => v.damage >= 100 || v.hasFinished);
+      retiredVehicles.forEach(v => {
+          v.speed = 0;
+          v.isInPit = true;
+          // Place them at pit entry or "garage" location to hide them from track view
+          v.distanceOnLap = track.pitLane?.entryDistance || track.totalDistance; 
+          v.gapToLeader = 0;
+          v.gapToAhead = 0;
+      });
+
+      // 2. Sort active vehicles by position
       const activeVehicles = state.vehicles
           .filter(v => v.damage < 100 && !v.hasFinished)
           .sort((a, b) => a.position - b.position);
@@ -269,8 +343,8 @@ export class RaceLogicSystem {
   }
 
   private checkIncidents(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number): void {
-      if (state.safetyCar !== 'none' || state.status !== 'racing') return;
-      if (state.currentLap < 2) return; // No incidents on lap 1 for now
+      if (state.safetyCar !== 'none' || this.pendingSafetyCar || state.status !== 'racing') return;
+      // Removed L1 check to allow Lap 1 chaos
 
       // Bottom-up Incident Logic: Check each driver's risk
       const activeVehicles = state.vehicles.filter(v => v.damage < 100 && !v.hasFinished);
@@ -280,10 +354,23 @@ export class RaceLogicSystem {
           if (!driver) continue;
 
           // 1. Base Probability (Time-based)
-          // Target: ~1-2 incidents per race (90 mins) across 20 cars.
+          // Target: ~1.5 incidents per race (90 mins) across 20 cars.
           // Base rate per car approx 1 incident per 15-20 hours of driving.
-          // 1 / 60000 per second
-          let risk = 0.00001 * dt; 
+          // Reduced significantly to meet target
+          let risk = 0.000002 * dt; 
+
+          // LAP 1 SPECIAL LOGIC
+          if (state.currentLap === 1) {
+              if (vehicle.currentSector === 1) {
+                  // Turn 1 Chaos!
+                  // Extremely high risk if battling or bunched up
+                  // Risk * 15 means ~0.03% chance per second (reduced from 50x to prevent guaranteed chaos)
+                  risk *= 15;
+              } else {
+                  // Rest of Lap 1
+                  risk *= 2;
+              }
+          }
 
           // 2. Situational Multipliers
           
@@ -352,6 +439,45 @@ export class RaceLogicSystem {
                // Now decide severity based on context
                let severityScore = 0; // 0-100
 
+               // Multi-Car Collision Check
+               let victim: VehicleState | null = null;
+               const myIdx = state.vehicles.findIndex(v => v.id === vehicle.id);
+               
+               // Check Ahead
+               if (myIdx > 0) {
+                   const ahead = state.vehicles[myIdx - 1];
+                   // 0.6s gap is close enough for collision
+                   if (ahead.damage < 100 && vehicle.gapToAhead < 0.6) { 
+                       if (this.rng.chance(0.4)) victim = ahead;
+                   }
+               }
+               
+               // Check Behind (if not already hit ahead)
+               if (!victim && myIdx < state.vehicles.length - 1) {
+                   const behind = state.vehicles[myIdx + 1];
+                   // Check if they are close to us (their gapToAhead is small)
+                   if (behind.damage < 100 && behind.gapToAhead < 0.6) { 
+                       if (this.rng.chance(0.4)) victim = behind;
+                   }
+               }
+
+               if (victim) {
+                   severityScore += 30; // Collision increases severity significantly
+                   
+                   // Damage Victim
+                   const victimDamage = this.rng.range(20, 100);
+                   victim.damage += victimDamage;
+                   if (victim.damage >= 100) {
+                       victim.speed = 0; // DNF
+                       victim.damage = 100; // Ensure DNF state
+                   } else {
+                       // Victim spun/slowed
+                       victim.speed *= 0.5;
+                   }
+                   // Morale hit
+                   victim.morale = Math.max(0, victim.morale - 30);
+               }
+
                // Speed factor (High speed = worse crash)
                if (vehicle.speed > 60) severityScore += 40; // > 216kph
                if (vehicle.speed > 80) severityScore += 20; // > 288kph
@@ -366,19 +492,26 @@ export class RaceLogicSystem {
                // Random chaos
                severityScore += this.rng.range(0, 30);
 
-               // Determine Flag
+               // Determine Flag and apply Immediate Consequences
+               // Note: We use pendingSafetyCar to simulate the delay between incident and SC deployment
+               // During this time, sector flags are yellow.
+               
+               const sectorIdx = Math.max(0, vehicle.currentSector - 1);
+               if (!state.sectorFlags.includes(sectorIdx)) {
+                   state.sectorFlags.push(sectorIdx);
+               }
+
                if (severityScore > 80) {
                    // Major Crash -> Red Flag
-                   state.safetyCar = 'red-flag';
-                   this.safetyCarTimer = this.rng.range(15, 45);
+                   this.pendingSafetyCar = { type: 'red-flag', timer: 10 }; // 10s delay
                    vehicle.damage = 100; // DNF
                    vehicle.speed = 0;
                } else if (severityScore > 50) {
                    // Crash -> Safety Car
-                   state.safetyCar = 'sc';
-                   this.safetyCarTimer = this.rng.range(180, 400); // 3-6 mins
+                   this.pendingSafetyCar = { type: 'sc', timer: 15 }; // 15s delay
                    
-                   if (this.rng.chance(0.7)) {
+                   // Increased DNF probability for incidents (90%)
+                   if (this.rng.chance(0.9)) {
                        vehicle.damage = 100; // DNF
                        vehicle.speed = 0;
                    } else {
@@ -386,8 +519,7 @@ export class RaceLogicSystem {
                    }
                } else {
                    // Spin / Minor -> VSC
-                   state.safetyCar = 'vsc';
-                   this.safetyCarTimer = this.rng.range(45, 120);
+                   this.pendingSafetyCar = { type: 'vsc', timer: 10 }; // 10s delay
                    vehicle.damage += this.rng.range(5, 20); // Wing damage
                    vehicle.speed *= 0.3; // Slow down from spin
                }
@@ -429,10 +561,9 @@ export class RaceLogicSystem {
               laneTrackDist = exitDist - entryDist;
           }
           
-          // Use provided stopTime as lane travel time, or calculate from speed limit
-          // stopTime in track data usually represents the "loss" or "time in lane".
-          // We treat it as the driving time component.
-          let laneTime = track.pitLane?.stopTime ?? (laneTrackDist / speedLimit);
+          // Use physics-based calculation for lane travel time (Distance / Speed Limit)
+          // We ignore the hardcoded 'stopTime' from track config to ensure realistic 80km/h penalty
+          let laneTime = laneTrackDist / speedLimit;
           
           // Minimum safe duration
           if (laneTime < 5) laneTime = 5;
@@ -506,6 +637,22 @@ export class RaceLogicSystem {
       }
       
       vehicle.currentLapTime += dt;
+
+      // TELEMETRY RECORDING (PIT LANE)
+      // Force recording in pit to show speed limit compliance
+      const trace = vehicle.telemetry.currentLapSpeedTrace;
+      const lastPoint = trace.length > 0 ? trace[trace.length - 1] : null;
+      
+      // Record if distance changed by > 10m (higher resolution for pit) or speed changed significantly
+      if (!lastPoint || 
+          (vehicle.distanceOnLap - lastPoint.distance > 10) || 
+          Math.abs(vehicle.speed - lastPoint.speed) > 1.0) {
+          
+          trace.push({
+              distance: vehicle.distanceOnLap,
+              speed: vehicle.speed
+          });
+      }
     
     if (pitState.timeLeft <= 0) {
           // Pit Complete
@@ -546,6 +693,9 @@ export class RaceLogicSystem {
         v.position = i + 1;
 
         // Instant Morale Impact from Overtaking
+        // Skip if in pit (Strategic position loss shouldn't affect confidence)
+        if (v.isInPit) return;
+
         if (v.position < v.lastPosition) {
             // Overtook someone! (Position number decreased)
             // Big Boost
@@ -673,6 +823,20 @@ export class RaceLogicSystem {
   }
 
   private attemptOvertake(attacker: VehicleState, state: RaceState, track: Track, drivers: Map<string, Driver>): void {
+      // 0. SAFETY CHECK: NO OVERTAKING UNDER SAFETY CAR / VSC
+      if (state.safetyCar !== 'none') return;
+
+      // 0.1 YELLOW FLAG CHECK: No overtaking in yellow sectors
+      const currentSectorIdx = attacker.currentSector - 1;
+      if (state.sectorFlags && state.sectorFlags.includes(currentSectorIdx)) return;
+
+      // LAP 1 SECTOR 1 RESTRICTION (Congestion)
+      if (state.currentLap === 1 && attacker.currentSector === 1) {
+          // "There are no space for so many moves"
+          // Reduce chance by 90%
+          if (!this.rng.chance(0.1)) return; 
+      }
+
       // Only attempt if battling and not already ahead
       // We need to find the defender (car directly ahead)
       if (!attacker.isBattling || attacker.position === 1) return;
@@ -698,9 +862,9 @@ export class RaceLogicSystem {
       const tyreDelta = defender.tyreAgeLaps - attacker.tyreAgeLaps; // Positive if defender has older tyres
 
       // 5. Track Difficulty (Overtaking)
-      // High difficulty reduces score
+      // "Cars are wide": Increase penalty heavily for difficult tracks
       const overtakingDiff = track.overtakingDifficulty || 0.5;
-      const difficultyPenalty = overtakingDiff * 20; // 0-20 penalty
+      const difficultyPenalty = overtakingDiff * 40; // 0-40 penalty (Doubled from 20)
 
       // Base chance: 0% (hard to pass)
       // We check this every tick, so probability must be VERY low per tick.
@@ -708,7 +872,7 @@ export class RaceLogicSystem {
       if (attacker.gapToAhead > 0.2) return;
 
       // Calculate "Overtake Score" (0-100)
-      let score = 20; // Base difficulty
+      let score = 10; // Base difficulty (Reduced from 20)
       score += skillDelta * 0.5; // +5% for 10 skill diff
       score += speedDelta * 2; // +2% per m/s speed advantage
       score += drsBonus;
@@ -717,20 +881,21 @@ export class RaceLogicSystem {
 
       // Rookie Chance Floor (Randomness)
       
-      let probPerSecond = 0.2; // 20% base
-      probPerSecond += (score / 100) * 0.5; // Add up to 50% from score
+      let probPerSecond = 0.05; // 5% base (Reduced from 20%)
+      probPerSecond += (score / 100) * 0.4; // Add up to 40% from score
       
       // Let's normalize score to 0-1 probability
-      let successProb = Math.max(0.05, Math.min(0.95, probPerSecond));
+      let successProb = Math.max(0.01, Math.min(0.90, probPerSecond));
       
-      // Apply 30% "Anything can happen" noise
-      // 30% of the time, we ignore the skill/stats and flip a coin (50/50)
-      if (this.rng.chance(0.3)) {
+      // Apply "Anything can happen" noise - REDUCED
+      // 5% of the time (was 30%), we ignore stats.
+      if (this.rng.chance(0.05)) {
           successProb = 0.5; 
       }
 
       // Check for pass
-      const frameProb = successProb * 0.1; // approx for 100ms
+      // Assuming 10Hz tick roughly (0.1s)
+      const frameProb = successProb * 0.1; 
       
       if (this.rng.chance(frameProb)) {
           // SUCCESSFUL OVERTAKE MOVE

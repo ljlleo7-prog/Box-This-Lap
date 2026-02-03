@@ -56,6 +56,6 @@ export const SINGAPORE: Track = {
         entryDistance: 4850,
         exitDistance: 350,
         speedLimit: 16.6, // 60 km/h
-        stopTime: 29 // Very long pit loss
+        stopTime: 35 // Very long pit loss
     }
 };

@@ -35,6 +35,6 @@ export const MONZA: Track = {
         entryDistance: 4900,
         exitDistance: 500,
         speedLimit: 22.2,
-        stopTime: 24,
+        stopTime: 35,
     }
 };

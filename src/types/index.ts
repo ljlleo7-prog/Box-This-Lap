@@ -181,6 +181,7 @@ export interface RaceState {
   airTemp: number;
   rubberLevel: number; // 0-100%
   sectorConditions: SectorCondition[];
+  sectorFlags: number[]; // Indices of sectors under yellow flag
   trackWaterDepth: number; // Global average water depth (mm)
   safetyCar: SafetyCarStatus;
   vehicles: VehicleState[];

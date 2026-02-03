@@ -34,6 +34,6 @@ export const SPA: Track = {
         entryDistance: 5500,
         exitDistance: 250, // After La Source
         speedLimit: 22.2,
-        stopTime: 22,
+        stopTime: 47,
     }
 };

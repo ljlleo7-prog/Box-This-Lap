@@ -463,6 +463,18 @@ export class PhysicsSystem {
         const vscLimit = 44; // ~160kph
         // We also apply a 60% factor to cornering speeds to ensure safety, but cap at vscLimit
         speed = Math.min(speed * 0.7, vscLimit);
+
+        // ANTI-OVERTAKE (FORMATION KEEPING)
+        if (vehicle.position > 1 && vehicle.gapToAhead < 0.8) {
+             // Too close to car ahead. Limit speed to ensure we don't pass.
+             const ahead = state.vehicles.find(v => v.position === vehicle.position - 1);
+             if (ahead) {
+                 // Match speed of car ahead (minus slight buffer to restore gap)
+                 // If ahead is stopped (crash), we stop too.
+                 speed = Math.min(speed, ahead.speed * 0.95);
+             }
+        }
+
     } else if (state.safetyCar === 'sc') {
         // SC: Bunch up logic
         const scPace = 35; // ~126 kph base pace for SC
@@ -487,6 +499,17 @@ export class PhysicsSystem {
         
         // Ensure we don't exceed the physical track limit (corner speed)
         speed = Math.min(speed, scTarget);
+
+        // ANTI-OVERTAKE (FORMATION KEEPING) - CRITICAL FOR SC QUEUE
+        if (vehicle.position > 1 && vehicle.gapToAhead < 0.5) {
+             // We are dangerously close. STRICTLY LIMIT SPEED.
+             const ahead = state.vehicles.find(v => v.position === vehicle.position - 1);
+             if (ahead) {
+                 // Cap at ahead speed. If we are faster, we WILL pass, so we must be slower.
+                 // Factor 0.9 ensures we back off.
+                 speed = Math.min(speed, ahead.speed * 0.9);
+             }
+        }
     }
 
     return speed;

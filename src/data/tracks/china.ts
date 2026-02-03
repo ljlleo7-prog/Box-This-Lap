@@ -48,6 +48,6 @@ export const CHINA: Track = {
         entryDistance: 4800,
         exitDistance: 300,
         speedLimit: 22.2, // 80 km/h
-        stopTime: 24 // Long pit lane
+        stopTime: 36 // Long pit lane
     }
 };

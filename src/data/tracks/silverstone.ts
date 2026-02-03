@@ -56,9 +56,9 @@ export const SILVERSTONE: Track = {
         { detectionDistance: 3300, activationDistance: 3550, endDistance: 4300 } // Hangar Straight (after Chapel)
     ],
     pitLane: {
-      entryDistance: 4800, // Vale
-      exitDistance: 400, // Farm
-      speedLimit: 22.2, // 80 km/h
-      stopTime: 25,
-    },
+    entryDistance: 5700, // Vale (Closer to actual pit entry)
+    exitDistance: 400, // Farm
+    speedLimit: 22.2, // 80 km/h
+    stopTime: 37, // Adjusted for correct pit loss (~29s loss relative to track)
+  },
 };
