@@ -1,6 +1,7 @@
-import { RaceState, VehicleState, Track, Driver } from '../../types';
+import { RaceState, VehicleState, Track, Driver, TeamSpecs } from '../../types';
 import { SeededRNG } from '../rng';
 import { StrategySystem } from './StrategySystem';
+import { TYRE_COMPOUNDS } from './TyreModel';
 
 export class RaceLogicSystem {
   private rng: SeededRNG;
@@ -65,6 +66,10 @@ export class RaceLogicSystem {
       // Generate Strategy
       const strategyPlan = strategySystem.initializeStrategy(driver, track, track.totalLaps, initialRainIntensity / 100);
       const tyreCompound = strategyPlan.stints[0].compound;
+      const [minTemp, maxTemp] = TYRE_COMPOUNDS[tyreCompound].optimalTempWindow;
+      const optMid = (minTemp + maxTemp) / 2;
+      const ambient = track.baseTemperature || 25;
+      const startTemp = Math.max(20, Math.min(140, optMid + (ambient - 25) * 0.3));
 
       return {
         id: driver.id,
@@ -82,10 +87,13 @@ export class RaceLogicSystem {
         tyreCompound,
         tyreWear: 0,
         tyreAgeLaps: 0,
+        tyreTemp: startTemp,
         fuelLoad: 100, // kg
         ersLevel: 100,
+        ersRecoveredThisLap: 0,
         ersMode: 'balanced',
         paceMode: 'balanced',
+        lineMode: 'balanced',
         
         condition, // Initialized condition
         damage: 0,
@@ -149,9 +157,9 @@ export class RaceLogicSystem {
     };
   }
 
-  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, strategySystem: StrategySystem): void {
+  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, strategySystem: StrategySystem, teamSpecsByTeam: Record<string, TeamSpecs> = {}): void {
       this.updateSafetyCar(state, track, dt);
-      this.checkIncidents(state, track, drivers, dt);
+      this.checkIncidents(state, track, drivers, dt, teamSpecsByTeam);
       
       // Update each vehicle's race logic
       state.vehicles.forEach(vehicle => {
@@ -306,7 +314,7 @@ export class RaceLogicSystem {
       const activeVehicles = state.vehicles
           .filter(v => v.damage < 100 && !v.hasFinished)
           .sort((a, b) => a.position - b.position);
-
+      
       // Reset positions to a standing start formation or rolling restart
       // We'll place them just before the start line
       const gridSpacing = 16; // meters
@@ -342,7 +350,7 @@ export class RaceLogicSystem {
       });
   }
 
-  private checkIncidents(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number): void {
+  private checkIncidents(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, teamSpecsByTeam: Record<string, TeamSpecs>): void {
       if (state.safetyCar !== 'none' || this.pendingSafetyCar || state.status !== 'racing') return;
       // Removed L1 check to allow Lap 1 chaos
 
@@ -432,6 +440,12 @@ export class RaceLogicSystem {
           // 6. Track Difficulty
           const difficulty = track.trackDifficulty || 0.5;
           risk *= (1 + difficulty * 0.5); // Reduced impact
+
+          const teamSpecs = teamSpecsByTeam[driver.team];
+          if (teamSpecs) {
+              const reliabilityFactor = 1 - (teamSpecs.lifespan - 85) * 0.002;
+              risk *= Math.min(1.1, Math.max(0.85, reliabilityFactor));
+          }
 
           // Final Check
           if (this.rng.chance(risk)) {
@@ -673,6 +687,8 @@ export class RaceLogicSystem {
           if (vehicle.strategyPlan) {
               vehicle.strategyPlan.currentStintIndex++;
           }
+          vehicle.pitWindowStart = undefined;
+          vehicle.pitWindowEnd = undefined;
           
           vehicle.tyreWear = 0;
           vehicle.tyreAgeLaps = 0;

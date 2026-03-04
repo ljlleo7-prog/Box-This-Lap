@@ -1,4 +1,4 @@
-import { RaceState, Track, Driver } from '../types';
+import { RaceState, Track, Driver, TeamSpecs, TyreCompound, StrategyStint } from '../types';
 import { SeededRNG } from './rng';
 import { WeatherSystem } from './systems/WeatherSystem';
 import { PhysicsSystem } from './systems/PhysicsSystem';
@@ -11,6 +11,7 @@ export class SimulationEngine {
   private drivers: Driver[];
   private driverMap: Map<string, Driver>;
   private rng: SeededRNG;
+  private teamSpecsByTeam: Record<string, TeamSpecs>;
 
   // Sub-systems
   private weatherSystem: WeatherSystem;
@@ -18,11 +19,12 @@ export class SimulationEngine {
   private raceLogicSystem: RaceLogicSystem;
   private strategySystem: StrategySystem;
 
-  constructor(track: Track, drivers: Driver[], seed: number) {
+  constructor(track: Track, drivers: Driver[], seed: number, teamSpecsByTeam: Record<string, TeamSpecs> = {}) {
     this.track = track;
     this.drivers = drivers;
     this.driverMap = new Map(drivers.map(d => [d.id, d]));
     this.rng = new SeededRNG(seed);
+    this.teamSpecsByTeam = teamSpecsByTeam;
 
     // Initialize Systems
     this.weatherSystem = new WeatherSystem(this.rng);
@@ -41,6 +43,40 @@ export class SimulationEngine {
     this.state.status = 'racing';
   }
 
+  public applyPreRaceSetup(setups: Record<string, { tyreCompound?: TyreCompound; fuelLoad?: number; pitWindowStart?: number; pitWindowEnd?: number; stints?: StrategyStint[] }>): void {
+    this.state.vehicles.forEach(vehicle => {
+      const setup = setups[vehicle.driverId];
+      if (!setup) return;
+
+      if (setup.tyreCompound) {
+        vehicle.tyreCompound = setup.tyreCompound;
+      }
+
+      if (typeof setup.fuelLoad === 'number') {
+        vehicle.fuelLoad = Math.max(0, setup.fuelLoad);
+      }
+
+      if (typeof setup.pitWindowStart === 'number' && typeof setup.pitWindowEnd === 'number') {
+        vehicle.pitWindowStart = setup.pitWindowStart;
+        vehicle.pitWindowEnd = setup.pitWindowEnd;
+      } else {
+        vehicle.pitWindowStart = undefined;
+        vehicle.pitWindowEnd = undefined;
+      }
+
+      if (setup.stints && setup.stints.length > 0) {
+        const stints = setup.stints.map(stint => ({ ...stint }));
+        vehicle.strategyPlan = {
+          stints,
+          currentStintIndex: 0
+        };
+        vehicle.tyreCompound = stints[0].compound;
+      } else if (setup.tyreCompound && vehicle.strategyPlan?.stints?.length) {
+        vehicle.strategyPlan.stints[0].compound = setup.tyreCompound;
+      }
+    });
+  }
+
   public update(deltaTime: number): RaceState {
     if (this.state.status !== 'racing') return this.state;
 
@@ -52,7 +88,7 @@ export class SimulationEngine {
     // 2. Race Logic Update (Safety Car, Incidents, Pit Logic, Positions, Spatial)
     // Note: RaceLogic updates Pit Stops which moves cars in pit lane.
     // It also handles Overtaking attempts (speed modification).
-    this.raceLogicSystem.updateRaceLogic(this.state, this.track, this.driverMap, deltaTime, this.strategySystem);
+    this.raceLogicSystem.updateRaceLogic(this.state, this.track, this.driverMap, deltaTime, this.strategySystem, this.teamSpecsByTeam);
 
     // 3. Vehicle Physics & Strategy Update
     this.state.vehicles.forEach(vehicle => {
@@ -66,7 +102,8 @@ export class SimulationEngine {
       // Only update physics if NOT in pit (Pit logic handles movement in pit lane)
       // Wait, RaceLogicSystem handles pit stop movement.
       if (!vehicle.isInPit) {
-          this.physicsSystem.updateVehiclePhysics(vehicle, driver, this.state, this.track, deltaTime);
+          const teamSpecs = this.teamSpecsByTeam[driver.team];
+          this.physicsSystem.updateVehiclePhysics(vehicle, driver, this.state, this.track, deltaTime, teamSpecs);
       }
     });
 
@@ -87,7 +124,8 @@ export class SimulationEngine {
       
       if (type === 'pace') vehicle.paceMode = value;
       if (type === 'ers') vehicle.ersMode = value;
-      // Pit logic is handled via UI triggering state changes or AI
+      if (type === 'line') vehicle.lineMode = value;
+      if (type === 'pit') vehicle.boxThisLap = Boolean(value);
   }
 
   public setWeatherMode(mode: 'simulation' | 'real'): void {

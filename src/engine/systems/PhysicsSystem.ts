@@ -1,6 +1,6 @@
-import { VehicleState, Driver, RaceState, Track, TyreCompound } from '../../types';
+import { VehicleState, Driver, RaceState, Track, TyreCompound, TeamSpecs } from '../../types';
 import { SeededRNG } from '../rng';
-import { TyreModel } from './TyreModel';
+import { TyreModel, TYRE_COMPOUNDS } from './TyreModel';
 
 export class PhysicsSystem {
   private rng: SeededRNG;
@@ -9,7 +9,7 @@ export class PhysicsSystem {
     this.rng = rng;
   }
 
-  public updateVehiclePhysics(vehicle: VehicleState, driver: Driver, state: RaceState, track: Track, dt: number): void {
+  public updateVehiclePhysics(vehicle: VehicleState, driver: Driver, state: RaceState, track: Track, dt: number, teamSpecs?: TeamSpecs): void {
       // If in pit, PhysicsSystem yields control to RaceLogicSystem (which handles pit lane movement)
       if (vehicle.isInPit) return;
 
@@ -20,7 +20,7 @@ export class PhysicsSystem {
       const gripFactor = this.calculateGrip(vehicle.tyreCompound, waterDepth, vehicle.speed);
 
       // 1. Calculate Target Speed
-      let targetSpeed = this.calculateTargetSpeed(vehicle, driver, state, track);
+      let targetSpeed = this.calculateTargetSpeed(vehicle, driver, state, track, teamSpecs);
       
       // Apply Grip Penalty
       targetSpeed *= gripFactor;
@@ -59,32 +59,35 @@ export class PhysicsSystem {
       // We must force gap to be infinite for leader.
       const effectiveGap = (vehicle.position === 1) ? 100 : vehicle.gapToAhead;
       
-      const maxAccel = this.calculateMaxAcceleration(vehicle.speed, vehicle.drsOpen, effectiveGap, track.sectors[vehicle.currentSector - 1]?.type) * gripFactor;
-      const maxBrake = this.calculateMaxBraking(vehicle.speed) * gripFactor;
+      const accelFactor = teamSpecs ? 1 + (teamSpecs.acceleration - 80) * 0.001 : 1;
+      const brakeFactor = teamSpecs ? 1 + (teamSpecs.braking - 80) * 0.001 : 1;
+      const ersOverrideEligible = this.isERSOverrideEligible(vehicle, state);
+      const sectorType = track.sectors[vehicle.currentSector - 1]?.type;
+      const maxAccel = this.calculateMaxAcceleration(vehicle.speed, vehicle.drsOpen, effectiveGap, sectorType, vehicle.ersMode, vehicle.ersLevel, ersOverrideEligible, teamSpecs) * gripFactor * accelFactor;
+      const maxBrake = this.calculateMaxBraking(vehicle.speed, sectorType) * gripFactor * brakeFactor;
       
       // Safety Clamp
       // We allow negative maxAccel now (Drag limited speed), but we should ensure it doesn't exceed braking capability if negative
       const accelRate = maxAccel; 
       const brakeRate = Math.max(1.0, maxBrake);
-
-      if (vehicle.speed < targetSpeed) {
-        // Accelerating phase
-        // If accelRate is negative (Drag > Power), speed will naturally decrease
-        vehicle.speed += accelRate * dt;
-        
-        // If we are decelerating due to drag, we shouldn't overshoot downwards below targetSpeed unnecessarily, 
-        // but targetSpeed is usually higher than current speed here.
-        // Wait, if speed < targetSpeed, we WANT to accelerate.
-        // If accelRate is negative, we decelerate.
-        // This is correct: We are trying to reach targetSpeed, but Physics says NO, you must slow down.
-        // Eventually speed settles at equilibrium where accelRate = 0.
-        
-        // Clamp: If we somehow overshoot targetSpeed (unlikely in this branch), clamp it.
-        if (vehicle.speed > targetSpeed) vehicle.speed = targetSpeed;
-      } else {
-        vehicle.speed -= brakeRate * dt; // Braking
-        if (vehicle.speed < targetSpeed) vehicle.speed = targetSpeed;
+      const prevSpeed = vehicle.speed;
+      const currentSector = track.sectors[vehicle.currentSector - 1];
+      const nextSectorIndex = currentSector ? (vehicle.currentSector % track.sectors.length) : 0;
+      const nextTargetSpeed = this.calculateTargetSpeed(vehicle, driver, state, track, teamSpecs, nextSectorIndex, false, false);
+      const remainingDist = currentSector ? (currentSector.endDistance - vehicle.distanceOnLap) : 100;
+      const safeRemainingDist = Math.max(1, remainingDist);
+      let desiredAccel = (targetSpeed * targetSpeed - vehicle.speed * vehicle.speed) / (2 * safeRemainingDist);
+      if (nextTargetSpeed < targetSpeed && currentSector) {
+        const brakingDistNeeded = Math.max(0, (vehicle.speed * vehicle.speed - nextTargetSpeed * nextTargetSpeed) / (2 * brakeRate));
+        if (safeRemainingDist < brakingDistNeeded + 5) {
+          desiredAccel = (nextTargetSpeed * nextTargetSpeed - vehicle.speed * vehicle.speed) / (2 * safeRemainingDist);
+        }
       }
+      let clampedAccel = desiredAccel;
+      if (clampedAccel > accelRate) clampedAccel = accelRate;
+      if (clampedAccel < -brakeRate) clampedAccel = -brakeRate;
+      vehicle.speed += clampedAccel * dt;
+      vehicle.acceleration = clampedAccel;
       
       // ABSOLUTE SAFETY CLAMP (Prevent Infinity/NaN/Explosion)
       if (isNaN(vehicle.speed) || !isFinite(vehicle.speed)) vehicle.speed = 0;
@@ -134,6 +137,7 @@ export class PhysicsSystem {
         vehicle.lastLapTime = vehicle.currentLapTime;
         vehicle.currentLapTime = 0;
         vehicle.tyreAgeLaps++;
+        vehicle.ersRecoveredThisLap = 0;
         
         // Move Telemetry
         vehicle.telemetry.lastLapSpeedTrace = [...vehicle.telemetry.currentLapSpeedTrace];
@@ -158,16 +162,16 @@ export class PhysicsSystem {
       }
 
       // 7. Resource Consumption
-      this.updateResources(vehicle, dt, track);
+      this.updateResources(vehicle, driver, dt, track, state, teamSpecs);
   }
 
-  private calculateTargetSpeed(vehicle: VehicleState, driver: Driver, state: RaceState, track: Track): number {
+  private calculateTargetSpeed(vehicle: VehicleState, driver: Driver, state: RaceState, track: Track, teamSpecs?: TeamSpecs, sectorIndex?: number, includeTraffic: boolean = true, includeNoise: boolean = true): number {
     // Red Flag: Stop immediately
     if (state.safetyCar === 'red-flag') return 0;
 
     // Determine Base Speed by Sector Type
     let speed = 60; // Fallback
-    const currentSector = track.sectors[vehicle.currentSector - 1];
+    const currentSector = track.sectors[sectorIndex !== undefined ? sectorIndex : vehicle.currentSector - 1];
 
     if (currentSector) {
         if (currentSector.maxSpeed) {
@@ -175,18 +179,24 @@ export class PhysicsSystem {
         } else {
             switch (currentSector.type) {
                 case 'straight': 
-                    speed = 105; // ~378 kph (Let physics limit the top speed)
+                    speed = 103; // ~371 kph (Let physics limit the top speed)
                     break;
                 case 'corner_high_speed': 
-                    speed = 72; // ~260 kph
+                    speed = 68; // ~245 kph
                     break;
                 case 'corner_medium_speed': 
-                    speed = 50; // ~180 kph
+                    speed = 47; // ~169 kph
                     break;
                 case 'corner_low_speed': 
-                    speed = 25; // ~90 kph
+                    speed = 24; // ~86 kph
                     break;
             }
+        }
+        if (currentSector.type !== 'straight') {
+            const cornerDifficulty = currentSector.difficulty ?? 0.5;
+            const curveBase = currentSector.type === 'corner_high_speed' ? 0.1 : currentSector.type === 'corner_medium_speed' ? 0.15 : 0.2;
+            const curveFactor = 1 - (Math.pow(cornerDifficulty, 1.3) * curveBase);
+            speed *= curveFactor;
         }
     } else {
         // Fallback to average pace if sector not found
@@ -207,6 +217,23 @@ export class PhysicsSystem {
         // 100 -> +0.5% speed. 70 -> -1% speed.
         // Formula: 1 + (score - 90) * 0.0005 (Reduced from 0.001 to tighten field)
         speed *= (1 + (perfScore - 90) * 0.0005);
+    }
+
+    if (teamSpecs && currentSector) {
+        let aeroScore = 85;
+        if (currentSector.type === 'straight') {
+            aeroScore = teamSpecs.drag_reduction;
+        } else if (currentSector.type === 'corner_high_speed') {
+            aeroScore = teamSpecs.cornering_high;
+        } else if (currentSector.type === 'corner_medium_speed') {
+            aeroScore = teamSpecs.cornering_mid;
+        } else if (currentSector.type === 'corner_low_speed') {
+            aeroScore = teamSpecs.cornering_low;
+        }
+        speed *= (1 + (aeroScore - 85) * 0.0007);
+        if (currentSector.type === 'straight' && vehicle.drsOpen) {
+            speed *= (1 + (teamSpecs.drs_efficiency - 85) * 0.0006);
+        }
     }
     
     // Apply Base Pace (Global Speed Factor)
@@ -269,7 +296,14 @@ export class PhysicsSystem {
     // Tyre Wear: 0-100.
     // Use the sophisticated TyreModel grip factor (dry grip only here, weather handled separately)
     const gripFactor = TyreModel.getGripFactor(vehicle.tyreCompound as TyreCompound, vehicle.tyreWear, 0);
-    speed *= gripFactor;
+    const compoundProps = TYRE_COMPOUNDS[vehicle.tyreCompound as TyreCompound];
+    const [tempMin, tempMax] = compoundProps.optimalTempWindow;
+    const tempMid = (tempMin + tempMax) / 2;
+    const tempFactor = TyreModel.getTemperatureGripFactor(
+        vehicle.tyreCompound as TyreCompound,
+        typeof vehicle.tyreTemp === 'number' ? vehicle.tyreTemp : tempMid
+    );
+    speed *= gripFactor * tempFactor;
 
     // Fuel: lighter is faster
     // 100kg -> 0kg. 0.3s per 10kg => 3s per 100kg.
@@ -281,9 +315,9 @@ export class PhysicsSystem {
     if (vehicle.paceMode === 'aggressive') speed *= 1.015; // 1.5% faster
     if (vehicle.paceMode === 'conservative') speed *= 0.985; // 1.5% slower
     
-    if (vehicle.ersMode === 'deploy') speed *= 1.02; // 2% boost
-    if (vehicle.ersMode === 'harvest') speed *= 0.98; // 2% drag
-
+    if (vehicle.lineMode === 'attack') speed *= 1.007;
+    if (vehicle.lineMode === 'defend') speed *= 0.993;
+    
     // DRS Boost
     if (vehicle.drsOpen) {
         speed *= 1.05; // 5% speed boost (approx 15-20 kph)
@@ -294,7 +328,7 @@ export class PhysicsSystem {
     // const currentSector already defined above
 
     // Disable Dirty Air on Lap 1 to prevent leader runaway
-    if (vehicle.position > 1 && currentSector && state.currentLap > 1) {
+    if (includeTraffic && vehicle.position > 1 && currentSector && state.currentLap > 1) {
         const gap = Math.max(0.1, vehicle.gapToAhead);
         
         if (currentSector.type === 'straight') {
@@ -330,7 +364,7 @@ export class PhysicsSystem {
     }
 
     // Battling / Traffic Logic (Interaction with car ahead)
-    if (vehicle.isBattling && state.safetyCar === 'none') {
+    if (includeTraffic && vehicle.isBattling && state.safetyCar === 'none') {
         // Find car ahead
         const ahead = state.vehicles.find(v => v.position === vehicle.position - 1);
         if (ahead) {
@@ -392,7 +426,7 @@ export class PhysicsSystem {
     }
 
     // Blue Flag Penalty (Yielding logic)
-    if (vehicle.blueFlag) {
+    if (includeTraffic && vehicle.blueFlag) {
         // Driver Personality Check: Do they yield?
         // High Team Player / Low Aggression -> Yields easily
         // Low Team Player / High Aggression -> Ignores
@@ -436,25 +470,18 @@ export class PhysicsSystem {
     }
 
     // Driver Consistency & Skill (Per-tick noise)
-    const consistencyFactor = (driver.skill.consistency / 100);
-    // Lower consistency = more random variance
-    // Increased variance range for more "randomness" as requested
-    // Old: 0.02 * (1 - consistency + 0.1) -> ~0.2%
-    // New: 0.05 * (1 - consistency + 0.3) -> ~1.5% - 2.5% variance per tick
-    let varianceRange = 0.05 * (1 - consistencyFactor + 0.3); 
-    
-    // Increased randomness in Low Speed Corners
-    if (currentSector && currentSector.type === 'corner_low_speed') {
-        varianceRange *= 3.0; // Huge variance (up to 6-8%)
+    if (includeNoise) {
+        const consistencyFactor = (driver.skill.consistency / 100);
+        let varianceRange = 0.05 * (1 - consistencyFactor + 0.3); 
+        if (currentSector && currentSector.type === 'corner_low_speed') {
+            varianceRange *= 3.0;
+        }
+        if (state.safetyCar !== 'none') {
+            varianceRange *= 0.1;
+        }
+        const noise = this.rng.range(-varianceRange, varianceRange);
+        speed *= (1 + noise);
     }
-
-    // REDUCED NOISE UNDER SAFETY CAR / VSC
-    if (state.safetyCar !== 'none') {
-        varianceRange *= 0.1; // 10% of normal variance -> very stable
-    }
-
-    const noise = this.rng.range(-varianceRange, varianceRange);
-    speed *= (1 + noise);
 
     // Apply Safety Car Speed Limits
     if (state.safetyCar === 'vsc') {
@@ -515,85 +542,54 @@ export class PhysicsSystem {
     return speed;
   }
 
-  private calculateMaxAcceleration(speed: number, drsOpen: boolean = false, gapToAhead: number = 100, sectorType: string = 'straight'): number {
-      // F1 Acceleration Physics (Power - Drag)
-      // Mass ~ 800kg
-      const mass = 800;
-      
-      // POWER
-      // Approx 1000hp ~ 750kW.
-      // ERS deployment adds ~120kW.
-      // We assume constant power band for simplicity, but efficiency drops at very high speed.
-      // Power = Force * Velocity => ThrustForce = Power / Velocity
-      const powerWatts = 750000; // 750 kW
-      
-      // Thrust Force
-      // At low speed, thrust is huge, but limited by Traction (Grip)
-      // At high speed, thrust = Power / Speed
-      let thrustForce = 0;
-      if (speed < 10) {
-          thrustForce = powerWatts / 10; // Cap at 10m/s to avoid infinity
-      } else {
-          thrustForce = powerWatts / speed;
+  private calculateMaxAcceleration(speed: number, drsOpen: boolean = false, gapToAhead: number = 100, sectorType: string = 'straight', ersMode: VehicleState['ersMode'] = 'balanced', ersLevel: number = 100, ersOverrideEligible: boolean = false, teamSpecs?: TeamSpecs): number {
+      const mass = 768;
+      const airDensity = 1.225;
+      const gravity = 9.81;
+      const rollingResistanceCoeff = 0.014;
+      const baseEnginePower = 400000;
+      const speedKph = speed * 3.6;
+      const ersEfficiency = teamSpecs ? teamSpecs.ers_efficiency : 85;
+      const efficiencyFactor = 0.98 + (ersEfficiency - 85) / 500;
+      const deploymentLimit = this.getERSDeploymentLimit(speedKph, ersMode, efficiencyFactor, ersOverrideEligible);
+      const harvestPower = this.getERSHarvestPower(speedKph, ersMode, efficiencyFactor);
+      let availablePower = baseEnginePower;
+      if (ersLevel > 0 && ersMode !== 'harvest') {
+          availablePower += deploymentLimit;
       }
-      
-      // Traction Limit (Mechanical Grip)
-      // Approx 1.3G at low speed (Simulating race fuel/tires)
-      const tractionLimitForce = mass * 9.81 * 1.3;
-      
-      // Effective Thrust is min(EngineThrust, TractionLimit)
+      if (harvestPower > 0) {
+          availablePower = Math.max(0, availablePower - harvestPower);
+      }
+      const effectiveSpeed = Math.max(10, speed);
+      let thrustForce = availablePower / effectiveSpeed;
+      const tractionLimitForce = mass * gravity * 1.18;
       thrustForce = Math.min(thrustForce, tractionLimitForce);
-      
-      // DRAG
-      // Force = 0.5 * rho * Cd * A * v^2
-      // rho = 1.225 kg/m^3
-      // Cd * A (CdA) ~ 1.6 m^2 (Increased from 1.5 for realistic top speeds)
-      const rho = 1.225;
-      let CdA = 1.6; 
-      
-      // DRS Effect: Reduces drag by ~25%
-      if (drsOpen) {
-          CdA *= 0.75;
+      let dragArea = sectorType === 'straight' ? 0.7 : 1.0;
+      if (drsOpen && sectorType === 'straight') {
+          dragArea *= 0.82;
       }
-      
-      // Slipstream Effect: Reduces drag if following closely
-      // Only on straights
       if (sectorType === 'straight' && gapToAhead < 1.0) {
-          // Max reduction 15% at 0.0s gap (Reduced from 30%)
-          // If DRS is open, slipstream is less effective (dirty air less impactful on stalled wing)
-          const maxSlipstream = drsOpen ? 0.08 : 0.15;
-          const slipstreamFactor = Math.max(0, 1 - gapToAhead); 
-          CdA *= (1 - (maxSlipstream * slipstreamFactor));
+          const maxSlipstream = drsOpen ? 0.06 : 0.12;
+          const slipstreamFactor = Math.max(0, 1 - gapToAhead);
+          dragArea *= (1 - (maxSlipstream * slipstreamFactor));
       }
-      
-      const dragForce = 0.5 * rho * CdA * speed * speed;
-      
-      // Net Force
-      const netForce = thrustForce - dragForce;
-      
-      // Acceleration = Force / Mass
-      let accel = netForce / mass;
-      
-      // Friction / Rolling Resistance (constant small deceleration)
-      // Approx 0.1 m/s^2
-      accel -= 0.1;
-      
-      return accel; // Return true acceleration (can be negative if Drag > Power)
+      const dragForce = 0.5 * airDensity * dragArea * speed * speed;
+      const rollingRes = rollingResistanceCoeff * mass * gravity;
+      const netForce = thrustForce - dragForce - rollingRes;
+      return netForce / mass;
   }
 
-  private calculateMaxBraking(speed: number): number {
-      // F1 Braking Curve
-      // Low speed: Mechanical Grip limited (~1.5G)
-      // High speed: Aero Downforce limited (~5G - 6G)
-      
-      const mechanicalGrip = 15; // ~1.5G (15 m/s^2)
-      
-      // Downforce increases with square of speed
-      // Factor tuned so at 85 m/s (300kph), we add ~35 m/s^2 (~3.5G) -> Total ~5G
-      const aeroFactor = 0.005; 
-      const aeroBraking = aeroFactor * speed * speed;
-      
-      return mechanicalGrip + aeroBraking;
+  private calculateMaxBraking(speed: number, sectorType: string = 'straight'): number {
+      const mass = 768;
+      const airDensity = 1.225;
+      const gravity = 9.81;
+      const rollingResistanceCoeff = 0.015;
+      const baseBraking = 4.2 * gravity;
+      const dragArea = sectorType === 'straight' ? 0.7 : 1.0;
+      const dragForce = 0.5 * airDensity * dragArea * speed * speed;
+      const rollingRes = rollingResistanceCoeff * mass * gravity;
+      const aeroAssist = (dragForce + rollingRes) / mass;
+      return baseBraking + aeroAssist;
   }
 
   private calculateGrip(compound: string, waterDepth: number, speedKph: number = 200): number {
@@ -654,17 +650,62 @@ export class PhysicsSystem {
       return Math.max(0.1, baseGrip); // Safety floor
   }
 
-  private updateResources(vehicle: VehicleState, dt: number, track: Track): void {
+  private updateResources(vehicle: VehicleState, driver: Driver, dt: number, track: Track, state: RaceState, teamSpecs?: TeamSpecs): void {
+    const compound = vehicle.tyreCompound as TyreCompound;
+    const props = TYRE_COMPOUNDS[compound];
+    const [optMin, optMax] = props.optimalTempWindow;
+    const optMid = (optMin + optMax) / 2;
+    const ambient = state.trackTemp || track.baseTemperature || 25;
+    const speedKph = vehicle.speed * 3.6;
+    const sectorType = track.sectors[vehicle.currentSector - 1]?.type;
+    const compoundBias = compound === 'soft' ? 7 : compound === 'medium' ? 5 : compound === 'hard' ? 3 : compound === 'intermediate' ? 4 : 2;
+    const paceHeat = vehicle.paceMode === 'aggressive' ? 6 : vehicle.paceMode === 'conservative' ? -2 : 2;
+    const lineHeat = vehicle.lineMode === 'attack' ? 2 : vehicle.lineMode === 'defend' ? -1 : 0.5;
+    const speedHeat = Math.pow(Math.min(330, Math.max(50, speedKph)) / 330, 1.6) * 12;
+    const cornerHeat = sectorType === 'corner_low_speed' ? 4.5 : sectorType === 'corner_medium_speed' ? 3.5 : sectorType === 'corner_high_speed' ? 3.0 : 1.5;
+    const trackHeat = (track.trackDifficulty || 0.5) * 4;
+    const trafficHeat = (vehicle.isBattling ? 2.5 : 0) + (vehicle.inDirtyAir ? 1.5 : 0);
+    const cloudCooling = (state.cloudCover || 0) * 0.02;
+    const rainCooling = (state.rainIntensityLevel || 0) * 0.08;
+    const windCooling = (state.windSpeed || 0) * 0.06;
+    const coolingEffect = teamSpecs ? (teamSpecs.cooling - 85) * 0.2 : 0;
+    const targetTemp = ambient + compoundBias + speedHeat + paceHeat + lineHeat + cornerHeat + trackHeat + trafficHeat - (cloudCooling + rainCooling + windCooling + coolingEffect);
+    const adaptability = driver.performance.temperatureAdaptability || 85;
+    const management = driver.skill.tyreManagement || 85;
+    if (typeof vehicle.tyreTemp !== 'number') {
+        vehicle.tyreTemp = optMid;
+    }
+    const tempDelta = targetTemp - vehicle.tyreTemp;
+    const responseBase = 0.22 + (adaptability - 80) * 0.002;
+    const response = Math.min(0.9, Math.max(0.12, responseBase + Math.abs(tempDelta) / 160));
+    const damping = Math.max(0.75, 1 - (management - 80) * 0.002);
+    const step = (1 - Math.exp(-dt * 1.2)) * response * damping;
+    vehicle.tyreTemp += tempDelta * step;
+    const over = Math.max(0, vehicle.tyreTemp - optMax);
+    const under = Math.max(0, optMin - vehicle.tyreTemp);
+    if (over > 0) {
+        vehicle.tyreTemp -= Math.pow(over / 6, 1.3) * dt * (1 + windCooling / 10);
+    } else if (under > 0) {
+        vehicle.tyreTemp += Math.pow(under / 7, 1.2) * dt * 0.8;
+    }
+    vehicle.tyreTemp = Math.max(20, Math.min(140, vehicle.tyreTemp));
+
     // Tyre wear
     // Use the sophisticated TyreModel
     const wearRate = TyreModel.getWearRate(
-        vehicle.tyreCompound as TyreCompound,
+        compound,
         track,
         vehicle.paceMode,
         vehicle.tyreWear
     );
+    const lineWearFactor = vehicle.lineMode === 'attack' ? 1.1 : vehicle.lineMode === 'defend' ? 0.9 : 1;
+    const coolingFactor = teamSpecs ? 1 - (teamSpecs.cooling - 85) * 0.0015 : 1;
+    const lifespanFactor = teamSpecs ? 1 - (teamSpecs.lifespan - 85) * 0.001 : 1;
+    const tempWear = TyreModel.getTemperatureWearMultiplier(compound, vehicle.tyreTemp);
+    const managementFactor = Math.max(0.85, Math.min(1.08, 1 - (management - 85) * 0.003));
+    const adjustedWearRate = wearRate * lineWearFactor * coolingFactor * lifespanFactor * tempWear * managementFactor;
     
-    vehicle.tyreWear += wearRate * dt;
+    vehicle.tyreWear += adjustedWearRate * dt;
     if (vehicle.tyreWear > 100) vehicle.tyreWear = 100;
 
     // Fuel burn
@@ -672,23 +713,78 @@ export class PhysicsSystem {
     let burnRate = 0.016;
     if (vehicle.paceMode === 'aggressive') burnRate *= 1.2;
     if (vehicle.paceMode === 'conservative') burnRate *= 0.8;
+    if (teamSpecs) {
+        burnRate *= 1 - (teamSpecs.drag_reduction - 85) * 0.001;
+    }
 
     vehicle.fuelLoad -= burnRate * dt;
     if (vehicle.fuelLoad < 0) vehicle.fuelLoad = 0;
     
-    // ERS
-    if (vehicle.ersMode === 'deploy') {
-        vehicle.ersLevel -= 2.0 * dt; // Drain 2% per sec
-    } else if (vehicle.ersMode === 'harvest') {
-        vehicle.ersLevel += 1.5 * dt; // Charge 1.5% per sec
-    } else {
-        vehicle.ersLevel += 0.1 * dt; // Passive charge
+    const maxBatteryJ = 4000000;
+    const maxRecoveryJ = 8500000;
+    const mass = 768;
+    const ersEfficiency = teamSpecs ? teamSpecs.ers_efficiency : 85;
+    const efficiencyFactor = 0.98 + (ersEfficiency - 85) / 500;
+    const ersOverrideEligible = this.isERSOverrideEligible(vehicle, state);
+    const deploymentLimit = this.getERSDeploymentLimit(speedKph, vehicle.ersMode, efficiencyFactor, ersOverrideEligible);
+    const harvestPower = this.getERSHarvestPower(speedKph, vehicle.ersMode, efficiencyFactor);
+    let batteryJ = (vehicle.ersLevel / 100) * maxBatteryJ;
+    let energyDelta = 0;
+    if (vehicle.acceleration > 0.1 && vehicle.ersMode !== 'harvest' && batteryJ > 0) {
+        energyDelta -= deploymentLimit * dt;
     }
-    // Clamp ERS
-    if (vehicle.ersLevel < 0) {
+    if (harvestPower > 0 && batteryJ < maxBatteryJ) {
+        energyDelta += harvestPower * dt;
+    }
+    if (vehicle.acceleration < -0.1 && batteryJ < maxBatteryJ && vehicle.ersRecoveredThisLap < maxRecoveryJ) {
+        const brakingPower = Math.abs(vehicle.acceleration) * mass * vehicle.speed;
+        const regenCap = Math.min(350000 * efficiencyFactor, brakingPower);
+        const allowedRecovery = Math.min(maxRecoveryJ - vehicle.ersRecoveredThisLap, regenCap * dt);
+        energyDelta += allowedRecovery;
+        vehicle.ersRecoveredThisLap += allowedRecovery;
+    }
+    batteryJ = Math.max(0, Math.min(maxBatteryJ, batteryJ + energyDelta));
+    vehicle.ersLevel = (batteryJ / maxBatteryJ) * 100;
+    if (vehicle.ersLevel <= 0) {
         vehicle.ersLevel = 0;
-        vehicle.ersMode = 'balanced'; // Force balanced if empty
+        vehicle.ersMode = 'balanced';
     }
     if (vehicle.ersLevel > 100) vehicle.ersLevel = 100;
+  }
+
+  private getERSDeploymentLimit(speedKph: number, ersMode: VehicleState['ersMode'], efficiencyFactor: number, ersOverrideEligible: boolean): number {
+      if (ersMode === 'harvest') return 0;
+      let speedLimit = 350000;
+      if (ersOverrideEligible && speedKph <= 337) {
+          speedLimit = 350000;
+      } else if (speedKph > 355) {
+          speedLimit = 0;
+      } else if (speedKph > 290) {
+          const ratio = (speedKph - 290) / 65;
+          speedLimit = 350000 * (1 - ratio);
+      }
+      if (ersMode === 'balanced') {
+          speedLimit = Math.min(speedLimit, 250000);
+          if (speedKph > 330 && !ersOverrideEligible) {
+              speedLimit = 0;
+          }
+      }
+      return speedLimit * efficiencyFactor;
+  }
+
+  private getERSHarvestPower(speedKph: number, ersMode: VehicleState['ersMode'], efficiencyFactor: number): number {
+      if (ersMode === 'harvest') {
+          if (speedKph <= 200) return 0;
+          return 200000 * efficiencyFactor;
+      }
+      if (ersMode === 'balanced') {
+          if (speedKph <= 260) return 0;
+          return 60000 * efficiencyFactor;
+      }
+      return 0;
+  }
+
+  private isERSOverrideEligible(vehicle: VehicleState, state: RaceState): boolean {
+      return state.safetyCar === 'none' && vehicle.position > 1 && vehicle.gapToAhead < 1.0;
   }
 }

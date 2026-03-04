@@ -7,7 +7,21 @@ export default {
     container: {
       center: true,
     },
-    extend: {},
+    extend: {
+      colors: {
+        f1: {
+          red: '#E10600',
+          dark: '#15151E',
+          light: '#E5E5E5',
+          carbon: '#1F1F1F',
+          silver: '#A0A0A3',
+        }
+      },
+      fontFamily: {
+        rajdhani: ['Rajdhani', 'sans-serif'],
+        orbitron: ['Orbitron', 'sans-serif'],
+      }
+    },
   },
   plugins: [],
 };

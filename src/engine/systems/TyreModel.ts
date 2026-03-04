@@ -125,4 +125,29 @@ export class TyreModel {
 
         return Math.max(0.1, grip);
     }
+
+    public static getTemperatureGripFactor(compound: TyreCompound, temp: number): number {
+        const props = TYRE_COMPOUNDS[compound];
+        const [minTemp, maxTemp] = props.optimalTempWindow;
+        const mid = (minTemp + maxTemp) / 2;
+        const half = Math.max(1, (maxTemp - minTemp) / 2);
+        const normalized = (temp - mid) / half;
+        const factor = Math.exp(-Math.pow(normalized, 2) * 0.7);
+        return Math.max(0.6, factor);
+    }
+
+    public static getTemperatureWearMultiplier(compound: TyreCompound, temp: number): number {
+        const props = TYRE_COMPOUNDS[compound];
+        const [minTemp, maxTemp] = props.optimalTempWindow;
+        const mid = (minTemp + maxTemp) / 2;
+        const half = Math.max(1, (maxTemp - minTemp) / 2);
+        const normalized = Math.abs((temp - mid) / half);
+        let multiplier = 1 + Math.pow(normalized, 1.7) * 0.35;
+        if (temp > maxTemp) {
+            multiplier *= 1 + Math.pow((temp - maxTemp) / 10, 1.3) * 0.3;
+        } else if (temp < minTemp) {
+            multiplier *= 1 + Math.pow((minTemp - temp) / 10, 1.2) * 0.1;
+        }
+        return Math.min(2, Math.max(0.9, multiplier));
+    }
 }

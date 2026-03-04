@@ -1,15 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RaceState } from '../../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, ComposedChart, Legend, Bar } from 'recharts';
 import { DRIVERS } from '../../data/initialData';
 
 interface TelemetryPanelProps {
   raceState: RaceState;
+  defaultDriverIds?: string[];
 }
 
-export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState }) => {
+export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defaultDriverIds }) => {
   const [activeTab, setActiveTab] = useState<'weather' | 'speed' | 'psychology'>('weather');
-  const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>([]);
+  const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>(defaultDriverIds ?? []);
+
+  useEffect(() => {
+      if (selectedDriverIds.length === 0 && defaultDriverIds && defaultDriverIds.length > 0) {
+          setSelectedDriverIds(defaultDriverIds);
+      }
+  }, [defaultDriverIds, selectedDriverIds.length]);
 
   // Default to leader if no drivers selected
   const activeDriverIds = selectedDriverIds.length > 0 

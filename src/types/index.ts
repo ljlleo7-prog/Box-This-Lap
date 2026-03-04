@@ -76,6 +76,7 @@ export interface Track {
 export type TyreCompound = 'soft' | 'medium' | 'hard' | 'intermediate' | 'wet';
 export type PaceMode = 'conservative' | 'balanced' | 'aggressive';
 export type ERSMode = 'harvest' | 'balanced' | 'deploy';
+export type RacingLineMode = 'defend' | 'balanced' | 'attack';
 export type WeatherCondition = 'dry' | 'light-rain' | 'heavy-rain';
 
 export interface WeatherForecastItem {
@@ -97,6 +98,37 @@ export interface TelemetryDataPoint {
     distance: number;
     speed: number;
 }
+
+export interface Team {
+  id: string;
+  name: string;
+  color: string;
+  budget: number;
+  reputation: number;
+  token_cost: number;
+  performance: {
+    car: number;
+    industry: number;
+    drivers: number;
+  };
+  specs?: {
+    acceleration: number;
+    braking: number;
+    drag_reduction: number;
+    cornering_low: number;
+    cornering_mid: number;
+    cornering_high: number;
+    ers_efficiency: number;
+    cooling: number;
+    lifespan: number;
+    drs_efficiency: number;
+  };
+  drivers?: Driver[];
+  championship_id: string;
+  owner_id?: string;
+}
+
+export type TeamSpecs = NonNullable<Team['specs']>;
 
 export interface VehicleTelemetry {
     lastLapSpeedTrace: TelemetryDataPoint[];
@@ -132,10 +164,13 @@ export interface VehicleState {
   tyreCompound: TyreCompound;
   tyreWear: number; // 0-100% (0 is new, 100 is dead)
   tyreAgeLaps: number;
+  tyreTemp: number;
   fuelLoad: number; // kg
   ersLevel: number; // 0-100%
+  ersRecoveredThisLap: number;
   ersMode: ERSMode;
   paceMode: PaceMode;
+  lineMode: RacingLineMode;
   
   // Dynamic factors
   condition: number; // Day Form (0.98 - 1.02)
@@ -160,6 +195,8 @@ export interface VehicleState {
 
   // Strategy
   strategyPlan: StrategyPlan;
+  pitWindowStart?: number;
+  pitWindowEnd?: number;
 
   // Telemetry
   telemetry: VehicleTelemetry;

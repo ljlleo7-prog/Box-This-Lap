@@ -216,7 +216,29 @@ export class StrategySystem {
       if (vehicle.tyreWear > 85) pitNeeded = true; // Critical failure imminent
 
       // --- 2. PLAN EXECUTION (Dynamic Window) ---
-      
+      const hasPitWindow = typeof vehicle.pitWindowStart === 'number' && typeof vehicle.pitWindowEnd === 'number';
+      if (!pitNeeded && hasPitWindow) {
+          const windowOpen = Math.min(vehicle.pitWindowStart as number, vehicle.pitWindowEnd as number);
+          const windowClose = Math.max(vehicle.pitWindowStart as number, vehicle.pitWindowEnd as number);
+          
+          if (state.currentLap > windowClose) {
+              pitNeeded = true;
+          } else if (state.currentLap >= windowOpen) {
+              const windowSpan = Math.max(1, windowClose - windowOpen);
+              const progress = (state.currentLap - windowOpen) / windowSpan;
+              let pitProb = 0.3 + (progress * 0.5);
+              if (vehicle.tyreWear > 60) {
+                  pitProb += 0.2;
+              }
+              if (driver.personality.aggression > 60 && Math.random() < 0.3) {
+                  pitProb += 0.2;
+              }
+              if (Math.random() < pitProb) {
+                  pitNeeded = true;
+              }
+          }
+      }
+
       if (!pitNeeded && currentStint) {
           const targetLap = currentStint.endLap;
           const isLastStint = plan.currentStintIndex >= plan.stints.length - 1;
