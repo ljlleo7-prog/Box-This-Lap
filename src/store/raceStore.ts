@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { SimulationEngine } from '../engine/simulation';
-import { RaceState, TeamSpecs, TyreCompound, StrategyStint } from '../types';
+import { RaceState, TeamSpecs, PreRaceSetup } from '../types';
 import { DRIVERS } from '../data/initialData';
 import { TRACKS } from '../data/tracks';
 import { TEAM_TEMPLATES } from '../data/teams';
+import { loadTeamSpecs } from '../lib/localSaves';
 
 interface RaceStore {
   engine: SimulationEngine | null;
@@ -11,15 +12,15 @@ interface RaceStore {
   isPlaying: boolean;
   gameSpeed: number; // 1x, 2x, 5x, 10x
   selectedTrackId: string;
-  
+
   // Actions
   setTrack: (trackId: string) => void;
-  initRace: () => void;
+  initRace: (trackId?: string) => void;
   startRace: () => void;
   pauseRace: () => void;
   setGameSpeed: (speed: number) => void;
   tick: (dt: number) => void;
-  applyPreRaceSetup: (setups: Record<string, { tyreCompound?: TyreCompound; fuelLoad?: number; pitWindowStart?: number; pitWindowEnd?: number; stints?: StrategyStint[] }>) => void;
+  applyPreRaceSetup: (setups: Record<string, PreRaceSetup>) => void;
   
   // Player Actions
   updateStrategy: (driverId: string, type: 'pace' | 'ers' | 'pit' | 'line', value: any) => void;
@@ -36,9 +37,10 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
   
   setTrack: (trackId) => set({ selectedTrackId: trackId }),
 
-  initRace: () => {
+  initRace: (trackId) => {
     const { selectedTrackId } = get();
-    const track = TRACKS.find(t => t.id === selectedTrackId) || TRACKS[0];
+    const resolvedTrackId = trackId ?? selectedTrackId;
+    const track = TRACKS.find(t => t.id === resolvedTrackId) || TRACKS[0];
     const drivers = DRIVERS;
     const seed = Date.now();
     const baseSpecsByTeam = TEAM_TEMPLATES.reduce<Record<string, TeamSpecs>>((acc, team) => {
@@ -46,26 +48,17 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
       return acc;
     }, {});
 
-    let storedSpecs: Record<string, TeamSpecs> = {};
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem('rd-team-specs');
-      if (raw) {
-        try {
-          storedSpecs = JSON.parse(raw) as Record<string, TeamSpecs>;
-        } catch {
-          storedSpecs = {};
-        }
-      }
-    }
+    const storedSpecs = loadTeamSpecs();
 
     const teamSpecsByTeam = { ...baseSpecsByTeam, ...storedSpecs };
-    const engine = new SimulationEngine(track, drivers, seed, teamSpecsByTeam);
-    
+    const engine = new SimulationEngine(track, drivers, seed, teamSpecsByTeam, '2025');
+
     set({
       engine,
       raceState: engine.getState(),
       isPlaying: false,
-      gameSpeed: 1
+      gameSpeed: 1,
+      selectedTrackId: track.id
     });
   },
   

@@ -1,0 +1,7 @@
+- [x] Spec defines qualifying and race validation goals for setup-bias performance impact
+- [x] Test plan includes ideal setup benchmark against nearby non-optimal variants
+- [x] Trade-off assertions cover acceleration/top-speed/cornering relationships
+- [x] Race scenarios verify setup effects persist under race-style behavior
+- [x] Acceptance tolerances are explicit and reproducible
+- [x] Implementation tasks include coefficient tuning only when validation fails
+- [x] Verification tasks include typecheck, lint, build, and updated simulation tests

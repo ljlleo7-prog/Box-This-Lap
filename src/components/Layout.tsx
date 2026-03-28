@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Trophy, Users, Building2, Settings, User, Microscope, Flag } from 'lucide-react';
+import { LayoutDashboard, Trophy, Users, Building2, Settings, User, Microscope, Flag, RadioTower } from 'lucide-react';
 import { clsx } from 'clsx';
 import { supabase } from '../lib/supabase';
 import { GlassButton } from './ui/GlassButton';
@@ -11,13 +12,14 @@ const NAV_ITEMS = [
   { path: '/team-hub', label: 'Team Hub', icon: Users },
   { path: '/research', label: 'R&D', icon: Microscope },
   { path: '/race-dev', label: 'Dev Race', icon: Flag },
+  { path: '/practice-quali-dev', label: 'Dev Weekend', icon: RadioTower },
   { path: '/facilities', label: 'Facilities', icon: Building2 },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

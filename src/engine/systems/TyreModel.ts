@@ -13,7 +13,7 @@ export const TYRE_COMPOUNDS: Record<TyreCompound, TyreCharacteristics> = {
     'soft': {
         name: 'Soft',
         basePaceDelta: 0.0,
-        baseWearRate: 0.07, // ~15 laps
+        baseWearRate: 0.035, // ~4-6% per lap
         grip: 1.0,
         optimalTempWindow: [90, 110],
         rainPerformance: 0.1
@@ -21,23 +21,23 @@ export const TYRE_COMPOUNDS: Record<TyreCompound, TyreCharacteristics> = {
     'medium': {
         name: 'Medium',
         basePaceDelta: 0.6, // +0.6s
-        baseWearRate: 0.045, // ~25 laps
+        baseWearRate: 0.023, // ~3-4% per lap
         grip: 0.992, // ~0.8% slower
-        optimalTempWindow: [100, 120],
+        optimalTempWindow: [95, 115],
         rainPerformance: 0.1
     },
     'hard': {
         name: 'Hard',
         basePaceDelta: 1.2, // +1.2s
-        baseWearRate: 0.025, // ~40 laps
+        baseWearRate: 0.014, // ~2% per lap
         grip: 0.985, // ~1.5% slower
-        optimalTempWindow: [110, 130],
+        optimalTempWindow: [100, 120],
         rainPerformance: 0.1
     },
     'intermediate': {
         name: 'Intermediate',
         basePaceDelta: 3.0, // Slower in dry
-        baseWearRate: 0.05, // Wears fast in dry
+        baseWearRate: 0.035, 
         grip: 0.96, // Good in light rain
         optimalTempWindow: [80, 100],
         rainPerformance: 0.8
@@ -45,9 +45,9 @@ export const TYRE_COMPOUNDS: Record<TyreCompound, TyreCharacteristics> = {
     'wet': {
         name: 'Wet',
         basePaceDelta: 8.0,
-        baseWearRate: 0.06,
+        baseWearRate: 0.030,
         grip: 0.90,
-        optimalTempWindow: [60, 80],
+        optimalTempWindow: [70, 90],
         rainPerformance: 1.0
     }
 };
@@ -142,12 +142,25 @@ export class TyreModel {
         const mid = (minTemp + maxTemp) / 2;
         const half = Math.max(1, (maxTemp - minTemp) / 2);
         const normalized = Math.abs((temp - mid) / half);
-        let multiplier = 1 + Math.pow(normalized, 1.7) * 0.35;
-        if (temp > maxTemp) {
-            multiplier *= 1 + Math.pow((temp - maxTemp) / 10, 1.3) * 0.3;
-        } else if (temp < minTemp) {
-            multiplier *= 1 + Math.pow((minTemp - temp) / 10, 1.2) * 0.1;
+        
+        // Base wear inside window is close to 1.0
+        // Outside the window, it scales up
+        let multiplier = 1.0;
+        
+        if (normalized <= 1.0) {
+            // Inside window: slight increase at the edges
+            multiplier = 1 + Math.pow(normalized, 2) * 0.1; // Max 1.1x at edges
+        } else {
+            // Outside window
+            if (temp > maxTemp) {
+                // Overheating shreds tyres faster
+                multiplier = 1.1 + Math.pow((temp - maxTemp) / 10, 1.5) * 0.2;
+            } else if (temp < minTemp) {
+                // Graining from being too cold
+                multiplier = 1.1 + Math.pow((minTemp - temp) / 10, 1.2) * 0.1;
+            }
         }
-        return Math.min(2, Math.max(0.9, multiplier));
+        
+        return Math.min(2.5, Math.max(1.0, multiplier));
     }
 }

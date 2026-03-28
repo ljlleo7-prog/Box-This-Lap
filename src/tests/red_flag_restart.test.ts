@@ -2,7 +2,7 @@
 import { RaceLogicSystem } from '../engine/systems/RaceLogicSystem';
 import { StrategySystem } from '../engine/systems/StrategySystem';
 import { SeededRNG } from '../engine/rng';
-import { RaceState, VehicleState, Track, Driver } from '../types';
+import { RaceState, Track, Driver } from '../types';
 
 // Mock Track
 const mockTrack: Track = {
@@ -36,21 +36,21 @@ const d1: Driver = {
     skill: { racecraft: 80, consistency: 90, wetWeather: 80, tyreManagement: 80 }, 
     performance: { corneringHigh: 80, corneringMedium: 80, corneringLow: 80, straight: 80, temperatureAdaptability: 80 },
     personality: { aggression: 50, stressResistance: 50, teamPlayer: 50 }, 
-    morale: 80, trust: 80
+    morale: 80, trust: 80, learning: 80
 };
 const d2: Driver = { 
     id: 'd2', name: 'Driver 2', team: 't2', color: '#0000ff', basePace: 81, 
     skill: { racecraft: 80, consistency: 80, wetWeather: 80, tyreManagement: 80 }, 
     performance: { corneringHigh: 80, corneringMedium: 80, corneringLow: 80, straight: 80, temperatureAdaptability: 80 },
     personality: { aggression: 50, stressResistance: 50, teamPlayer: 50 }, 
-    morale: 80, trust: 80
+    morale: 80, trust: 80, learning: 80
 };
 drivers.set('d1', d1);
 drivers.set('d2', d2);
 
 // Setup System
 const rng = new SeededRNG(12345);
-const strategySystem = new StrategySystem();
+const strategySystem = new StrategySystem(rng);
 const raceLogic = new RaceLogicSystem(rng);
 
 // Mock State

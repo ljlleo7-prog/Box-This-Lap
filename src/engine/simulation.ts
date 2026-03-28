@@ -1,13 +1,17 @@
-import { RaceState, Track, Driver, TeamSpecs, TyreCompound, StrategyStint } from '../types';
+import { RaceState, Track, Driver, TeamSpecs, PreRaceSetup, TrackProfile } from '../types';
 import { SeededRNG } from './rng';
 import { WeatherSystem } from './systems/WeatherSystem';
-import { PhysicsSystem } from './systems/PhysicsSystem';
+import { IPhysicsSystem } from './systems/IPhysicsSystem';
+import { PhysicsSystem2025 } from './systems/PhysicsSystem2025';
+import { PhysicsSystem2026 } from './systems/PhysicsSystem2026';
 import { RaceLogicSystem } from './systems/RaceLogicSystem';
 import { StrategySystem } from './systems/StrategySystem';
+import { buildTrackProfile } from './trackProfile';
 
 export class SimulationEngine {
   private state: RaceState;
   private track: Track;
+  private trackProfile: TrackProfile;
   private drivers: Driver[];
   private driverMap: Map<string, Driver>;
   private rng: SeededRNG;
@@ -15,12 +19,13 @@ export class SimulationEngine {
 
   // Sub-systems
   private weatherSystem: WeatherSystem;
-  private physicsSystem: PhysicsSystem;
+  private physicsSystem: IPhysicsSystem;
   private raceLogicSystem: RaceLogicSystem;
   private strategySystem: StrategySystem;
 
-  constructor(track: Track, drivers: Driver[], seed: number, teamSpecsByTeam: Record<string, TeamSpecs> = {}) {
+  constructor(track: Track, drivers: Driver[], seed: number, teamSpecsByTeam: Record<string, TeamSpecs> = {}, ruleset: '2025' | '2026' = '2025') {
     this.track = track;
+    this.trackProfile = buildTrackProfile(track);
     this.drivers = drivers;
     this.driverMap = new Map(drivers.map(d => [d.id, d]));
     this.rng = new SeededRNG(seed);
@@ -28,9 +33,9 @@ export class SimulationEngine {
 
     // Initialize Systems
     this.weatherSystem = new WeatherSystem(this.rng);
-    this.physicsSystem = new PhysicsSystem(this.rng);
+    this.physicsSystem = ruleset === '2026' ? new PhysicsSystem2026(this.rng) : new PhysicsSystem2025(this.rng);
     this.raceLogicSystem = new RaceLogicSystem(this.rng);
-    this.strategySystem = new StrategySystem();
+    this.strategySystem = new StrategySystem(this.rng);
 
     // Initialize State
     this.state = this.raceLogicSystem.initializeRace(track, drivers, this.strategySystem);
@@ -43,7 +48,7 @@ export class SimulationEngine {
     this.state.status = 'racing';
   }
 
-  public applyPreRaceSetup(setups: Record<string, { tyreCompound?: TyreCompound; fuelLoad?: number; pitWindowStart?: number; pitWindowEnd?: number; stints?: StrategyStint[] }>): void {
+  public applyPreRaceSetup(setups: Record<string, PreRaceSetup>): void {
     this.state.vehicles.forEach(vehicle => {
       const setup = setups[vehicle.driverId];
       if (!setup) return;
@@ -64,6 +69,26 @@ export class SimulationEngine {
         vehicle.pitWindowEnd = undefined;
       }
 
+      if (setup.powerUnitPhilosophy) {
+        vehicle.powerUnitPhilosophy = setup.powerUnitPhilosophy;
+      }
+
+      if (setup.batteryAllocationMode) {
+        vehicle.batteryAllocationMode = setup.batteryAllocationMode;
+      }
+
+      if (setup.activeAeroMode) {
+        vehicle.activeAeroMode = setup.activeAeroMode;
+      }
+
+      if (setup.frontWingAngle !== undefined) vehicle.frontWingAngle = setup.frontWingAngle;
+      if (setup.rearWingAngle !== undefined) vehicle.rearWingAngle = setup.rearWingAngle;
+      if (setup.rideHeight !== undefined) vehicle.rideHeight = setup.rideHeight;
+      if (setup.suspensionStiffness !== undefined) vehicle.suspensionStiffness = setup.suspensionStiffness;
+      if (setup.toeOut !== undefined) vehicle.toeOut = setup.toeOut;
+      if (setup.camber !== undefined) vehicle.camber = setup.camber;
+      if (setup.gearboxSetting !== undefined) vehicle.gearboxSetting = setup.gearboxSetting;
+
       if (setup.stints && setup.stints.length > 0) {
         const stints = setup.stints.map(stint => ({ ...stint }));
         vehicle.strategyPlan = {
@@ -74,6 +99,11 @@ export class SimulationEngine {
       } else if (setup.tyreCompound && vehicle.strategyPlan?.stints?.length) {
         vehicle.strategyPlan.stints[0].compound = setup.tyreCompound;
       }
+
+      vehicle.usedDryCompounds = ['soft', 'medium', 'hard'].includes(vehicle.tyreCompound)
+        ? [vehicle.tyreCompound as 'soft' | 'medium' | 'hard']
+        : [];
+      vehicle.mandatoryDryCompoundsSatisfied = vehicle.usedDryCompounds.length >= 2;
     });
   }
 
@@ -103,7 +133,7 @@ export class SimulationEngine {
       // Wait, RaceLogicSystem handles pit stop movement.
       if (!vehicle.isInPit) {
           const teamSpecs = this.teamSpecsByTeam[driver.team];
-          this.physicsSystem.updateVehiclePhysics(vehicle, driver, this.state, this.track, deltaTime, teamSpecs);
+          this.physicsSystem.updateVehiclePhysics(vehicle, driver, this.state, this.track, this.trackProfile, deltaTime, teamSpecs);
       }
     });
 

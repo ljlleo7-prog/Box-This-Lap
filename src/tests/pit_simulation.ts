@@ -1,6 +1,5 @@
 import { Track, VehicleState, RaceState, Driver, TyreCompound } from '../types';
 import { RaceLogicSystem } from '../engine/systems/RaceLogicSystem';
-import { PhysicsSystem } from '../engine/systems/PhysicsSystem';
 import { StrategySystem } from '../engine/systems/StrategySystem';
 import { SeededRNG } from '../engine/rng';
 import { SILVERSTONE as silverstone } from '../data/tracks/silverstone';
@@ -10,11 +9,10 @@ const mockTrack: Track = silverstone;
 const rng = new SeededRNG(12345);
 
 // Mock Strategy System (minimal)
-const mockStrategySystem = new StrategySystem();
+const mockStrategySystem = new StrategySystem(rng);
 
 // Create Systems
 const raceLogic = new RaceLogicSystem(rng);
-const physicsSystem = new PhysicsSystem(rng);
 
 // Mock Drivers
 const drivers = new Map<string, Driver>();
@@ -28,7 +26,8 @@ drivers.set('test_driver', {
     performance: { corneringHigh: 90, corneringMedium: 90, corneringLow: 90, straight: 90, temperatureAdaptability: 90 },
     personality: { aggression: 90, stressResistance: 90, teamPlayer: 90 },
     morale: 100,
-    trust: 100
+    trust: 100,
+    learning: 90
 });
 drivers.set('test_driver_2', {
     id: 'test_driver_2',
@@ -40,7 +39,8 @@ drivers.set('test_driver_2', {
     performance: { corneringHigh: 90, corneringMedium: 90, corneringLow: 90, straight: 90, temperatureAdaptability: 90 },
     personality: { aggression: 90, stressResistance: 90, teamPlayer: 90 },
     morale: 100,
-    trust: 100
+    trust: 100,
+    learning: 90
 });
 
 // INITIAL STATE
@@ -70,7 +70,20 @@ const mockCarPit: VehicleState = {
     ersMode: 'balanced',
     paceMode: 'balanced',
     lineMode: 'balanced',
+    powerUnitPhilosophy: 'balanced',
+    batteryAllocationMode: 'balanced',
+    activeAeroMode: 'balanced',
+    frontWingAngle: 50,
+    rearWingAngle: 50,
+    rideHeight: 50,
+    suspensionStiffness: 50,
+    toeOut: 50,
+    camber: 50,
+    gearboxSetting: 50,
+    usedDryCompounds: ['medium'],
+    mandatoryDryCompoundsSatisfied: false,
     condition: 1.0,
+    executionState: { lap: 0, sectorOffsets: {} },
     damage: 0,
     stress: 0,
     morale: 100,
@@ -79,6 +92,7 @@ const mockCarPit: VehicleState = {
     inDirtyAir: false,
     isBattling: false,
     blueFlag: false,
+    ersTacticalState: { intent: 'neutral', reasons: [], deployBias: 1, harvestBias: 1 },
     currentLapTime: 80,
     lastLapTime: 90,
     bestLapTime: 90,
@@ -88,7 +102,7 @@ const mockCarPit: VehicleState = {
     lastPosition: 1,
     hasFinished: false,
     strategyPlan: { stints: [], currentStintIndex: 0 },
-    telemetry: { currentLapSpeedTrace: [], lastLapSpeedTrace: [] }
+    telemetry: { currentLapSpeedTrace: [], lastLapSpeedTrace: [], sampleInterval: 20, nextSampleDistance: 0 }
 };
 
 const mockCarTrack: VehicleState = {
@@ -100,7 +114,7 @@ const mockCarTrack: VehicleState = {
     boxThisLap: false,
     position: 2,
     lastPosition: 2,
-    telemetry: { currentLapSpeedTrace: [], lastLapSpeedTrace: [] }
+    telemetry: { currentLapSpeedTrace: [], lastLapSpeedTrace: [], sampleInterval: 20, nextSampleDistance: 0 }
 };
 
 const mockState: RaceState = {

@@ -11,11 +11,15 @@ import { ResearchDevelopment } from './pages/ResearchDevelopment';
 import { Facilities } from './pages/Facilities';
 import { Settings } from './pages/Settings';
 import { TeamSelection } from './pages/TeamSelection';
+import { OfflineChampionship } from './pages/OfflineChampionship';
+import { OfflineWeekend } from './pages/OfflineWeekend';
+import { PracticeQualiDev } from './pages/PracticeQualiDev';
 import { useEffect, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,6 +54,9 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/race-dev" element={<RaceControl devMode />} />
+        <Route path="/practice-quali-dev" element={<PracticeQualiDev />} />
+        <Route path="/offline" element={<OfflineChampionship />} />
+        <Route path="/offline/weekend" element={<OfflineWeekend />} />
         <Route
           path="/*"
           element={

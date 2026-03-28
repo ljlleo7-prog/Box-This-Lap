@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useRaceStore } from '../store/raceStore';
 import { useGameLoop } from '../hooks/useGameLoop';
 import { LiveLeaderboard } from '../components/race/LiveLeaderboard';
@@ -12,15 +12,17 @@ import { GlassButton } from '../components/ui/GlassButton';
 import { TRACKS } from '../data/tracks';
 import { clsx } from 'clsx';
 import { DRIVERS } from '../data/initialData';
-import { StrategyStint, TyreCompound } from '../types';
+import { StrategyStint, TyreCompound, PreRaceSetup, PowerUnitPhilosophy, BatteryAllocationMode, ActiveAeroMode } from '../types';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { TyreModel, TYRE_COMPOUNDS } from '../engine/systems/TyreModel';
 
 export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   const { weekendId } = useParams<{ weekendId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(!!weekendId);
   const [error, setError] = useState<string | null>(null);
+  const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
 
   const { 
     initRace, 
@@ -36,8 +38,9 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
     updateStrategy,
     applyPreRaceSetup
   } = useRaceStore();
-  const playerDriverIds = DRIVERS.filter(driver => driver.team === 'McLaren').map(driver => driver.id);
-  const [preRaceSetup, setPreRaceSetup] = useState<Record<string, { tyreCompound: TyreCompound; fuelLoad: number; pitWindowStart?: number; pitWindowEnd?: number; stints: StrategyStint[] }>>({});
+  const playerDriverIds = useMemo(() => DRIVERS.filter(driver => driver.team === 'McLaren').map(driver => driver.id), []);
+  const [preRaceSetup, setPreRaceSetup] = useState<Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }>>({});
+  const hydratedPreRaceIdRef = useRef<string | null>(null);
   
   // Start game loop
   useGameLoop();
@@ -45,11 +48,12 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   // Initialize race logic
   useEffect(() => {
     if (devMode) {
+        const requestedTrackId = searchParams.get('track');
+        const initialTrackId = TRACKS.some(track => track.id === requestedTrackId) ? requestedTrackId! : TRACKS[0].id;
         setError(null);
         setLoading(true);
-        setTrack(TRACKS[0].id);
-        initRace();
-        setLoading(false);
+        setTrack(initialTrackId);
+        setPendingTrackId(initialTrackId);
         return;
     }
 
@@ -66,10 +70,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
             // Set track from weekend data
             // Note: In a real implementation, we would also load the teams and grid here
             setTrack(weekend.track_id);
-            
-            // Initialize simulation (using default drivers for now, but on correct track)
-            initRace(); 
-            setLoading(false);
+            setPendingTrackId(weekend.track_id);
         } catch (err) {
             console.error(err);
             setError("Failed to load race configuration.");
@@ -78,7 +79,14 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
     };
 
     loadWeekend();
-  }, [weekendId, devMode, initRace, setTrack]);
+  }, [weekendId, devMode, searchParams, setTrack]);
+
+  useEffect(() => {
+      if (!pendingTrackId) return;
+      initRace(pendingTrackId);
+      setLoading(false);
+      setPendingTrackId(null);
+  }, [pendingTrackId, initRace]);
 
   // Real Weather Auto-Fetch
   useEffect(() => {
@@ -90,8 +98,13 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   }, [raceState?.weatherMode, fetchRealWeather]);
 
   useEffect(() => {
-      if (!raceState || raceState.status !== 'pre-race') return;
-      const nextSetup: Record<string, { tyreCompound: TyreCompound; fuelLoad: number; pitWindowStart?: number; pitWindowEnd?: number; stints: StrategyStint[] }> = {};
+      if (!raceState || raceState.status !== 'pre-race') {
+          hydratedPreRaceIdRef.current = null;
+          return;
+      }
+      if (hydratedPreRaceIdRef.current === raceState.id) return;
+
+      const nextSetup: Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }> = {};
       playerDriverIds.forEach(id => {
           const vehicle = raceState.vehicles.find(v => v.driverId === id);
           if (!vehicle) return;
@@ -100,11 +113,15 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
               fuelLoad: vehicle.fuelLoad,
               pitWindowStart: typeof vehicle.pitWindowStart === 'number' ? vehicle.pitWindowStart : undefined,
               pitWindowEnd: typeof vehicle.pitWindowEnd === 'number' ? vehicle.pitWindowEnd : undefined,
+              powerUnitPhilosophy: vehicle.powerUnitPhilosophy,
+              batteryAllocationMode: vehicle.batteryAllocationMode,
+              activeAeroMode: vehicle.activeAeroMode,
               stints: vehicle.strategyPlan?.stints?.length
                 ? vehicle.strategyPlan.stints.map(stint => ({ ...stint }))
                 : [{ compound: vehicle.tyreCompound, startLap: 0, endLap: raceState.totalLaps }]
           };
       });
+      hydratedPreRaceIdRef.current = raceState.id;
       setPreRaceSetup(nextSetup);
   }, [raceState, playerDriverIds]);
 
@@ -124,6 +141,68 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
     if (temp <= maxTemp) return { label: 'Optimal', color: '#22c55e' };
     if (temp <= maxTemp + 6) return { label: 'Warm', color: '#f59e0b' };
     return { label: 'Hot', color: '#ef4444' };
+  };
+
+  const getPuLabel = (value: PowerUnitPhilosophy) => {
+    if (value === 'top_speed') return 'Top Speed';
+    if (value === 'corner_focus') return 'Corner Focus';
+    return 'Balanced';
+  };
+
+  const getBatteryLabel = (value: BatteryAllocationMode) => {
+    if (value === 'conservative') return 'Conservative';
+    if (value === 'attack') return 'Attack';
+    return 'Balanced';
+  };
+
+  const getAeroLabel = (value: ActiveAeroMode) => {
+    if (value === 'low_drag') return 'Low Drag';
+    if (value === 'high_downforce') return 'High Downforce';
+    return 'Balanced';
+  };
+
+  const getDryRuleStatus = (vehicle: { mandatoryDryCompoundsSatisfied: boolean; usedDryCompounds: string[] }, weather: string) => {
+    if (weather !== 'dry') {
+      return { label: 'Wet rules active', tone: 'text-blue-300 border-blue-500/30 bg-blue-500/10' };
+    }
+    if (vehicle.mandatoryDryCompoundsSatisfied) {
+      return { label: 'Dry rule satisfied', tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' };
+    }
+    return {
+      label: `Needs second dry compound (${vehicle.usedDryCompounds.join('/') || 'none used'})`,
+      tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+    };
+  };
+
+  const getPlannedDryRuleStatus = (stints: StrategyStint[]) => {
+    const dryCompounds = [...new Set(stints
+      .map(stint => stint.compound)
+      .filter((compound): compound is 'soft' | 'medium' | 'hard' => ['soft', 'medium', 'hard'].includes(compound)))];
+
+    if (dryCompounds.length >= 2) {
+      return {
+        legal: true,
+        label: `Legal dry plan: ${dryCompounds.join(' + ')}`,
+        tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10',
+        missingCompound: null as null | TyreCompound
+      };
+    }
+
+    const missingCompound = (['soft', 'medium', 'hard'] as const).find(compound => !dryCompounds.includes(compound)) ?? 'medium';
+    return {
+      legal: false,
+      label: `Illegal dry finish risk: add ${missingCompound}`,
+      tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10',
+      missingCompound
+    };
+  };
+
+  const getStintWarning = (stints: StrategyStint[], index: number) => {
+    const planStatus = getPlannedDryRuleStatus(stints);
+    if (planStatus.legal || index !== stints.length - 1) {
+      return null;
+    }
+    return `Final stint should switch to ${planStatus.missingCompound}`;
   };
 
   const normalizeStints = (stints: StrategyStint[]) => {
@@ -153,14 +232,17 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
 
   const handleStartRace = () => {
       if (Object.keys(preRaceSetup).length > 0) {
-          const setups: Record<string, { tyreCompound?: TyreCompound; fuelLoad?: number; pitWindowStart?: number; pitWindowEnd?: number; stints?: StrategyStint[] }> = {};
+          const setups: Record<string, PreRaceSetup> = {};
           Object.entries(preRaceSetup).forEach(([driverId, setup]) => {
               const stints = normalizeStints(setup.stints);
               setups[driverId] = {
-                  tyreCompound: setup.tyreCompound as 'soft' | 'medium' | 'hard',
+                  tyreCompound: setup.tyreCompound,
                   fuelLoad: setup.fuelLoad,
                   pitWindowStart: setup.pitWindowStart ?? undefined,
                   pitWindowEnd: setup.pitWindowEnd ?? undefined,
+                  powerUnitPhilosophy: setup.powerUnitPhilosophy,
+                  batteryAllocationMode: setup.batteryAllocationMode,
+                  activeAeroMode: setup.activeAeroMode,
                   stints
               };
           });
@@ -169,8 +251,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
       startRace();
   };
 
-  const buildWearSeries = (stints: StrategyStint[]) => {
-      if (!stints.length || !totalLaps) return [];
+  const estimateBaselineLapTime = () => {
       const maxSpeeds = (track.sectors || [])
         .map(sector => sector.maxSpeed)
         .filter((speed): speed is number => typeof speed === 'number' && speed > 0);
@@ -178,9 +259,78 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
         ? maxSpeeds.reduce((sum, speed) => sum + speed, 0) / maxSpeeds.length
         : 70;
       const normalizedSpeed = Math.min(90, Math.max(40, averageSpeed));
-      const lapTimeSeconds = track.totalDistance
+      return track.totalDistance
         ? Math.min(130, Math.max(40, track.totalDistance / normalizedSpeed))
         : 90;
+  };
+
+  const estimatePitLoss = (baselineLapTimeSeconds: number) => {
+      const pitDistance = track.pitLane.exitDistance >= track.pitLane.entryDistance
+        ? track.pitLane.exitDistance - track.pitLane.entryDistance
+        : (track.totalDistance - track.pitLane.entryDistance) + track.pitLane.exitDistance;
+      const pitTransitTime = pitDistance > 0 ? pitDistance / track.pitLane.speedLimit : 0;
+      const racingTransitTime = pitDistance > 0 ? pitDistance / Math.max(1, track.totalDistance / baselineLapTimeSeconds) : 0;
+      return track.pitLane.stopTime + Math.max(0, pitTransitTime - racingTransitTime);
+  };
+
+  const formatRaceTime = (seconds: number) => {
+      if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+      const totalMilliseconds = Math.round(seconds * 1000);
+      const minutes = Math.floor(totalMilliseconds / 60000);
+      const secs = Math.floor((totalMilliseconds % 60000) / 1000);
+      const milliseconds = totalMilliseconds % 1000;
+      return `${minutes}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+  };
+
+  const buildTheoreticalRaceTime = (stints: StrategyStint[]) => {
+      if (!stints.length || !totalLaps) {
+        return {
+          totalSeconds: 0,
+          baselineLapTimeSeconds: 0,
+          pitLossSeconds: 0,
+          pitStops: 0,
+          stintTimes: [] as number[]
+        };
+      }
+
+      const baselineLapTimeSeconds = estimateBaselineLapTime();
+      const pitLossSeconds = estimatePitLoss(baselineLapTimeSeconds);
+      let totalSeconds = 0;
+      let currentWear = 0;
+      let stintIndex = 0;
+      const stintTimes = stints.map(() => 0);
+
+      for (let lap = 1; lap <= totalLaps; lap++) {
+          const stint = stints[stintIndex];
+          if (!stint) break;
+
+          const gripFactor = TyreModel.getGripFactor(stint.compound, currentWear, 0);
+          const lapTime = baselineLapTimeSeconds / Math.max(0.1, gripFactor);
+          totalSeconds += lapTime;
+          stintTimes[stintIndex] += lapTime;
+
+          const wearRate = TyreModel.getWearRate(stint.compound, track, 'balanced', currentWear);
+          currentWear = Math.min(100, currentWear + wearRate * lapTime);
+
+          if (lap >= stint.endLap && stintIndex < stints.length - 1) {
+              totalSeconds += pitLossSeconds;
+              stintIndex += 1;
+              currentWear = 0;
+          }
+      }
+
+      return {
+        totalSeconds,
+        baselineLapTimeSeconds,
+        pitLossSeconds,
+        pitStops: Math.max(0, stints.length - 1),
+        stintTimes
+      };
+  };
+
+  const buildWearSeries = (stints: StrategyStint[]) => {
+      if (!stints.length || !totalLaps) return [];
+      const lapTimeSeconds = estimateBaselineLapTime();
       const series: Array<Record<string, number | null>> = [];
       let wear = 0;
       let stintIndex = 0;
@@ -353,7 +503,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                     </h3>
                  </div>
                  <div className="flex-1 p-4">
-                     {raceState && <TelemetryPanel raceState={raceState} defaultDriverIds={playerDriverIds} />}
+                    {raceState && <TelemetryPanel raceState={raceState} defaultDriverIds={playerDriverIds} telemetryMetadata={track.telemetry} />}
                  </div>
              </GlassCard>
         </div>
@@ -365,10 +515,12 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
              </div>
              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {raceState && playerDriverIds.map(id => {
-                    const vehicle = raceState.vehicles.find(v => v.id === id);
+                    const vehicle = raceState.vehicles.find(v => v.driverId === id);
                     const driver = DRIVERS.find(d => d.id === id);
                     if (!vehicle || !driver) return null;
-                    
+                    const dryRuleStatus = getDryRuleStatus(vehicle, raceState.weather);
+                    const livePlanStatus = getPlannedDryRuleStatus(vehicle.strategyPlan?.stints ?? []);
+
                     return (
                         <div key={id} className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-3">
                             <div className="flex items-center justify-between">
@@ -408,6 +560,35 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                                     <div className="text-gray-400">Tyres</div>
                                     <div className="text-white font-bold uppercase">{vehicle.tyreCompound}</div>
                                 </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">2026 Setup</div>
+                                <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                    <div className="rounded border border-white/10 bg-black/30 px-2 py-2">
+                                        <div className="text-gray-500 uppercase tracking-widest">PU</div>
+                                        <div className="mt-1 font-bold text-white">{getPuLabel(vehicle.powerUnitPhilosophy)}</div>
+                                    </div>
+                                    <div className="rounded border border-white/10 bg-black/30 px-2 py-2">
+                                        <div className="text-gray-500 uppercase tracking-widest">Battery</div>
+                                        <div className="mt-1 font-bold text-white">{getBatteryLabel(vehicle.batteryAllocationMode)}</div>
+                                    </div>
+                                    <div className="rounded border border-white/10 bg-black/30 px-2 py-2">
+                                        <div className="text-gray-500 uppercase tracking-widest">Aero</div>
+                                        <div className="mt-1 font-bold text-white">{getAeroLabel(vehicle.activeAeroMode)}</div>
+                                    </div>
+                                </div>
+                                <div className={clsx(
+                                    'rounded border px-2 py-2 text-[10px] font-bold uppercase tracking-widest',
+                                    dryRuleStatus.tone
+                                )}>
+                                    {dryRuleStatus.label}
+                                </div>
+                                {raceState.weather === 'dry' && !livePlanStatus.legal && (
+                                    <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-2 text-[10px] font-bold uppercase tracking-widest text-amber-200">
+                                        Planned finish still illegal: {livePlanStatus.missingCompound} missing
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-2">
@@ -525,7 +706,10 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                 const setup = preRaceSetup[id];
                 const driver = DRIVERS.find(d => d.id === id);
                 if (!setup || !driver) return null;
-                const wearSeries = buildWearSeries(normalizeStints(setup.stints));
+                const normalizedStints = normalizeStints(setup.stints);
+                const wearSeries = buildWearSeries(normalizedStints);
+                const plannedDryRuleStatus = getPlannedDryRuleStatus(normalizedStints);
+                const theoreticalRace = buildTheoreticalRaceTime(normalizedStints);
                 return (
                   <div key={id} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
                     <div className="flex items-center justify-between">
@@ -534,6 +718,60 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                         <div className="text-[10px] text-gray-500 uppercase tracking-widest">{driver.team}</div>
                       </div>
                       <div className="text-[10px] text-gray-500 uppercase tracking-widest">Laps {totalLaps}</div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div className="space-y-1">
+                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">PU Philosophy</div>
+                        <select
+                          value={setup.powerUnitPhilosophy ?? 'balanced'}
+                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], powerUnitPhilosophy: event.target.value as PowerUnitPhilosophy } }))}
+                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
+                        >
+                          <option value="top_speed">Top Speed</option>
+                          <option value="balanced">Balanced</option>
+                          <option value="corner_focus">Corner Focus</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Battery Allocation</div>
+                        <select
+                          value={setup.batteryAllocationMode ?? 'balanced'}
+                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], batteryAllocationMode: event.target.value as BatteryAllocationMode } }))}
+                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
+                        >
+                          <option value="conservative">Conservative</option>
+                          <option value="balanced">Balanced</option>
+                          <option value="attack">Attack</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Active Aero</div>
+                        <select
+                          value={setup.activeAeroMode ?? 'balanced'}
+                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], activeAeroMode: event.target.value as ActiveAeroMode } }))}
+                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
+                        >
+                          <option value="low_drag">Low Drag</option>
+                          <option value="balanced">Balanced</option>
+                          <option value="high_downforce">High Downforce</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
+                        <span className="block text-gray-500 uppercase tracking-widest mb-1">PU effect</span>
+                        {setup.powerUnitPhilosophy === 'top_speed' ? 'Higher terminal speed, weaker corner rotation.' : setup.powerUnitPhilosophy === 'corner_focus' ? 'Stronger cornering, more drag on straights.' : 'Neutral ICE/gear balance.'}
+                      </div>
+                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
+                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Battery effect</span>
+                        {setup.batteryAllocationMode === 'attack' ? 'More deployment and lower regen reserve.' : setup.batteryAllocationMode === 'conservative' ? 'More harvesting, smaller attack bursts.' : 'Balanced deploy and recharge.'}
+                      </div>
+                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
+                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Aero effect</span>
+                        {setup.activeAeroMode === 'low_drag' ? 'Better straight-line speed, less loaded in turns.' : setup.activeAeroMode === 'high_downforce' ? 'More grip in corners, slower at vmax.' : 'Neutral aero platform.'}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 text-xs">
@@ -602,6 +840,31 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                       </div>
                     </div>
 
+                    <div className={clsx(
+                      'rounded border px-3 py-2 text-[10px] font-bold uppercase tracking-widest',
+                      plannedDryRuleStatus.tone
+                    )}>
+                      {plannedDryRuleStatus.label}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
+                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Theoretical time</span>
+                        <div className="font-bold text-white text-xs">{formatRaceTime(theoreticalRace.totalSeconds)}</div>
+                        <div className="mt-1 text-[9px] text-gray-500">Grip-based stint estimate</div>
+                      </div>
+                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
+                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Pit loss</span>
+                        <div className="font-bold text-white text-xs">+{theoreticalRace.pitLossSeconds.toFixed(1)}s</div>
+                        <div className="mt-1 text-[9px] text-gray-500">× {theoreticalRace.pitStops} stop{theoreticalRace.pitStops === 1 ? '' : 's'}</div>
+                      </div>
+                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
+                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Baseline lap</span>
+                        <div className="font-bold text-white text-xs">{theoreticalRace.baselineLapTimeSeconds.toFixed(2)}s</div>
+                        <div className="mt-1 text-[9px] text-gray-500">Before grip loss</div>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="text-[10px] text-gray-500 uppercase tracking-widest">Stints</div>
@@ -611,9 +874,10 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                             if (current.length >= 4) return prev;
                             const lastEnd = current[current.length - 1]?.endLap || Math.max(1, Math.floor(totalLaps / 2));
                             const nextEnd = Math.min(totalLaps, lastEnd + Math.max(1, Math.floor(totalLaps / 6)));
+                            const fallbackCompound = current[current.length - 1]?.compound ?? prev[id].tyreCompound;
                             const nextStints: StrategyStint[] = [
                               ...current,
-                              { compound: 'medium', startLap: lastEnd, endLap: nextEnd }
+                              { compound: fallbackCompound, startLap: lastEnd, endLap: nextEnd }
                             ];
                             return { ...prev, [id]: { ...prev[id], stints: normalizeStints(nextStints) } };
                           })}
@@ -624,50 +888,60 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                       </div>
                       <div className="space-y-2">
                         {setup.stints.map((stint, index) => (
-                          <div key={`${id}-stint-${index}`} className="grid grid-cols-12 gap-2 items-center text-xs">
-                            <div className="col-span-5">
-                              <select
-                                value={stint.compound}
-                                onChange={(event) => setPreRaceSetup(prev => {
-                                  const next = [...prev[id].stints];
-                                  next[index] = { ...next[index], compound: event.target.value as TyreCompound };
-                                  return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
-                                })}
-                                className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                              >
-                                <option value="soft">Soft</option>
-                                <option value="medium">Medium</option>
-                                <option value="hard">Hard</option>
-                              </select>
+                          <div key={`${id}-stint-${index}`} className="space-y-1">
+                            <div className="grid grid-cols-12 gap-2 items-center text-xs">
+                              <div className="col-span-4">
+                                <select
+                                  value={stint.compound}
+                                  onChange={(event) => setPreRaceSetup(prev => {
+                                    const next = [...prev[id].stints];
+                                    next[index] = { ...next[index], compound: event.target.value as TyreCompound };
+                                    return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
+                                  })}
+                                  className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
+                                >
+                                  <option value="soft">Soft</option>
+                                  <option value="medium">Medium</option>
+                                  <option value="hard">Hard</option>
+                                </select>
+                              </div>
+                              <div className="col-span-3">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={totalLaps}
+                                  step={1}
+                                  value={stint.endLap}
+                                  onChange={(event) => setPreRaceSetup(prev => {
+                                    const value = event.target.valueAsNumber;
+                                    if (Number.isNaN(value)) return prev;
+                                    const next = [...prev[id].stints];
+                                    next[index] = { ...next[index], endLap: value };
+                                    return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
+                                  })}
+                                  className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
+                                />
+                              </div>
+                              <div className="col-span-3 text-[10px] text-gray-400 uppercase tracking-widest">
+                                {formatRaceTime(theoreticalRace.stintTimes[index] ?? 0)}
+                              </div>
+                              <div className="col-span-2 flex justify-end">
+                                <button
+                                  onClick={() => setPreRaceSetup(prev => {
+                                    const next = prev[id].stints.filter((_, i) => i !== index);
+                                    return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
+                                  })}
+                                  className="px-2 py-1 rounded border text-[10px] font-bold uppercase tracking-widest bg-black/40 text-gray-400 border-white/10 hover:text-white"
+                                >
+                                  Remove
+                                </button>
+                              </div>
                             </div>
-                            <div className="col-span-5">
-                              <input
-                                type="number"
-                                min={1}
-                                max={totalLaps}
-                                step={1}
-                                value={stint.endLap}
-                                onChange={(event) => setPreRaceSetup(prev => {
-                                  const value = event.target.valueAsNumber;
-                                  if (Number.isNaN(value)) return prev;
-                                  const next = [...prev[id].stints];
-                                  next[index] = { ...next[index], endLap: value };
-                                  return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
-                                })}
-                                className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                              />
-                            </div>
-                            <div className="col-span-2 flex justify-end">
-                              <button
-                                onClick={() => setPreRaceSetup(prev => {
-                                  const next = prev[id].stints.filter((_, i) => i !== index);
-                                  return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
-                                })}
-                                className="px-2 py-1 rounded border text-[10px] font-bold uppercase tracking-widest bg-black/40 text-gray-400 border-white/10 hover:text-white"
-                              >
-                                Remove
-                              </button>
-                            </div>
+                            {getStintWarning(normalizeStints(setup.stints), index) && (
+                              <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-200">
+                                {getStintWarning(normalizeStints(setup.stints), index)}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

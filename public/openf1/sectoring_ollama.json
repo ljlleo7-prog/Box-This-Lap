@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-03-12T13:26:28.852Z",
+  "source": "ollama",
+  "model": "llama3",
+  "errors": [
+    {
+      "trackId": "silverstone-gp",
+      "reason": "invalid_json"
+    },
+    {
+      "trackId": "monza-gp",
+      "reason": "invalid_json"
+    },
+    {
+      "trackId": "spa-gp",
+      "reason": "invalid_json"
+    },
+    {
+      "trackId": "china-gp",
+      "reason": "invalid_json"
+    },
+    {
+      "trackId": "singapore-gp",
+      "reason": "invalid_json"
+    },
+    {
+      "trackId": "bahrain-gp",
+      "reason": "This operation was aborted"
+    },
+    {
+      "trackId": "monaco-gp",
+      "reason": "invalid_json"
+    }
+  ],
+  "sectorsByTrack": {}
+}
