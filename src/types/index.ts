@@ -4,6 +4,7 @@ export interface Driver {
   team: string;
   color: string;
   basePace: number; // seconds per lap baseline (lower is better)
+  learning: number;
   skill: {
     racecraft: number; // 0-100
     consistency: number; // 0-100
@@ -31,15 +32,88 @@ export interface TrackSector {
   name?: string; // e.g. "Copse", "Maggots"
   startDistance: number;
   endDistance: number;
-  type: 'straight' | 'corner_high_speed' | 'corner_medium_speed' | 'corner_low_speed';
-  difficulty: number;
+  type: 'straight' | 'corner_low_speed' | 'corner_medium_speed' | 'corner_high_speed';
+  difficulty?: number;
   maxSpeed?: number; // Optional override for corner speed limit (m/s)
+  targetSpeed?: number;
+  startSpeed?: number;
+  endSpeed?: number;
 }
 
 export interface DRSZone {
     detectionDistance: number;
     activationDistance: number;
     endDistance: number;
+}
+
+export interface TrackTelemetryCoverage {
+  coveredDistance: number;
+  coveredRatio: number;
+  hasFullDistance: boolean;
+  sectorCount: number;
+}
+
+export type TrackProfilePhase = 'entry' | 'apex' | 'exit' | 'straight';
+
+export interface TrackProfileSample {
+  distance: number;
+  speed: number;
+  sectorIndex: number;
+  sectorId: string;
+  phase: TrackProfilePhase;
+}
+
+export interface TrackProfile {
+  sampleSpacing: number;
+  totalDistance: number;
+  samples: TrackProfileSample[];
+}
+
+export interface TrackProfileLookahead {
+  sample: TrackProfileSample;
+  distanceAhead: number;
+}
+
+export interface VehicleExecutionOffset {
+  sectorId: string;
+  lap: number;
+  brakeShiftMeters: number;
+  apexSpeedFactor: number;
+  exitSpeedFactor: number;
+  straightSpeedFactor: number;
+  tractionFactor: number;
+  ersCommitmentFactor: number;
+}
+
+export interface VehicleExecutionState {
+  lap: number;
+  sectorOffsets: Record<string, VehicleExecutionOffset>;
+  lastSectorId?: string;
+  lastSafetyCarStatus?: SafetyCarStatus;
+  wasInPit?: boolean;
+  physicalAheadId?: string; // ID of the car physically in front on track
+  physicalGap?: number; // Distance in meters to the car physically ahead
+  overtakingImmunity?: number; // Seconds remaining where this car ignores 'battling' slowdowns to complete a pass
+}
+
+export interface ERSTacticalState {
+  intent: 'neutral' | 'attack' | 'defend' | 'recharge' | 'push' | 'release';
+  reasons: string[];
+  deployBias: number;
+  harvestBias: number;
+}
+
+export interface TrackTelemetryMetadata {
+  source: 'openf1-calculated' | 'openf1-runtime-fallback' | 'default-track';
+  generatedAt?: string;
+  curveKey?: string;
+  lapCount?: number;
+  avgLapTime?: number | null;
+  avgSpeedKph?: number | null;
+  avgMaxSpeedKph?: number | null;
+  sessionTypes?: string[];
+  hotlapOnly?: boolean;
+  coverage?: TrackTelemetryCoverage;
 }
 
 export interface Track {
@@ -63,6 +137,8 @@ export interface Track {
       rainChance: number; // 0-1
       rainIntensity: 'light' | 'heavy' | 'mixed';
   };
+  telemetry?: TrackTelemetryMetadata;
+  telemetryPoints?: Array<{ dist: number; speed: number }>;
   sectors: TrackSector[];
   drsZones: DRSZone[]; // Added DRS Zones
   pitLane: {
@@ -74,9 +150,14 @@ export interface Track {
 }
 
 export type TyreCompound = 'soft' | 'medium' | 'hard' | 'intermediate' | 'wet';
+export type DryTyreCompound = 'soft' | 'medium' | 'hard';
 export type PaceMode = 'conservative' | 'balanced' | 'aggressive';
 export type ERSMode = 'harvest' | 'balanced' | 'deploy';
+export type RacingLineMode = 'defend' | 'balanced' | 'attack';
 export type WeatherCondition = 'dry' | 'light-rain' | 'heavy-rain';
+export type PowerUnitPhilosophy = 'top_speed' | 'balanced' | 'corner_focus';
+export type BatteryAllocationMode = 'conservative' | 'balanced' | 'attack';
+export type ActiveAeroMode = 'low_drag' | 'balanced' | 'high_downforce';
 
 export interface WeatherForecastItem {
   timeOffset: number; // Seconds from now
@@ -96,11 +177,46 @@ export interface SectorCondition {
 export interface TelemetryDataPoint {
     distance: number;
     speed: number;
+    sampleTime?: number;
+    sectorId?: string;
 }
+
+export interface Team {
+  id: string;
+  name: string;
+  color: string;
+  budget: number;
+  reputation: number;
+  token_cost: number;
+  performance: {
+    car: number;
+    industry: number;
+    drivers: number;
+  };
+  specs?: {
+    acceleration: number;
+    braking: number;
+    drag_reduction: number;
+    cornering_low: number;
+    cornering_mid: number;
+    cornering_high: number;
+    ers_efficiency: number;
+    cooling: number;
+    lifespan: number;
+    drs_efficiency: number;
+  };
+  drivers?: Driver[];
+  championship_id: string;
+  owner_id?: string;
+}
+
+export type TeamSpecs = NonNullable<Team['specs']>;
 
 export interface VehicleTelemetry {
     lastLapSpeedTrace: TelemetryDataPoint[];
     currentLapSpeedTrace: TelemetryDataPoint[];
+    sampleInterval: number;
+    nextSampleDistance: number;
 }
 
 export interface StrategyStint {
@@ -113,6 +229,24 @@ export interface StrategyStint {
 export interface StrategyPlan {
     stints: StrategyStint[];
     currentStintIndex: number;
+}
+
+export interface PreRaceSetup {
+  tyreCompound?: TyreCompound;
+  fuelLoad?: number;
+  pitWindowStart?: number;
+  pitWindowEnd?: number;
+  stints?: StrategyStint[];
+  powerUnitPhilosophy?: PowerUnitPhilosophy;
+  batteryAllocationMode?: BatteryAllocationMode;
+  activeAeroMode?: ActiveAeroMode;
+  frontWingAngle?: number;
+  rearWingAngle?: number;
+  rideHeight?: number;
+  suspensionStiffness?: number;
+  toeOut?: number;
+  camber?: number;
+  gearboxSetting?: number;
 }
 
 export interface VehicleState {
@@ -132,13 +266,31 @@ export interface VehicleState {
   tyreCompound: TyreCompound;
   tyreWear: number; // 0-100% (0 is new, 100 is dead)
   tyreAgeLaps: number;
+  tyreTemp: number;
   fuelLoad: number; // kg
   ersLevel: number; // 0-100%
+  ersRecoveredThisLap: number;
   ersMode: ERSMode;
   paceMode: PaceMode;
-  
+  lineMode: RacingLineMode;
+  powerUnitPhilosophy: PowerUnitPhilosophy;
+  batteryAllocationMode: BatteryAllocationMode;
+  activeAeroMode: ActiveAeroMode;
+  // Advanced Setup
+  frontWingAngle: number;
+  rearWingAngle: number;
+  rideHeight: number;
+  suspensionStiffness: number;
+  toeOut: number;
+  camber: number;
+  gearboxSetting: number;
+
+  usedDryCompounds: DryTyreCompound[];
+  mandatoryDryCompoundsSatisfied: boolean;
+
   // Dynamic factors
   condition: number; // Day Form (0.98 - 1.02)
+  executionState: VehicleExecutionState;
   damage: number; // 0-100%
   stress: number; // 0-100%
   morale: number; // 0-100 (Dynamic confidence)
@@ -147,7 +299,8 @@ export interface VehicleState {
   inDirtyAir: boolean; // Dirty Air status
   isBattling: boolean; // Wheel-to-wheel battling
   blueFlag: boolean; // Being lapped warning
-  
+  ersTacticalState: ERSTacticalState;
+
   // Timing
   currentLapTime: number;
   lastLapTime: number;
@@ -160,6 +313,8 @@ export interface VehicleState {
 
   // Strategy
   strategyPlan: StrategyPlan;
+  pitWindowStart?: number;
+  pitWindowEnd?: number;
 
   // Telemetry
   telemetry: VehicleTelemetry;
@@ -197,3 +352,5 @@ export interface StrategyDecision {
   type: 'pit' | 'pace' | 'ers' | 'defend';
   value: string | number;
 }
+
+export * from './championship';

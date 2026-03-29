@@ -1,19 +1,31 @@
-import { RaceState, VehicleState, Track, Driver } from '../../types';
+import { RaceState, VehicleState, Track, Driver, TeamSpecs, DryTyreCompound, VehicleExecutionState } from '../../types';
 import { SeededRNG } from '../rng';
 import { StrategySystem } from './StrategySystem';
+import { TYRE_COMPOUNDS } from './TyreModel';
+
+const createExecutionState = (): VehicleExecutionState => ({
+    lap: 0,
+    sectorOffsets: {},
+    lastSectorId: undefined,
+    lastSafetyCarStatus: 'none',
+    wasInPit: false
+});
 
 export class RaceLogicSystem {
   private rng: SeededRNG;
   private safetyCarTimer: number = 0;
   private pendingSafetyCar: { type: 'sc' | 'vsc' | 'red-flag', timer: number } | null = null;
   // Pit Stop State (id -> { timeLeft, totalDuration, stopDuration, laneTime, entryDist, laneTrackDist })
-  private pitStates: Map<string, { 
-      timeLeft: number, 
-      totalDuration: number, 
-      stopDuration: number, 
+  private pitStates: Map<string, {
+      timeLeft: number,
+      totalDuration: number,
+      stopDuration: number,
       laneTime: number,
       entryDist: number,
-      laneTrackDist: number
+      laneTrackDist: number,
+      redFlagHold?: boolean,
+      redFlagServiced?: boolean,
+      redFlagOrder?: number
   }> = new Map();
 
   constructor(rng: SeededRNG) {
@@ -65,6 +77,10 @@ export class RaceLogicSystem {
       // Generate Strategy
       const strategyPlan = strategySystem.initializeStrategy(driver, track, track.totalLaps, initialRainIntensity / 100);
       const tyreCompound = strategyPlan.stints[0].compound;
+      const [minTemp, maxTemp] = TYRE_COMPOUNDS[tyreCompound].optimalTempWindow;
+      const optMid = (minTemp + maxTemp) / 2;
+      const ambient = track.baseTemperature || 25;
+      const startTemp = Math.max(20, Math.min(140, optMid + (ambient - 25) * 0.3));
 
       return {
         id: driver.id,
@@ -78,16 +94,37 @@ export class RaceLogicSystem {
         isInPit: false,
         pitStopCount: 0,
         boxThisLap: false,
-        
+
         tyreCompound,
         tyreWear: 0,
         tyreAgeLaps: 0,
+        tyreTemp: startTemp,
         fuelLoad: 100, // kg
         ersLevel: 100,
+        ersRecoveredThisLap: 0,
         ersMode: 'balanced',
         paceMode: 'balanced',
-        
+        lineMode: 'balanced',
+        powerUnitPhilosophy: 'balanced',
+        batteryAllocationMode: 'balanced',
+        activeAeroMode: 'balanced',
+
+        // Advanced Setup Initialization
+        frontWingAngle: 50,
+        rearWingAngle: 50,
+        rideHeight: 50,
+        suspensionStiffness: 50,
+        toeOut: 50,
+        camber: 50,
+        gearboxSetting: 50,
+
+        usedDryCompounds: ['soft', 'medium', 'hard'].includes(tyreCompound)
+          ? [tyreCompound as DryTyreCompound]
+          : [],
+        mandatoryDryCompoundsSatisfied: !['soft', 'medium', 'hard'].includes(tyreCompound),
+
         condition, // Initialized condition
+        executionState: createExecutionState(),
         damage: 0,
         stress: 0,
         morale: driver.morale || 80, // Initialize with driver's base morale
@@ -96,7 +133,13 @@ export class RaceLogicSystem {
         inDirtyAir: false,
         isBattling: false,
         blueFlag: false,
-        
+        ersTacticalState: {
+          intent: 'neutral',
+          reasons: [],
+          deployBias: 1,
+          harvestBias: 1
+        },
+
         currentLapTime: 0,
         lastLapTime: 0,
         bestLapTime: 0,
@@ -110,7 +153,9 @@ export class RaceLogicSystem {
 
         telemetry: {
             lastLapSpeedTrace: [],
-            currentLapSpeedTrace: []
+            currentLapSpeedTrace: [],
+            sampleInterval: 10,
+            nextSampleDistance: 0
         }
       };
     });
@@ -149,27 +194,227 @@ export class RaceLogicSystem {
     };
   }
 
-  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, strategySystem: StrategySystem): void {
+  // Extends VehicleState internally during a tick to pass physical references
+  // We can just store it in vehicle.executionState if needed, but let's just add it to the state directly if possible, or use a map.
+  private retireVehicle(vehicle: VehicleState, track: Track): void {
+      vehicle.damage = 100;
+      vehicle.speed = 0;
+      vehicle.isInPit = true;
+      vehicle.boxThisLap = false;
+      vehicle.isBattling = false;
+      vehicle.inDirtyAir = false;
+      vehicle.blueFlag = false;
+      vehicle.drsOpen = false;
+      vehicle.executionState.physicalAheadId = undefined;
+      vehicle.executionState.physicalGap = undefined;
+      vehicle.distanceOnLap = track.pitLane?.entryDistance ?? track.totalDistance;
+      vehicle.gapToLeader = 0;
+      vehicle.gapToAhead = 0;
+      this.pitStates.delete(vehicle.id);
+  }
+
+  private applyPitService(vehicle: VehicleState, state: RaceState, track: Track, strategySystem: StrategySystem): void {
+      vehicle.tyreCompound = strategySystem.getPitCompound(vehicle, state, track.totalLaps);
+      if (vehicle.strategyPlan) {
+          vehicle.strategyPlan.currentStintIndex++;
+      }
+      vehicle.pitWindowStart = undefined;
+      vehicle.pitWindowEnd = undefined;
+
+      vehicle.tyreWear = 0;
+      vehicle.tyreAgeLaps = 0;
+      vehicle.damage = 0;
+
+      if (['soft', 'medium', 'hard'].includes(vehicle.tyreCompound)) {
+          const dryCompound = vehicle.tyreCompound as DryTyreCompound;
+          if (!vehicle.usedDryCompounds.includes(dryCompound)) {
+              vehicle.usedDryCompounds = [...vehicle.usedDryCompounds, dryCompound];
+          }
+      }
+
+      const dryRace = state.weatherForecast.every(item => item.rainIntensity <= 10) && state.rainIntensityLevel <= 10;
+      vehicle.mandatoryDryCompoundsSatisfied = !dryRace || vehicle.usedDryCompounds.length >= 2;
+  }
+
+  private moveFieldIntoRedFlagPitHold(state: RaceState, track: Track): void {
+      const pitEntry = track.pitLane?.entryDistance ?? track.totalDistance;
+      const activeVehicles = state.vehicles
+          .filter(v => v.damage < 100 && !v.hasFinished)
+          .sort((a, b) => a.position - b.position);
+
+      activeVehicles.forEach((vehicle, index) => {
+          vehicle.isInPit = true;
+          vehicle.boxThisLap = false;
+          vehicle.speed = 0;
+          vehicle.isBattling = false;
+          vehicle.inDirtyAir = false;
+          vehicle.blueFlag = false;
+          vehicle.drsOpen = false;
+          vehicle.gapToAhead = 0;
+          vehicle.gapToLeader = 0;
+          vehicle.executionState.physicalAheadId = undefined;
+          vehicle.executionState.physicalGap = undefined;
+          vehicle.distanceOnLap = pitEntry + (index * 12);
+          if (vehicle.distanceOnLap >= track.totalDistance) {
+              vehicle.distanceOnLap -= track.totalDistance;
+          }
+
+          this.pitStates.set(vehicle.id, {
+              timeLeft: 0,
+              totalDuration: 0,
+              stopDuration: 0,
+              laneTime: 0,
+              entryDist: pitEntry,
+              laneTrackDist: 0,
+              redFlagHold: true,
+              redFlagServiced: false,
+              redFlagOrder: index
+          });
+      });
+  }
+
+  public updateRaceLogic(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, strategySystem: StrategySystem, teamSpecsByTeam: Record<string, TeamSpecs> = {}): void {
       this.updateSafetyCar(state, track, dt);
-      this.checkIncidents(state, track, drivers, dt);
+      this.checkIncidents(state, track, drivers, dt, teamSpecsByTeam);
       
       // Update each vehicle's race logic
       state.vehicles.forEach(vehicle => {
           // Skip DNF cars for performance and safety
           if (vehicle.damage >= 100) {
-              vehicle.speed = 0;
+              this.retireVehicle(vehicle, track);
               return;
           }
 
+          this.refreshExecutionState(vehicle, state, track, drivers);
           this.handlePitStopLogic(vehicle, state, track, dt, strategySystem);
           this.updateDRS(vehicle, state, track);
           this.attemptOvertake(vehicle, state, track, drivers);
+          this.updateTactics(vehicle, state, track, drivers);
       });
 
       this.updatePositions(state, track);
       this.updateMoraleAndConcentration(state, dt); // Update driver morale and concentration
       this.updateSpatialAwareness(state, track);
       this.checkRaceFinish(state);
+  }
+
+  private updateTactics(vehicle: VehicleState, state: RaceState, track: Track, drivers: Map<string, Driver>): void {
+      const driver = drivers.get(vehicle.driverId);
+      const isPlayerControlled = driver?.team === 'McLaren';
+      const manualLineMode = vehicle.lineMode;
+      const manualErsMode = vehicle.ersMode;
+
+      // Manage ERS and Racing Line based on current situation
+      // 1. Blue Flag Yielding
+      if (vehicle.blueFlag) {
+          vehicle.lineMode = 'balanced';
+          vehicle.ersMode = 'harvest'; // Save energy while yielding
+          return;
+      }
+
+      // 2. Battling Logic
+      if (vehicle.isBattling) {
+          // Check physical gap to the car ahead to see if we are attacking or defending
+          const physicalGapDist = vehicle.executionState.physicalGap ?? 100;
+
+          const lapAvgSpeed = vehicle.lastLapTime > 0 ? (track.totalDistance / vehicle.lastLapTime) : 55;
+          const smoothedSpeed = Math.max(10, (lapAvgSpeed * 0.7) + (vehicle.speed * 0.3));
+          const physicalGapTime = physicalGapDist / smoothedSpeed;
+
+          // If we have DRS, or we are physically right behind someone, we are attacking
+          if (vehicle.drsOpen || physicalGapTime < 0.6) {
+              vehicle.lineMode = 'attack';
+              // Deploy if we have battery
+              vehicle.ersMode = vehicle.ersLevel > 15 ? 'deploy' : 'balanced';
+          } else {
+              // We are likely defending (someone is right behind us)
+              vehicle.lineMode = 'defend';
+              vehicle.ersMode = vehicle.ersLevel > 10 ? 'deploy' : 'balanced';
+          }
+      } else {
+          // 3. Normal running
+          vehicle.lineMode = 'balanced';
+
+          // Basic ERS management: recharge if low, deploy if full
+          if (vehicle.ersLevel < 20) {
+              vehicle.ersMode = 'harvest';
+          } else if (vehicle.ersLevel > 80 && vehicle.position > 1 && vehicle.gapToAhead < 2.0) {
+              // Push to catch up
+              vehicle.ersMode = 'deploy';
+          } else {
+              vehicle.ersMode = 'balanced';
+          }
+      }
+
+      if (isPlayerControlled) {
+          vehicle.lineMode = manualLineMode;
+          vehicle.ersMode = manualErsMode;
+      }
+  }
+
+  private refreshExecutionState(vehicle: VehicleState, state: RaceState, track: Track, drivers: Map<string, Driver>): void {
+      if (vehicle.executionState.overtakingImmunity) {
+          vehicle.executionState.overtakingImmunity -= 0.1; // Approximate dt
+          if (vehicle.executionState.overtakingImmunity <= 0) {
+              vehicle.executionState.overtakingImmunity = undefined;
+          }
+      }
+
+      const driver = drivers.get(vehicle.driverId);
+      if (!driver) return;
+
+      const sector = track.sectors[vehicle.currentSector - 1];
+      const sectorId = sector?.id;
+      const execution = vehicle.executionState;
+      const lapChanged = execution.lap !== state.currentLap;
+      const sectorChanged = Boolean(sectorId && execution.lastSectorId && execution.lastSectorId !== sectorId);
+      const safetyCarChanged = execution.lastSafetyCarStatus !== state.safetyCar;
+      const pitExitRefresh = execution.wasInPit && !vehicle.isInPit;
+      const shouldRefreshAll = lapChanged || safetyCarChanged || pitExitRefresh;
+
+      if (shouldRefreshAll) {
+          execution.sectorOffsets = {};
+      }
+
+      if (sectorId && (shouldRefreshAll || sectorChanged || !execution.sectorOffsets[sectorId])) {
+          const consistency = driver.skill.consistency ?? 80;
+          const racecraft = driver.skill.racecraft ?? 80;
+          const stressResistance = driver.personality.stressResistance ?? 80;
+          const concentration = vehicle.concentration ?? 100;
+          const morale = vehicle.morale ?? 80;
+          const tyrePenalty = Math.max(0, vehicle.tyreWear - 45) / 55;
+          const stressLoad = Math.max(0, vehicle.stress) / 100;
+          const focus = Math.max(0.55, Math.min(1.08,
+              (consistency / 100) * 0.5 +
+              (concentration / 100) * 0.3 +
+              (stressResistance / 100) * 0.12 +
+              (morale / 100) * 0.08 -
+              tyrePenalty * 0.15 -
+              stressLoad * 0.12
+          ));
+          const varianceScale = Math.max(0.25, 1.05 - focus);
+          const restartNerves = state.safetyCar === 'none' && safetyCarChanged ? 1.15 : 1;
+          const pitOutNerves = pitExitRefresh ? 1.18 : 1;
+          const difficulty = Math.max(0.2, sector?.difficulty ?? 0.5);
+          const cornerMultiplier = sector?.type === 'straight' ? 0.55 : sector?.type === 'corner_low_speed' ? 1.2 : sector?.type === 'corner_medium_speed' ? 0.95 : 0.8;
+          const windowScale = varianceScale * difficulty * restartNerves * pitOutNerves * cornerMultiplier;
+
+          execution.sectorOffsets[sectorId] = {
+              sectorId,
+              lap: state.currentLap,
+              brakeShiftMeters: this.rng.range(-10, 10) * windowScale,
+              apexSpeedFactor: 1 + this.rng.range(-0.014, 0.014) * windowScale,
+              exitSpeedFactor: 1 + this.rng.range(-0.016, 0.016) * windowScale,
+              straightSpeedFactor: 1 + this.rng.range(-0.008, 0.008) * Math.max(0.4, varianceScale),
+              tractionFactor: 1 + this.rng.range(-0.02, 0.02) * windowScale,
+              ersCommitmentFactor: 1 + this.rng.range(-0.08, 0.08) * Math.max(0.35, varianceScale)
+          };
+      }
+
+      execution.lap = state.currentLap;
+      execution.lastSectorId = sectorId;
+      execution.lastSafetyCarStatus = state.safetyCar;
+      execution.wasInPit = vehicle.isInPit;
   }
 
   private updateMoraleAndConcentration(state: RaceState, dt: number): void {
@@ -260,10 +505,11 @@ export class RaceLogicSystem {
         if (this.pendingSafetyCar.timer <= 0) {
             // Deploy SC/VSC/Red Flag
             state.safetyCar = this.pendingSafetyCar.type;
-            
+
             // Set duration based on type
             if (state.safetyCar === 'red-flag') {
                  this.safetyCarTimer = this.rng.range(15, 45);
+                 this.moveFieldIntoRedFlagPitHold(state, track);
             } else if (state.safetyCar === 'sc') {
                 this.safetyCarTimer = this.rng.range(180, 400);
             } else if (state.safetyCar === 'vsc') {
@@ -294,12 +540,7 @@ export class RaceLogicSystem {
       // Move them to the pits/garage so they don't block the track or appear at crash site
       const retiredVehicles = state.vehicles.filter(v => v.damage >= 100 || v.hasFinished);
       retiredVehicles.forEach(v => {
-          v.speed = 0;
-          v.isInPit = true;
-          // Place them at pit entry or "garage" location to hide them from track view
-          v.distanceOnLap = track.pitLane?.entryDistance || track.totalDistance; 
-          v.gapToLeader = 0;
-          v.gapToAhead = 0;
+          this.retireVehicle(v, track);
       });
 
       // 2. Sort active vehicles by position
@@ -313,36 +554,47 @@ export class RaceLogicSystem {
       let currentDist = track.totalDistance - 50; // Start 50m before line
 
       activeVehicles.forEach((vehicle, index) => {
+          const pitState = this.pitStates.get(vehicle.id);
+          if (pitState?.redFlagHold) {
+              this.pitStates.delete(vehicle.id);
+          }
+
+          vehicle.isInPit = false;
+          vehicle.boxThisLap = false;
+
           // Reset distance
           vehicle.distanceOnLap = currentDist - (index * gridSpacing);
           if (vehicle.distanceOnLap < 0) {
               vehicle.distanceOnLap += track.totalDistance;
           }
-          
+
           // Unlap cars: Set lap count to leader's lap count
-          // (Simplify: Everyone restarts on lead lap for excitement, or keep laps? 
+          // (Simplify: Everyone restarts on lead lap for excitement, or keep laps?
           // Real F1 unlaps. Let's unlap.)
           if (index === 0) {
               // Leader
           } else {
               vehicle.lapCount = activeVehicles[0].lapCount;
           }
-          
+
           // Reset speed
           vehicle.speed = 0;
-          
+
           // Reset gaps
           vehicle.gapToLeader = 0; // Will be recalculated
           vehicle.gapToAhead = 0;
-          
+
           // Reset internal states
           vehicle.isBattling = false;
           vehicle.inDirtyAir = false;
           vehicle.blueFlag = false;
+          vehicle.drsOpen = false;
+          vehicle.executionState.physicalAheadId = undefined;
+          vehicle.executionState.physicalGap = undefined;
       });
   }
 
-  private checkIncidents(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number): void {
+  private checkIncidents(state: RaceState, track: Track, drivers: Map<string, Driver>, dt: number, teamSpecsByTeam: Record<string, TeamSpecs>): void {
       if (state.safetyCar !== 'none' || this.pendingSafetyCar || state.status !== 'racing') return;
       // Removed L1 check to allow Lap 1 chaos
 
@@ -357,7 +609,7 @@ export class RaceLogicSystem {
           // Target: ~1.5 incidents per race (90 mins) across 20 cars.
           // Base rate per car approx 1 incident per 15-20 hours of driving.
           // Reduced significantly to meet target
-          let risk = 0.000002 * dt; 
+          let risk = 0.0000005 * dt; // Further reduced base risk to stop everyone crashing
 
           // LAP 1 SPECIAL LOGIC
           if (state.currentLap === 1) {
@@ -365,10 +617,10 @@ export class RaceLogicSystem {
                   // Turn 1 Chaos!
                   // Extremely high risk if battling or bunched up
                   // Risk * 15 means ~0.03% chance per second (reduced from 50x to prevent guaranteed chaos)
-                  risk *= 15;
+                  risk *= 5; // Reduced from 15 to stop immediate crashes
               } else {
                   // Rest of Lap 1
-                  risk *= 2;
+                  risk *= 1.5;
               }
           }
 
@@ -433,6 +685,12 @@ export class RaceLogicSystem {
           const difficulty = track.trackDifficulty || 0.5;
           risk *= (1 + difficulty * 0.5); // Reduced impact
 
+          const teamSpecs = teamSpecsByTeam[driver.team];
+          if (teamSpecs) {
+              const reliabilityFactor = 1 - (teamSpecs.lifespan - 85) * 0.002;
+              risk *= Math.min(1.1, Math.max(0.85, reliabilityFactor));
+          }
+
           // Final Check
           if (this.rng.chance(risk)) {
                // INCIDENT TRIGGERED!
@@ -469,7 +727,7 @@ export class RaceLogicSystem {
                    victim.damage += victimDamage;
                    if (victim.damage >= 100) {
                        victim.speed = 0; // DNF
-                       victim.damage = 100; // Ensure DNF state
+                       this.retireVehicle(victim, track);
                    } else {
                        // Victim spun/slowed
                        victim.speed *= 0.5;
@@ -504,16 +762,14 @@ export class RaceLogicSystem {
                if (severityScore > 80) {
                    // Major Crash -> Red Flag
                    this.pendingSafetyCar = { type: 'red-flag', timer: 10 }; // 10s delay
-                   vehicle.damage = 100; // DNF
-                   vehicle.speed = 0;
+                   this.retireVehicle(vehicle, track);
                } else if (severityScore > 50) {
                    // Crash -> Safety Car
                    this.pendingSafetyCar = { type: 'sc', timer: 15 }; // 15s delay
-                   
+
                    // Increased DNF probability for incidents (90%)
                    if (this.rng.chance(0.9)) {
-                       vehicle.damage = 100; // DNF
-                       vehicle.speed = 0;
+                       this.retireVehicle(vehicle, track);
                    } else {
                        vehicle.damage += this.rng.range(30, 60); // Major damage
                    }
@@ -532,6 +788,27 @@ export class RaceLogicSystem {
 
   private handlePitStopLogic(vehicle: VehicleState, state: RaceState, track: Track, dt: number, strategySystem: StrategySystem): void {
       if (!vehicle.isInPit) return;
+
+      const existingPitState = this.pitStates.get(vehicle.id);
+      if (state.safetyCar === 'red-flag' && existingPitState?.redFlagHold) {
+          vehicle.speed = 0;
+          vehicle.boxThisLap = false;
+          vehicle.isBattling = false;
+          vehicle.inDirtyAir = false;
+          vehicle.blueFlag = false;
+          vehicle.drsOpen = false;
+          vehicle.gapToAhead = 0;
+          vehicle.gapToLeader = 0;
+          vehicle.executionState.physicalAheadId = undefined;
+          vehicle.executionState.physicalGap = undefined;
+
+          if (!existingPitState.redFlagServiced) {
+              this.applyPitService(vehicle, state, track, strategySystem);
+              vehicle.pitStopCount++;
+              existingPitState.redFlagServiced = true;
+          }
+          return;
+      }
 
       const speedLimit = track.pitLane?.speedLimit ?? 22.2; // 80kph default
 
@@ -658,7 +935,7 @@ export class RaceLogicSystem {
           // Pit Complete
           this.pitStates.delete(vehicle.id);
           vehicle.isInPit = false;
-          
+
           // Snap to exit distance to avoid visual drift
           if (track.pitLane) {
               vehicle.distanceOnLap = track.pitLane.exitDistance;
@@ -666,31 +943,32 @@ export class RaceLogicSystem {
 
           vehicle.boxThisLap = false;
           vehicle.pitStopCount++;
-          
-          // Service Car
-          vehicle.tyreCompound = strategySystem.getPitCompound(vehicle, state, track.totalLaps);
-          // Update Plan Progress
-          if (vehicle.strategyPlan) {
-              vehicle.strategyPlan.currentStintIndex++;
-          }
-          
-          vehicle.tyreWear = 0;
-          vehicle.tyreAgeLaps = 0;
-          vehicle.damage = 0; // Repaired
+
+          this.applyPitService(vehicle, state, track, strategySystem);
       }
   }
 
   private updatePositions(state: RaceState, track: Track): void {
-    // Standard race position logic
-    state.vehicles.sort((a, b) => {
+    const activeVehicles = state.vehicles.filter(v => v.damage < 100);
+    const retiredVehicles = state.vehicles.filter(v => v.damage >= 100);
+
+    activeVehicles.sort((a, b) => {
         if (a.lapCount !== b.lapCount) return b.lapCount - a.lapCount;
         return b.distanceOnLap - a.distanceOnLap;
     });
-    
+
+    state.vehicles = [...activeVehicles, ...retiredVehicles];
+
     state.vehicles.forEach((v, i) => {
         // Track position changes
         v.lastPosition = v.position;
         v.position = i + 1;
+
+        if (v.damage >= 100) {
+            v.gapToLeader = 0;
+            v.gapToAhead = 0;
+            return;
+        }
 
         // Instant Morale Impact from Overtaking
         // Skip if in pit (Strategic position loss shouldn't affect confidence)
@@ -700,15 +978,15 @@ export class RaceLogicSystem {
             // Overtook someone! (Position number decreased)
             // Big Boost
             v.morale = Math.min(100, v.morale + 10);
-            
+
             // Concentration Hit (Excitement/Adrenaline spike can lower focus temporarily)
             v.concentration = Math.max(0, v.concentration - 5);
-            
+
         } else if (v.position > v.lastPosition) {
             // Got Overtaken!
             // Big Drop
             v.morale = Math.max(0, v.morale - 10);
-            
+
             // Concentration Hit (Stress/Panic)
             v.concentration = Math.max(0, v.concentration - 10);
         }
@@ -719,105 +997,81 @@ export class RaceLogicSystem {
             v.gapToAhead = 0;
         } else {
             const ahead = state.vehicles[i - 1];
-            
-            // Gap to Ahead = (Ahead Total Dist - My Total Dist) / My Speed
-            // Using Total Distance simplifies logic (handles laps automatically)
-            // Note: v.totalDistance is odometer. We should use "Race Distance" (Laps * TrackLen + CurrentDist)
-            // But v.totalDistance is physical distance driven. If they go off track, it might differ?
-            // Safer to recalculate "Race Distance"
+
             const raceDist = (v.lapCount * track.totalDistance) + v.distanceOnLap;
             const raceDistAhead = (ahead.lapCount * track.totalDistance) + ahead.distanceOnLap;
-            
+
             const distDiffAhead = raceDistAhead - raceDist;
-            
-            // Use chasing car's speed (Time to catch)
-            // Fallback to 60m/s if stopped to avoid infinite gap
-            const speed = Math.max(v.speed, 20); 
-            v.gapToAhead = distDiffAhead / speed;
-            
-            // Gap to Leader = Sum of all gaps ahead? Or direct calc?
-            // Direct calc is cleaner:
+
+            const lapAvgSpeed = v.lastLapTime > 0 ? (track.totalDistance / v.lastLapTime) : 55;
+            const smoothedSpeed = Math.max(20, (lapAvgSpeed * 0.7) + (v.speed * 0.3));
+
+            v.gapToAhead = distDiffAhead / smoothedSpeed;
+
             const leader = state.vehicles[0];
             const raceDistLeader = (leader.lapCount * track.totalDistance) + leader.distanceOnLap;
             const distDiffLeader = raceDistLeader - raceDist;
-            
-            // Standard: Gap to leader is Time for ME to reach Leader's position
-            v.gapToLeader = distDiffLeader / speed;
+
+            v.gapToLeader = distDiffLeader / smoothedSpeed;
         }
     });
   }
 
   private updateSpatialAwareness(state: RaceState, track: Track): void {
+      const activeVehicles = state.vehicles.filter(v => v.damage < 100);
+
+      state.vehicles.forEach(v => {
+          v.isBattling = false;
+          v.blueFlag = false;
+          v.inDirtyAir = false;
+          if (v.damage >= 100) {
+              v.executionState.physicalAheadId = undefined;
+              v.executionState.physicalGap = undefined;
+          }
+      });
+
+      if (activeVehicles.length < 2) {
+          return;
+      }
+
       // 1. Sort by physical location on track (ignore laps)
       // distanceOnLap descending = order on track
-      const sortedByLocation = [...state.vehicles].sort((a, b) => b.distanceOnLap - a.distanceOnLap);
-      
+      const sortedByLocation = [...activeVehicles].sort((a, b) => b.distanceOnLap - a.distanceOnLap);
+
       const trackLength = track.totalDistance;
 
       sortedByLocation.forEach((vehicle, index) => {
-          // Find car physically ahead
-          // If index 0 (furthest along track), ahead is the last car (closest to start) but wrapped around
           let aheadVehicle: VehicleState;
           let physicalDistGap = 0;
 
           if (index === 0) {
               aheadVehicle = sortedByLocation[sortedByLocation.length - 1];
-              // Gap is (TrackEnd - MyDist) + AheadDist
               physicalDistGap = (trackLength - vehicle.distanceOnLap) + aheadVehicle.distanceOnLap;
           } else {
               aheadVehicle = sortedByLocation[index - 1];
-              // Gap is AheadDist - MyDist
               physicalDistGap = aheadVehicle.distanceOnLap - vehicle.distanceOnLap;
           }
 
-          // Convert distance gap to time gap (Physical Gap)
-          // Use vehicle's own speed to estimate time to arrival
-          const closingSpeed = Math.max(10, vehicle.speed); // Prevent div by zero
-          const physicalTimeGap = physicalDistGap / closingSpeed;
+          const lapAvgSpeed = vehicle.lastLapTime > 0 ? (track.totalDistance / vehicle.lastLapTime) : 55;
+          const smoothedSpeed = Math.max(10, (lapAvgSpeed * 0.7) + (vehicle.speed * 0.3));
+          const physicalTimeGap = physicalDistGap / smoothedSpeed;
 
-          // 2. Dirty Air Logic (Physical Proximity)
-          // If within 1.5s of ANY car ahead physically
-          if (physicalTimeGap < 1.5) {
+          vehicle.executionState.physicalAheadId = aheadVehicle.id;
+          vehicle.executionState.physicalGap = physicalDistGap;
+
+          if (physicalTimeGap < 2.0) {
               vehicle.inDirtyAir = true;
           } else {
               vehicle.inDirtyAir = false;
           }
 
-          // 3. Battling Logic (Physical Proximity)
-          // If within 0.4s
-          if (physicalTimeGap < 0.4) {
+          if (physicalTimeGap < 0.5 && !vehicle.executionState.overtakingImmunity) {
               vehicle.isBattling = true;
-          } else {
-              vehicle.isBattling = false;
-          }
+              aheadVehicle.isBattling = true;
 
-          // 4. Blue Flag Logic
-          // If the car physically behind me is LAPPING me
-          // I am 'vehicle'. 'aheadVehicle' is in front of me.
-          // Who is behind me? The one at index + 1 (or 0 if I am last)
-          
-          // Let's look backwards to find if I'm being lapped
-          let behindVehicle: VehicleState;
-          let gapFromBehind = 0;
-          
-          if (index === sortedByLocation.length - 1) {
-              behindVehicle = sortedByLocation[0];
-              // Behind is at 4900. Me at 100.
-              // Gap = (5000 - 4900) + 100 = 200m.
-              gapFromBehind = (trackLength - behindVehicle.distanceOnLap) + vehicle.distanceOnLap;
-          } else {
-              behindVehicle = sortedByLocation[index + 1];
-              gapFromBehind = vehicle.distanceOnLap - behindVehicle.distanceOnLap;
-          }
-          
-          const gapTimeFromBehind = gapFromBehind / Math.max(10, behindVehicle.speed);
-
-          // Check for Blue Flag condition
-          // If car behind is close (< 1.2s) AND is on a higher lap (lapping me)
-          if (gapTimeFromBehind < 1.2 && behindVehicle.lapCount > vehicle.lapCount) {
-              vehicle.blueFlag = true;
-          } else {
-              vehicle.blueFlag = false;
+              if (vehicle.lapCount > aheadVehicle.lapCount && physicalTimeGap < 1.2) {
+                  aheadVehicle.blueFlag = true;
+              }
           }
       });
   }
@@ -839,9 +1093,10 @@ export class RaceLogicSystem {
 
       // Only attempt if battling and not already ahead
       // We need to find the defender (car directly ahead)
-      if (!attacker.isBattling || attacker.position === 1) return;
+      if (!attacker.isBattling) return;
 
-      const defender = state.vehicles.find(v => v.position === attacker.position - 1);
+      const defenderId = attacker.executionState.physicalAheadId;
+      const defender = defenderId ? state.vehicles.find(v => v.id === defenderId) : null;
       if (!defender) return;
 
       // Overtake probability check
@@ -862,30 +1117,50 @@ export class RaceLogicSystem {
       const tyreDelta = defender.tyreAgeLaps - attacker.tyreAgeLaps; // Positive if defender has older tyres
 
       // 5. Track Difficulty (Overtaking)
-      // "Cars are wide": Increase penalty heavily for difficult tracks
-      const overtakingDiff = track.overtakingDifficulty || 0.5;
-      const difficultyPenalty = overtakingDiff * 40; // 0-40 penalty (Doubled from 20)
+      // Base difficulty based on track (0 = easy, 1 = impossible)
+      // Multiply by 20 so a hard track gives a -20 penalty to score
+      const difficultyPenalty = (track.overtakingDifficulty || 0.5) * 20;
 
       // Base chance: 0% (hard to pass)
       // We check this every tick, so probability must be VERY low per tick.
       // Better: Check only when gap is closing and very small (< 0.2s)
-      if (attacker.gapToAhead > 0.2) return;
+      const physicalGapDist = attacker.executionState.physicalGap ?? 100;
+      
+      const lapAvgSpeed = attacker.lastLapTime > 0 ? (track.totalDistance / attacker.lastLapTime) : 55;
+      const smoothedSpeed = Math.max(10, (lapAvgSpeed * 0.7) + (attacker.speed * 0.3));
+      const physicalGapTime = physicalGapDist / smoothedSpeed;
+      
+      if (physicalGapTime > 0.2) return;
+
+      // Ensure they are not in the pit lane
+      if (attacker.isInPit || defender.isInPit) return;
 
       // Calculate "Overtake Score" (0-100)
-      let score = 10; // Base difficulty (Reduced from 20)
+      let score = 5; // Base difficulty (Reduced further)
       score += skillDelta * 0.5; // +5% for 10 skill diff
-      score += speedDelta * 2; // +2% per m/s speed advantage
+      score += speedDelta * 2.0; // +2% per m/s speed advantage
       score += drsBonus;
-      score += tyreDelta * 1.5;
+      score += tyreDelta * 2.0; // Tyres matter more
       score -= difficultyPenalty;
+      
+      // Blue Flag Override
+      if (defender.blueFlag) {
+          score += 200; // Guaranteed pass
+      }
+      
+      // Aggression factor - Aggressive drivers force the issue
+      const aggressionBonus = (attackerDriver.personality.aggression - 50) * 0.3;
+      score += aggressionBonus;
 
-      // Rookie Chance Floor (Randomness)
+      // Defensive Factor - Defenders with high racecraft are harder to pass
+      const defensePenalty = (defenderDriver.skill.racecraft - 50) * 0.4;
+      score -= defensePenalty;
+
+      let probPerSecond = 0.05; // 5% base chance per second (increased from 2% so passing actually happens)
+      probPerSecond += (score / 100) * 0.5; // Add up to 50% from score
       
-      let probPerSecond = 0.05; // 5% base (Reduced from 20%)
-      probPerSecond += (score / 100) * 0.4; // Add up to 40% from score
-      
-      // Let's normalize score to 0-1 probability
-      let successProb = Math.max(0.01, Math.min(0.90, probPerSecond));
+      // Normalize score to 0-1 probability
+      let successProb = Math.max(0.005, Math.min(0.80, probPerSecond)); // Cap max probability per second
       
       // Apply "Anything can happen" noise - REDUCED
       // 5% of the time (was 30%), we ignore stats.
@@ -898,17 +1173,20 @@ export class RaceLogicSystem {
       const frameProb = successProb * 0.1; 
       
       if (this.rng.chance(frameProb)) {
-          // SUCCESSFUL OVERTAKE MOVE
-          // Boost speed to clear the gap
-          attacker.speed += 5.0; // Surge ahead
-          attacker.isBattling = false; // Resolved
-      } else {
-          // DEFENDED
-          // If we didn't pass, we might get slowed down (checked up)
-          // 10% chance to get checked up hard
-          if (this.rng.chance(0.1)) {
-              attacker.speed *= 0.95; // Checked up
+          // Check Track Limits/Crashing during battle
+          const incidentRisk = (1.0 - (attackerDriver.skill.racecraft / 100)) * 0.05 * (1.0 - (defenderDriver.skill.racecraft / 100));
+          if (this.rng.chance(incidentRisk)) {
+              // Crash!
+              attacker.condition = 0;
+              defender.condition = 0;
+              this.retireVehicle(attacker, track);
+              this.retireVehicle(defender, track);
+              return;
           }
+
+          // Successful move is handled by position updates and the attacker leaving battle state.
+          attacker.isBattling = false;
+          attacker.executionState.overtakingImmunity = 5.0; // 5 seconds of free air to complete the pass physically
       }
   }
 
@@ -924,11 +1202,17 @@ export class RaceLogicSystem {
       );
 
       if (inZone) {
-          // Check if within 1 second of car ahead at detection point
-          // Simplified: If gapToAhead < 1.0s and we are not the leader
-          // NOTE: gapToAhead here is still based on Race Position (Lap + Dist).
-          if (vehicle.position > 1 && vehicle.gapToAhead < 1.0) {
+          // Check if within 1 second of ANY car physically ahead
+          const physicalGapDist = vehicle.executionState.physicalGap ?? (vehicle.gapToAhead * Math.max(0.1, vehicle.speed));
+          
+          const lapAvgSpeed = vehicle.lastLapTime > 0 ? (track.totalDistance / vehicle.lastLapTime) : 55;
+          const smoothedSpeed = Math.max(10, (lapAvgSpeed * 0.7) + (vehicle.speed * 0.3));
+          const physicalGapTime = physicalGapDist / smoothedSpeed;
+          
+          if (physicalGapTime < 1.0) {
               vehicle.drsOpen = true;
+          } else {
+              vehicle.drsOpen = false;
           }
       } else {
           vehicle.drsOpen = false;

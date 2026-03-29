@@ -1,8 +1,14 @@
 import { VehicleState, Driver, RaceState, Track, StrategyPlan, StrategyStint, TyreCompound } from '../../types';
+import { SeededRNG } from '../rng';
 import { TYRE_COMPOUNDS, TyreModel } from './TyreModel';
 
 export class StrategySystem {
-  
+  private rng: SeededRNG;
+
+  constructor(rng: SeededRNG) {
+    this.rng = rng;
+  }
+
   /**
    * Generates an initial strategy plan for a driver before the race starts.
    */
@@ -21,26 +27,16 @@ export class StrategySystem {
       }
 
       // 2. Dry Strategy Selection
-      // Factors: Track Degradation, Driver Tire Management
       const degFactor = track.tireDegradationFactor || 1.0;
-      const mgmtSkill = driver.skill.tyreManagement; // 0-100
-      
-      // Effective Wear Multiplier (Lower is better)
-      // Add random noise per driver to simulate estimation error/setup variance
-      // +/- 10% variance in wear estimation
-      const variance = 0.9 + (Math.random() * 0.2);
-      const wearMult = degFactor * (1 - (mgmtSkill - 50) / 200) * variance; 
+      const mgmtSkill = driver.skill.tyreManagement;
+      const variance = this.rng.range(0.9, 1.1);
+      const wearMult = degFactor * (1 - (mgmtSkill - 50) / 200) * variance;
 
-      // Calculate approximate life of compounds for this driver/track
       const softLife = 15 / wearMult;
       const mediumLife = 25 / wearMult;
       const hardLife = 40 / wearMult;
-
-      // Decide 1-stop vs 2-stop
       const strategies: StrategyStint[][] = [];
 
-      // Strategy A: Soft -> Hard (Standard 1-stop)
-      // Target stop lap: Soft life - 10% safety margin
       const stopLapA = Math.floor(softLife * 0.9);
       if (stopLapA > 0 && stopLapA < totalLaps) {
           strategies.push([
@@ -49,8 +45,6 @@ export class StrategySystem {
           ]);
       }
 
-      // Strategy B: Medium -> Hard (Conservative 1-stop)
-      // Target stop lap: Medium life - 10% safety margin
       const stopLapB = Math.floor(mediumLife * 0.9);
       if (stopLapB > 0 && stopLapB < totalLaps) {
           strategies.push([
@@ -59,11 +53,8 @@ export class StrategySystem {
           ]);
       }
 
-      // Strategy C: Soft -> Medium -> Medium (Aggressive 2-stop)
-      // Target stop laps: Soft life * 0.8, then + Medium life * 0.8
       const stopLapC1 = Math.floor(softLife * 0.8);
       const stopLapC2 = stopLapC1 + Math.floor(mediumLife * 0.8);
-      
       if (stopLapC1 > 0 && stopLapC2 < totalLaps) {
            strategies.push([
               { compound: 'soft', startLap: 0, endLap: stopLapC1 },
@@ -71,12 +62,9 @@ export class StrategySystem {
               { compound: 'medium', startLap: stopLapC2, endLap: totalLaps }
           ]);
       }
-      
-      // Strategy D: Soft -> Medium -> Soft (Aggressive Sprint)
-      // Useful if total laps is short enough or degradation is high
+
       const stopLapD1 = Math.floor(softLife * 0.85);
       const stopLapD2 = stopLapD1 + Math.floor(mediumLife * 0.85);
-      
       if (stopLapD1 > 0 && stopLapD2 < totalLaps) {
            strategies.push([
               { compound: 'soft', startLap: 0, endLap: stopLapD1 },
@@ -85,78 +73,60 @@ export class StrategySystem {
           ]);
       }
 
-      // Pick one based on Aggression/Randomness
-      // We want to force diversity, so we add random bias
+      const legalDryStrategies = strategies.filter(strategy => {
+          const dryCompounds = new Set(strategy.filter(stint => ['soft', 'medium', 'hard'].includes(stint.compound)).map(stint => stint.compound));
+          return dryCompounds.size >= 2;
+      });
+      const candidateStrategies = legalDryStrategies.length > 0 ? legalDryStrategies : strategies;
+
       const aggression = driver.personality.aggression;
-      const randomSeed = Math.random();
-      
-      // Filter valid strategies
-      if (strategies.length === 0) {
-           // Fallback
-           strategies.push([
+      const randomSeed = this.rng.next();
+
+      if (candidateStrategies.length === 0) {
+           candidateStrategies.push([
                { compound: 'medium', startLap: 0, endLap: Math.floor(totalLaps / 2) },
                { compound: 'hard', startLap: Math.floor(totalLaps / 2), endLap: totalLaps }
            ]);
       }
 
       let choice = 0;
-      
-      // Weighted selection based on aggression and randomness
-       // High aggression -> Prefer 2-stop (C/D) or Short-Initial 1-stop (A)
-       // Low aggression -> Prefer Conservative 1-stop (B)
-       
-       // If we have multiple options, pick probabilistically
-       if (strategies.length > 1) {
-           if (aggression > 85) {
-               // 60% chance of Aggressive Strategy
+      if (candidateStrategies.length > 1) {
+          if (aggression > 85) {
+              if (randomSeed < 0.6) {
+                  const aggIndices = candidateStrategies.map((s, i) => ({s, i})).filter(x => x.s.length > 2 || x.s[0].compound === 'soft').map(x => x.i);
+                  if (aggIndices.length > 0) {
+                      choice = aggIndices[this.rng.rangeInt(0, aggIndices.length - 1)];
+                  }
+              } else {
+                  choice = this.rng.rangeInt(0, candidateStrategies.length - 1);
+              }
+          } else if (aggression < 60) {
                if (randomSeed < 0.6) {
-                   // Find aggressive strategies (start with Soft, or 2-stop)
-                   const aggIndices = strategies.map((s, i) => ({s, i})).filter(x => x.s.length > 2 || x.s[0].compound === 'soft').map(x => x.i);
-                   if (aggIndices.length > 0) {
-                       choice = aggIndices[Math.floor(Math.random() * aggIndices.length)];
-                   }
-               } else {
-                   choice = Math.floor(Math.random() * strategies.length);
-               }
-           } else if (aggression < 60) {
-                // 60% chance of Conservative Strategy
-                if (randomSeed < 0.6) {
-                   // Find conservative strategies (start with Medium/Hard, or 1-stop)
-                   const consIndices = strategies.map((s, i) => ({s, i})).filter(x => x.s.length === 2 && x.s[0].compound !== 'soft').map(x => x.i);
-                   if (consIndices.length > 0) {
-                       choice = consIndices[Math.floor(Math.random() * consIndices.length)];
-                   } else {
-                        // Fallback to any 1-stop
-                        const oneStopIndices = strategies.map((s, i) => ({s, i})).filter(x => x.s.length === 2).map(x => x.i);
-                        if (oneStopIndices.length > 0) choice = oneStopIndices[Math.floor(Math.random() * oneStopIndices.length)];
-                   }
-               } else {
-                   choice = Math.floor(Math.random() * strategies.length);
-               }
-          } else {
-              // Complete Random
-              choice = Math.floor(Math.random() * strategies.length);
-          }
+                  const consIndices = candidateStrategies.map((s, i) => ({s, i})).filter(x => x.s.length === 2 && x.s[0].compound !== 'soft').map(x => x.i);
+                  if (consIndices.length > 0) {
+                      choice = consIndices[this.rng.rangeInt(0, consIndices.length - 1)];
+                  } else {
+                       const oneStopIndices = candidateStrategies.map((s, i) => ({s, i})).filter(x => x.s.length === 2).map(x => x.i);
+                       if (oneStopIndices.length > 0) choice = oneStopIndices[this.rng.rangeInt(0, oneStopIndices.length - 1)];
+                  }
+              } else {
+                  choice = this.rng.rangeInt(0, candidateStrategies.length - 1);
+              }
+         } else {
+             choice = this.rng.rangeInt(0, candidateStrategies.length - 1);
+         }
       }
 
-      plan.stints = strategies[choice];
+      plan.stints = candidateStrategies[choice];
 
-      // Add "Window" Noise to Planned Pit Laps
-      // We don't want everyone on Strategy A to pit on Lap 18 exactly.
-      // We shift the planned endLap by +/- 1-3 laps to create a "Window Center"
-      // The actual pit logic will use a dynamic window around this.
       for (let i = 0; i < plan.stints.length - 1; i++) {
-          const noise = Math.floor(Math.random() * 5) - 2; // -2 to +2
+          const noise = this.rng.rangeInt(-2, 2);
           plan.stints[i].endLap += noise;
-          // Ensure logical consistency
           if (plan.stints[i].endLap < 1) plan.stints[i].endLap = 1;
           if (i > 0 && plan.stints[i].endLap <= plan.stints[i-1].endLap) plan.stints[i].endLap = plan.stints[i-1].endLap + 1;
-          
-          // Adjust next stint start
           plan.stints[i+1].startLap = plan.stints[i].endLap;
       }
-      
-      // Final stint always ends at totalLaps
+
       plan.stints[plan.stints.length - 1].endLap = totalLaps;
 
       return plan;
@@ -201,6 +171,9 @@ export class StrategySystem {
       } else {
           // Dry
           if (compound === 'wet' || compound === 'intermediate') pitNeeded = true;
+          if (!pitNeeded && currentStint && currentStint.endLap >= track.totalLaps - 2 && vehicle.usedDryCompounds.length < 2) {
+              pitNeeded = true;
+          }
       }
 
       // Forecast Intelligence (Keep existing logic roughly)
@@ -216,7 +189,29 @@ export class StrategySystem {
       if (vehicle.tyreWear > 85) pitNeeded = true; // Critical failure imminent
 
       // --- 2. PLAN EXECUTION (Dynamic Window) ---
-      
+      const hasPitWindow = typeof vehicle.pitWindowStart === 'number' && typeof vehicle.pitWindowEnd === 'number';
+      if (!pitNeeded && hasPitWindow) {
+          const windowOpen = Math.min(vehicle.pitWindowStart as number, vehicle.pitWindowEnd as number);
+          const windowClose = Math.max(vehicle.pitWindowStart as number, vehicle.pitWindowEnd as number);
+          
+          if (state.currentLap > windowClose) {
+              pitNeeded = true;
+          } else if (state.currentLap >= windowOpen) {
+              const windowSpan = Math.max(1, windowClose - windowOpen);
+              const progress = (state.currentLap - windowOpen) / windowSpan;
+              let pitProb = 0.3 + (progress * 0.5);
+              if (vehicle.tyreWear > 60) {
+                  pitProb += 0.2;
+              }
+              if (driver.personality.aggression > 60 && this.rng.chance(0.3)) {
+                  pitProb += 0.2;
+              }
+              if (this.rng.chance(pitProb)) {
+                  pitNeeded = true;
+              }
+          }
+      }
+
       if (!pitNeeded && currentStint) {
           const targetLap = currentStint.endLap;
           const isLastStint = plan.currentStintIndex >= plan.stints.length - 1;
@@ -244,17 +239,17 @@ export class StrategySystem {
                    // If we are stuck behind someone (gap < 1s), increase prob to undercut
                    // Accessing vehicle state relative to others is expensive here without direct list
                    // We'll use a random "undercut" aggression factor
-                   if (driver.personality.aggression > 60 && Math.random() < 0.3) {
+                   if (driver.personality.aggression > 60 && this.rng.chance(0.3)) {
                        pitProb += 0.3; // Try to undercut
                    }
-                   
+
                    // 3. Tyre Feeling
                    // If wear is worse than expected, pit early
                    if (vehicle.tyreWear > 60) {
                        pitProb += 0.4;
                    }
-                   
-                   if (Math.random() < pitProb) {
+
+                   if (this.rng.chance(pitProb)) {
                        pitNeeded = true;
                    }
                }
@@ -305,23 +300,32 @@ export class StrategySystem {
       if (rain > 60) return 'wet';
       if (rain > 10) return 'intermediate';
 
+      const dryRace = state.weatherForecast.every(item => item.rainIntensity <= 10) && rain <= 10;
+
       // 2. Follow Plan
       const plan = vehicle.strategyPlan;
-      
-      // Advance stint index since we are pitting
-      // Ideally this should happen when pit is done, but we need to know what to put on NOW.
-      // We will assume this method is called ONCE when service starts.
-      
       const nextStintIndex = plan.currentStintIndex + 1;
-      
+
       if (nextStintIndex < plan.stints.length) {
-          // We have a planned next stint
-          return plan.stints[nextStintIndex].compound;
+          const plannedCompound = plan.stints[nextStintIndex].compound;
+          if (dryRace && ['soft', 'medium', 'hard'].includes(plannedCompound)) {
+              const used = new Set(vehicle.usedDryCompounds);
+              if (nextStintIndex >= plan.stints.length - 1 && used.size < 2 && used.has(plannedCompound as 'soft' | 'medium' | 'hard')) {
+                  const legalAlternative = (['soft', 'medium', 'hard'] as const).find(compound => compound !== plannedCompound && !used.has(compound));
+                  if (legalAlternative) {
+                      return legalAlternative;
+                  }
+              }
+          }
+          return plannedCompound;
       } else {
-          // We ran out of planned stints! (Maybe early wear caused extra stop)
-          // Emergency Strategy:
           const lapsLeft = totalLaps - state.currentLap;
-          
+          if (dryRace && vehicle.usedDryCompounds.length < 2) {
+              const missingCompound = (['soft', 'medium', 'hard'] as const).find(compound => !vehicle.usedDryCompounds.includes(compound));
+              if (missingCompound) {
+                  return missingCompound;
+              }
+          }
           if (lapsLeft < 15) return 'soft';
           if (lapsLeft < 30) return 'medium';
           return 'hard';
