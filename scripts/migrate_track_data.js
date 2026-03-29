@@ -86,20 +86,20 @@ const main = async () => {
     const outJsonPath = path.join(TELEMETRY_DIR, `${trackId}.json`);
     await fs.writeFile(outJsonPath, JSON.stringify(trackTelemetry, null, 2));
     
-    // Replace legacy sectors in the TS file
-    // Match everything from `sectors: [` up to the matching `],` or similar.
-    // It's safer to just regex out the sectors array if it exists
-    const regex = /sectors:\s*\[[\s\S]*?\],\n/m;
-    
-    // Add the import at the top
+    const legacySectorsRegex = /sectors:\s*\[[\s\S]*?\],\n/m;
+    const telemetrySectorsRegex = /sectors:\s*telemetry\.sectors(?:\s+as\s+any)?\s*,/m;
+
     if (!content.includes(`import telemetry from './telemetry/${trackId}.json'`)) {
       content = content.replace(/import \{ Track \} from '\.\.\/\.\.\/types';/, `import { Track } from '../../types';\nimport telemetry from './telemetry/${trackId}.json';`);
     }
     
-    if (regex.test(content)) {
-      content = content.replace(regex, `sectors: telemetry.sectors as any,\n    telemetryPoints: telemetry.telemetryPoints,\n`);
+    if (legacySectorsRegex.test(content)) {
+      content = content.replace(legacySectorsRegex, `sectors: telemetry.sectors as any,\n    telemetryPoints: telemetry.telemetryPoints,\n`);
       await fs.writeFile(filePath, content, 'utf-8');
       console.log(`Updated ${file} to use telemetry JSON`);
+    } else if (telemetrySectorsRegex.test(content)) {
+      await fs.writeFile(filePath, content, 'utf-8');
+      console.log(`Already telemetry-driven: ${file}`);
     } else {
       console.log(`Could not find sectors array in ${file}`);
     }

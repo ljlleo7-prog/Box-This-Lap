@@ -47,6 +47,8 @@ export interface SetupFeedbackCommentary {
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
 const normalize = (value: number | undefined, fallback = 50): number => (clamp(value ?? fallback, 0, 100) - 50) / 50;
+const normalizeTeamSpec = (value: number | undefined, center = 80, span = 20): number =>
+  clamp((clamp(value ?? center, 0, 100) - center) / span, -1, 1);
 
 const setupValue = (setup: Pick<SessionSetupState, SetupTuningParameter>, key: SetupTuningParameter): number =>
   clamp(setup[key] ?? 50, 0, 100);
@@ -214,6 +216,258 @@ const TRACK_SETUP_OVERRIDES: Partial<Record<Track['id'], Partial<TrackSetupProfi
     highSpeedPriority: 0.15,
     bumpiness: 0.38,
   },
+  'suzuka-gp': {
+    setupTargets: {
+      frontWingAngle: 58,
+      rearWingAngle: 56,
+      rideHeight: 42,
+      suspensionStiffness: 64,
+      toeOut: 56,
+      camber: 62,
+      gearboxSetting: 38,
+    },
+    entryRotationTarget: 0,
+    midRotationTarget: -0.1,
+    exitRotationTarget: -0.06,
+    straightPriority: 0.52,
+    lowSpeedPriority: 0.42,
+    highSpeedPriority: 0.88,
+    bumpiness: 0.3,
+  },
+  'jeddah-gp': {
+    setupTargets: {
+      frontWingAngle: 46,
+      rearWingAngle: 44,
+      rideHeight: 46,
+      suspensionStiffness: 58,
+      toeOut: 54,
+      camber: 60,
+      gearboxSetting: 34,
+    },
+    entryRotationTarget: 0.04,
+    midRotationTarget: -0.08,
+    exitRotationTarget: -0.1,
+    straightPriority: 0.78,
+    lowSpeedPriority: 0.24,
+    highSpeedPriority: 0.82,
+    bumpiness: 0.32,
+  },
+  'miami-gp': {
+    setupTargets: {
+      frontWingAngle: 54,
+      rearWingAngle: 58,
+      rideHeight: 52,
+      suspensionStiffness: 48,
+      toeOut: 56,
+      camber: 56,
+      gearboxSetting: 52,
+    },
+    entryRotationTarget: 0.08,
+    midRotationTarget: 0.01,
+    exitRotationTarget: -0.09,
+    straightPriority: 0.6,
+    lowSpeedPriority: 0.5,
+    highSpeedPriority: 0.36,
+    bumpiness: 0.4,
+  },
+  'imola-gp': {
+    setupTargets: {
+      frontWingAngle: 60,
+      rearWingAngle: 64,
+      rideHeight: 50,
+      suspensionStiffness: 52,
+      toeOut: 58,
+      camber: 58,
+      gearboxSetting: 54,
+    },
+    entryRotationTarget: 0.1,
+    midRotationTarget: 0,
+    exitRotationTarget: -0.08,
+    straightPriority: 0.44,
+    lowSpeedPriority: 0.62,
+    highSpeedPriority: 0.35,
+    bumpiness: 0.34,
+  },
+  'catalunya-gp': {
+    setupTargets: {
+      frontWingAngle: 50,
+      rearWingAngle: 52,
+      rideHeight: 40,
+      suspensionStiffness: 62,
+      toeOut: 54,
+      camber: 62,
+      gearboxSetting: 42,
+    },
+    entryRotationTarget: 0.02,
+    midRotationTarget: -0.06,
+    exitRotationTarget: -0.08,
+    straightPriority: 0.5,
+    lowSpeedPriority: 0.35,
+    highSpeedPriority: 0.74,
+    bumpiness: 0.22,
+  },
+  'montreal-gp': {
+    setupTargets: {
+      frontWingAngle: 56,
+      rearWingAngle: 60,
+      rideHeight: 56,
+      suspensionStiffness: 40,
+      toeOut: 60,
+      camber: 52,
+      gearboxSetting: 62,
+    },
+    entryRotationTarget: 0.14,
+    midRotationTarget: 0.04,
+    exitRotationTarget: -0.1,
+    straightPriority: 0.58,
+    lowSpeedPriority: 0.64,
+    highSpeedPriority: 0.2,
+    bumpiness: 0.5,
+  },
+  'spielberg-gp': {
+    setupTargets: {
+      frontWingAngle: 44,
+      rearWingAngle: 46,
+      rideHeight: 38,
+      suspensionStiffness: 60,
+      toeOut: 56,
+      camber: 60,
+      gearboxSetting: 40,
+    },
+    entryRotationTarget: 0.06,
+    midRotationTarget: -0.06,
+    exitRotationTarget: -0.1,
+    straightPriority: 0.72,
+    lowSpeedPriority: 0.34,
+    highSpeedPriority: 0.62,
+    bumpiness: 0.28,
+  },
+  'hungaroring-gp': {
+    setupTargets: {
+      frontWingAngle: 78,
+      rearWingAngle: 82,
+      rideHeight: 62,
+      suspensionStiffness: 34,
+      toeOut: 64,
+      camber: 46,
+      gearboxSetting: 74,
+    },
+    entryRotationTarget: 0.2,
+    midRotationTarget: 0.1,
+    exitRotationTarget: -0.06,
+    straightPriority: 0.16,
+    lowSpeedPriority: 0.92,
+    highSpeedPriority: 0.12,
+    bumpiness: 0.62,
+  },
+  'zandvoort-gp': {
+    setupTargets: {
+      frontWingAngle: 66,
+      rearWingAngle: 70,
+      rideHeight: 52,
+      suspensionStiffness: 56,
+      toeOut: 60,
+      camber: 64,
+      gearboxSetting: 50,
+    },
+    entryRotationTarget: 0.06,
+    midRotationTarget: -0.04,
+    exitRotationTarget: -0.06,
+    straightPriority: 0.34,
+    lowSpeedPriority: 0.58,
+    highSpeedPriority: 0.66,
+    bumpiness: 0.48,
+  },
+  'baku-gp': {
+    setupTargets: {
+      frontWingAngle: 38,
+      rearWingAngle: 44,
+      rideHeight: 56,
+      suspensionStiffness: 40,
+      toeOut: 58,
+      camber: 52,
+      gearboxSetting: 32,
+    },
+    entryRotationTarget: 0.12,
+    midRotationTarget: 0.02,
+    exitRotationTarget: -0.14,
+    straightPriority: 0.9,
+    lowSpeedPriority: 0.52,
+    highSpeedPriority: 0.18,
+    bumpiness: 0.52,
+  },
+  'austin-gp': {
+    setupTargets: {
+      frontWingAngle: 58,
+      rearWingAngle: 62,
+      rideHeight: 54,
+      suspensionStiffness: 50,
+      toeOut: 58,
+      camber: 58,
+      gearboxSetting: 56,
+    },
+    entryRotationTarget: 0.1,
+    midRotationTarget: -0.02,
+    exitRotationTarget: -0.08,
+    straightPriority: 0.46,
+    lowSpeedPriority: 0.56,
+    highSpeedPriority: 0.48,
+    bumpiness: 0.4,
+  },
+  'interlagos-gp': {
+    setupTargets: {
+      frontWingAngle: 62,
+      rearWingAngle: 66,
+      rideHeight: 56,
+      suspensionStiffness: 46,
+      toeOut: 60,
+      camber: 56,
+      gearboxSetting: 60,
+    },
+    entryRotationTarget: 0.12,
+    midRotationTarget: 0.02,
+    exitRotationTarget: -0.06,
+    straightPriority: 0.38,
+    lowSpeedPriority: 0.66,
+    highSpeedPriority: 0.3,
+    bumpiness: 0.44,
+  },
+  'las-vegas-gp': {
+    setupTargets: {
+      frontWingAngle: 24,
+      rearWingAngle: 20,
+      rideHeight: 34,
+      suspensionStiffness: 64,
+      toeOut: 54,
+      camber: 58,
+      gearboxSetting: 22,
+    },
+    entryRotationTarget: 0.08,
+    midRotationTarget: -0.08,
+    exitRotationTarget: -0.2,
+    straightPriority: 0.95,
+    lowSpeedPriority: 0.22,
+    highSpeedPriority: 0.28,
+    bumpiness: 0.26,
+  },
+  'qatar-gp': {
+    setupTargets: {
+      frontWingAngle: 52,
+      rearWingAngle: 54,
+      rideHeight: 44,
+      suspensionStiffness: 64,
+      toeOut: 55,
+      camber: 66,
+      gearboxSetting: 44,
+    },
+    entryRotationTarget: -0.02,
+    midRotationTarget: -0.1,
+    exitRotationTarget: -0.08,
+    straightPriority: 0.48,
+    lowSpeedPriority: 0.3,
+    highSpeedPriority: 0.9,
+    bumpiness: 0.24,
+  },
   'abu-dhabi-gp': {
     setupTargets: {
       frontWingAngle: 52,
@@ -361,9 +615,61 @@ function applySpecAdjustments(teamSpecs: TeamSpecs | undefined, adjustments: Par
   return merged;
 }
 
+interface TeamDevelopmentBiasEffects {
+  runPlanBiasShift: number;
+  straightFactorShift: number;
+  lowSpeedFactorShift: number;
+  highSpeedFactorShift: number;
+  accelerationFactorShift: number;
+  brakingFactorShift: number;
+  tyreWearShift: number;
+  tyreTempOffset: number;
+}
+
+function getTeamDevelopmentBiasEffects(teamSpecs?: TeamSpecs): TeamDevelopmentBiasEffects {
+  if (!teamSpecs) {
+    return {
+      runPlanBiasShift: 0,
+      straightFactorShift: 0,
+      lowSpeedFactorShift: 0,
+      highSpeedFactorShift: 0,
+      accelerationFactorShift: 0,
+      brakingFactorShift: 0,
+      tyreWearShift: 0,
+      tyreTempOffset: 0,
+    };
+  }
+
+  const acceleration = normalizeTeamSpec(teamSpecs.acceleration);
+  const braking = normalizeTeamSpec(teamSpecs.braking);
+  const dragReduction = normalizeTeamSpec(teamSpecs.drag_reduction);
+  const corneringLow = normalizeTeamSpec(teamSpecs.cornering_low);
+  const corneringMid = normalizeTeamSpec(teamSpecs.cornering_mid);
+  const corneringHigh = normalizeTeamSpec(teamSpecs.cornering_high);
+  const ersEfficiency = normalizeTeamSpec(teamSpecs.ers_efficiency);
+  const cooling = normalizeTeamSpec(teamSpecs.cooling);
+  const lifespan = normalizeTeamSpec(teamSpecs.lifespan);
+  const drsEfficiency = normalizeTeamSpec(teamSpecs.drs_efficiency);
+
+  const qualiStack = acceleration * 0.42 + dragReduction * 0.34 + drsEfficiency * 0.28 + ersEfficiency * 0.18;
+  const longRunStack = cooling * 0.4 + lifespan * 0.44 + braking * 0.16;
+
+  return {
+    runPlanBiasShift: clamp((qualiStack - longRunStack) * 0.16, -0.28, 0.28),
+    straightFactorShift: clamp((dragReduction * 0.018) + (drsEfficiency * 0.014) + (acceleration * 0.008), -0.035, 0.04),
+    lowSpeedFactorShift: clamp((corneringLow * 0.016) + (braking * 0.008), -0.03, 0.03),
+    highSpeedFactorShift: clamp((corneringHigh * 0.018) + (corneringMid * 0.006) - (cooling * 0.003), -0.03, 0.03),
+    accelerationFactorShift: clamp((acceleration * 0.017) + (ersEfficiency * 0.012), -0.03, 0.035),
+    brakingFactorShift: clamp(braking * 0.01, -0.018, 0.018),
+    tyreWearShift: clamp(-(lifespan * 0.05) - (cooling * 0.015) + Math.max(0, qualiStack - longRunStack) * 0.02, -0.06, 0.03),
+    tyreTempOffset: clamp((-cooling * 1.3) + (qualiStack - longRunStack) * 0.9, -1.6, 1.6),
+  };
+}
+
 export function buildSetupPhysicsEffects(track: Track, setup: Pick<SessionSetupState, SetupTuningParameter>, teamSpecs?: TeamSpecs): SetupPhysicsEffects {
   const profile = getTrackSetupProfile(track);
   const rotations = getSetupRotations(setup);
+  const teamDevelopmentBias = getTeamDevelopmentBiasEffects(teamSpecs);
   const rideHeight = normalize(setup.rideHeight);
   const suspension = normalize(setup.suspensionStiffness);
   const targetRideHeight = normalize(profile.setupTargets.rideHeight);
@@ -374,24 +680,27 @@ export function buildSetupPhysicsEffects(track: Track, setup: Pick<SessionSetupS
   const entryRotationDelta = rotations.entryRotation - profile.entryRotationTarget;
   const midRotationDelta = rotations.midRotation - profile.midRotationTarget;
   const exitRotationDelta = rotations.exitRotation - profile.exitRotationTarget;
-  const runPlanPaceBoost = rotations.runPlanBias * 0.018;
-  const runPlanWearDelta = rotations.runPlanBias * 0.15;
+  const runPlanBias = teamSpecs
+    ? clamp(rotations.runPlanBias * 0.45 + teamDevelopmentBias.runPlanBiasShift, -1, 1)
+    : rotations.runPlanBias;
+  const runPlanPaceBoost = runPlanBias * 0.018;
+  const runPlanWearDelta = runPlanBias * 0.15;
   const lowDragWearPenalty = Math.max(0, -rideHeightDeltaFromTarget) * 0.03 + Math.max(0, suspensionDeltaFromTarget) * 0.02;
 
   return {
     specAdjustments: applySpecAdjustments(teamSpecs, rotations.specAdjustments) ?? ({} as Partial<TeamSpecs>),
-    straightFactor: 1 + rotations.straightLineBias * 0.03 - profile.straightPriority * bottomingPenalty * 0.015 + runPlanPaceBoost * 0.8,
-    lowSpeedFactor: rotations.lowSpeedFactor - Math.max(0, -rideHeight) * profile.bumpiness * 0.025 - Math.max(0, suspension) * profile.bumpiness * 0.02 + runPlanPaceBoost * 0.55,
+    straightFactor: 1 + rotations.straightLineBias * 0.03 - profile.straightPriority * bottomingPenalty * 0.015 + runPlanPaceBoost * 0.8 + teamDevelopmentBias.straightFactorShift,
+    lowSpeedFactor: rotations.lowSpeedFactor - Math.max(0, -rideHeight) * profile.bumpiness * 0.025 - Math.max(0, suspension) * profile.bumpiness * 0.02 + runPlanPaceBoost * 0.55 + teamDevelopmentBias.lowSpeedFactorShift,
     mediumSpeedFactor: rotations.mediumSpeedFactor - bottomingPenalty * 0.015 + runPlanPaceBoost * 0.65,
-    highSpeedFactor: rotations.highSpeedFactor - bottomingPenalty * 0.03 + runPlanPaceBoost * 0.6,
-    accelerationFactor: 1 + rotations.tractionBias * 0.11 - bottomingPenalty * 0.01 + runPlanPaceBoost * 0.45,
-    brakingFactor: 1 + ((rotations.specAdjustments.braking ?? 0) / 100),
+    highSpeedFactor: rotations.highSpeedFactor - bottomingPenalty * 0.03 + runPlanPaceBoost * 0.6 + teamDevelopmentBias.highSpeedFactorShift,
+    accelerationFactor: 1 + rotations.tractionBias * 0.11 - bottomingPenalty * 0.01 + runPlanPaceBoost * 0.45 + teamDevelopmentBias.accelerationFactorShift,
+    brakingFactor: 1 + ((rotations.specAdjustments.braking ?? 0) / 100) + teamDevelopmentBias.brakingFactorShift,
     entryRotationDelta,
     midRotationDelta,
     exitRotationDelta,
-    runPlanBias: rotations.runPlanBias,
-    tyreWearFactor: 1 + rotations.wearBias * 0.18 + bottomingPenalty * 0.08 + profile.bumpiness * Math.max(0, suspension) * 0.08 + runPlanWearDelta + lowDragWearPenalty,
-    tyreTempOffset: rotations.thermalBias * 7 + bottomingPenalty * 6 + rotations.runPlanBias * 3.5,
+    runPlanBias,
+    tyreWearFactor: 1 + rotations.wearBias * 0.18 + bottomingPenalty * 0.08 + profile.bumpiness * Math.max(0, suspension) * 0.08 + runPlanWearDelta + lowDragWearPenalty + teamDevelopmentBias.tyreWearShift,
+    tyreTempOffset: rotations.thermalBias * 7 + bottomingPenalty * 6 + runPlanBias * 3.5 + teamDevelopmentBias.tyreTempOffset,
   };
 }
 

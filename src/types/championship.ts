@@ -21,7 +21,21 @@ export type DevelopmentCategory =
   | 'pit_crew'
   | 'simulator';
 
+export type PartCategory =
+  | 'front-wing'
+  | 'floor'
+  | 'rear-wing'
+  | 'suspension'
+  | 'power-unit'
+  | 'cooling'
+  | 'energy-store';
+
 export type DevelopmentStatus = 'queued' | 'active' | 'completed' | 'cancelled';
+export type DesignStatus = 'in_design' | 'ready_for_manufacturing' | 'in_production' | 'available';
+export type ManufacturingStatus = 'queued' | 'building' | 'completed' | 'cancelled';
+export type ManufacturingMode = 'normal' | 'intense' | 'urgent';
+
+export type CarId = 'car-1' | 'car-2';
 
 export type CrewDepartment =
   | 'race_engineering'
@@ -72,6 +86,75 @@ export interface DevelopmentProject {
   effects: Partial<TeamSpecs>;
 }
 
+export interface DesignBiasAllocation {
+  focusId: string;
+  weight: number;
+}
+
+export interface AeroResourceAllocation {
+  windTunnelHours: number;
+  cfdHours: number;
+}
+
+export interface DevelopmentInvestment {
+  money: number;
+}
+
+export interface AtrPeriodState {
+  periodLabel: string;
+  constructorStanding: number;
+  windTunnelHoursCap: number;
+  cfdHoursCap: number;
+  windTunnelHoursUsed: number;
+  cfdHoursUsed: number;
+}
+
+export interface PartDesign {
+  id: string;
+  partCategory: PartCategory;
+  code: string;
+  displayName: string;
+  customName?: string;
+  status: DesignStatus;
+  biasAllocations: DesignBiasAllocation[];
+  projectedEffects: Partial<TeamSpecs>;
+  actualEffects: Partial<TeamSpecs>;
+  investment: DevelopmentInvestment;
+  aero: AeroResourceAllocation;
+  startedRound?: number;
+  completesRound?: number;
+  startedAt: string;
+  completedAt?: string;
+  projectedDurationWeeks: number;
+  stock: number;
+}
+
+export interface ManufacturingOrder {
+  id: string;
+  designId: string;
+  quantity: number;
+  mode: ManufacturingMode;
+  targetCars: CarId[];
+  status: ManufacturingStatus;
+  cost: number;
+  durationDays: number;
+  startedAt: string;
+  completesAt?: string;
+}
+
+export interface CarPartAssignment {
+  carId: CarId;
+  installedDesignByPart: Partial<Record<PartCategory, string>>;
+}
+
+export interface ResearchDepartmentState {
+  atr: AtrPeriodState;
+  activeDesignProjects: PartDesign[];
+  completedDesigns: PartDesign[];
+  manufacturingQueue: ManufacturingOrder[];
+  carAssignments: CarPartAssignment[];
+}
+
 export interface OfflineTeamState {
   teamId: string;
   teamName: string;
@@ -83,6 +166,7 @@ export interface OfflineTeamState {
   developmentQueue: DevelopmentProject[];
   activeProjects: DevelopmentProject[];
   completedProjects: DevelopmentProject[];
+  researchDepartment?: ResearchDepartmentState;
 }
 
 export interface SessionSetupState {

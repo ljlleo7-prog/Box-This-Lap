@@ -4,6 +4,7 @@ import { ChevronLeft, Clock3, Flag, Lock, MapPin, Pause, Play, RadioTower, Slide
 import { clsx } from 'clsx';
 import { DRIVERS } from '../data/initialData';
 import { TRACKS } from '../data/tracks';
+import { TEAM_TEMPLATES } from '../data/teams';
 import { SetupFeedbackSystem } from '../engine/systems/SetupFeedbackSystem';
 import { buildSetupPhysicsEffects } from '../engine/systems/SetupModel';
 import { TyreManager } from '../engine/systems/TyreManager';
@@ -12,12 +13,13 @@ import { WeekendManager } from '../engine/systems/WeekendManager';
 import { GlassButton } from '../components/ui/GlassButton';
 import { GlassCard } from '../components/ui/GlassCard';
 import { CircularTrackMap, type TrackMapVehicle } from '../components/CircularTrackMap';
-import type { OfflineWeekend, SessionSetupState, SetupTuningParameter, Track, TyreCompound, TyreSet, WeekendPhase } from '../types';
+import { loadTeamSpecs } from '../lib/localSaves';
+import type { OfflineWeekend, SessionSetupState, SetupTuningParameter, TeamSpecs, Track, TyreCompound, TyreSet, WeekendPhase } from '../types';
 import type { DrivingBiasFeedback, DrivingBiasFeedbackResult, DrivingBiasMetricKey, PracticeFocusAllocation } from '../engine/systems/SetupFeedbackSystem';
 
 const TRACK_OPTIONS: Track[] = TRACKS;
 const DEFAULT_TRACK = TRACK_OPTIONS[0]!;
-const DRIVER_ID = 'nor';
+const DEFAULT_DRIVER_ID = 'nor';
 const DEFAULT_STINT_LAPS = 15;
 const MIN_RUN_LAPS = 2;
 const MAX_RUN_LAPS = 40;
@@ -180,6 +182,10 @@ interface PendingRunContext {
   trafficStatus: 'clear' | 'moderate' | 'traffic';
 }
 
+function getPhaseDriverKey(driverId: string, phase: TimedSessionPhase): string {
+  return `${driverId}:${phase}`;
+}
+
 function createPracticePhaseState(): PracticePhaseState {
   return {
     focusMode: 'balanced',
@@ -230,7 +236,15 @@ function createPracticeDevelopmentState(): PracticeDevelopmentState {
   };
 }
 
-function createWeekend(track: Track): OfflineWeekend {
+function createWeekend(track: Track, driverIds: string[]): OfflineWeekend {
+  const initialSetups = driverIds.reduce<Record<string, SessionSetupState>>((acc, driverId) => {
+    acc[driverId] = { ...NEUTRAL_SETUP };
+    return acc;
+  }, {});
+  const initialTyres = driverIds.reduce<Record<string, TyreSet[]>>((acc, driverId) => {
+    acc[driverId] = TyreManager.initializeAllocation(driverId);
+    return acc;
+  }, {});
   return {
     id: `practice-quali-${track.id}`,
     round: 1,
@@ -238,14 +252,14 @@ function createWeekend(track: Track): OfflineWeekend {
     currentPhase: 'pre_weekend',
     completedSessions: [],
     selectedTeamId: 'mclaren',
-    fp1Setup: { [DRIVER_ID]: { ...NEUTRAL_SETUP } },
-    fp2Setup: { [DRIVER_ID]: { ...NEUTRAL_SETUP } },
-    fp3Setup: { [DRIVER_ID]: { ...NEUTRAL_SETUP } },
+    fp1Setup: initialSetups,
+    fp2Setup: initialSetups,
+    fp3Setup: initialSetups,
     q1Setup: {},
     q2Setup: {},
     q3Setup: {},
     raceSetup: {},
-    tyreAllocations: { [DRIVER_ID]: TyreManager.initializeAllocation(DRIVER_ID) },
+    tyreAllocations: initialTyres,
     setupKnowledge: {},
     sessionSummaries: {},
     createdAt: new Date().toISOString(),
@@ -594,56 +608,63 @@ function getPitLaneSpawnDistance(track: Track, slotIndex: number, totalSlots: nu
   return (entryDistance + laneDistance) % track.totalDistance;
 }
 
-function getSetupForPhase(weekend: OfflineWeekend, phase: WeekendPhase): SessionSetupState {
+function getSetupForPhase(weekend: OfflineWeekend, phase: WeekendPhase, driverId: string): SessionSetupState {
   switch (phase) {
     case 'fp1':
-      return weekend.fp1Setup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.fp1Setup[driverId] ?? { ...NEUTRAL_SETUP };
     case 'fp2':
-      return weekend.fp2Setup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.fp2Setup[driverId] ?? { ...NEUTRAL_SETUP };
     case 'fp3':
-      return weekend.fp3Setup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.fp3Setup[driverId] ?? { ...NEUTRAL_SETUP };
     case 'q1':
-      return weekend.q1Setup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.q1Setup[driverId] ?? { ...NEUTRAL_SETUP };
     case 'q2':
-      return weekend.q2Setup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.q2Setup[driverId] ?? { ...NEUTRAL_SETUP };
     case 'q3':
-      return weekend.q3Setup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.q3Setup[driverId] ?? { ...NEUTRAL_SETUP };
     case 'race':
-      return weekend.raceSetup[DRIVER_ID] ?? { ...NEUTRAL_SETUP };
+      return weekend.raceSetup[driverId] ?? { ...NEUTRAL_SETUP };
     default:
       return { ...NEUTRAL_SETUP };
   }
 }
 
-function updateSetupForPhase(weekend: OfflineWeekend, phase: WeekendPhase, setup: SessionSetupState): OfflineWeekend {
-  if (phase === 'fp1') return { ...weekend, fp1Setup: { ...weekend.fp1Setup, [DRIVER_ID]: setup } };
-  if (phase === 'fp2') return { ...weekend, fp2Setup: { ...weekend.fp2Setup, [DRIVER_ID]: setup } };
-  if (phase === 'fp3') return { ...weekend, fp3Setup: { ...weekend.fp3Setup, [DRIVER_ID]: setup } };
-  if (phase === 'q1') return { ...weekend, q1Setup: { ...weekend.q1Setup, [DRIVER_ID]: setup } };
-  if (phase === 'q2') return { ...weekend, q2Setup: { ...weekend.q2Setup, [DRIVER_ID]: setup } };
-  if (phase === 'q3') return { ...weekend, q3Setup: { ...weekend.q3Setup, [DRIVER_ID]: setup } };
-  if (phase === 'race') return { ...weekend, raceSetup: { ...weekend.raceSetup, [DRIVER_ID]: setup } };
+function updateSetupForPhase(weekend: OfflineWeekend, phase: WeekendPhase, driverId: string, setup: SessionSetupState): OfflineWeekend {
+  if (phase === 'fp1') return { ...weekend, fp1Setup: { ...weekend.fp1Setup, [driverId]: setup } };
+  if (phase === 'fp2') return { ...weekend, fp2Setup: { ...weekend.fp2Setup, [driverId]: setup } };
+  if (phase === 'fp3') return { ...weekend, fp3Setup: { ...weekend.fp3Setup, [driverId]: setup } };
+  if (phase === 'q1') return { ...weekend, q1Setup: { ...weekend.q1Setup, [driverId]: setup } };
+  if (phase === 'q2') return { ...weekend, q2Setup: { ...weekend.q2Setup, [driverId]: setup } };
+  if (phase === 'q3') return { ...weekend, q3Setup: { ...weekend.q3Setup, [driverId]: setup } };
+  if (phase === 'race') return { ...weekend, raceSetup: { ...weekend.raceSetup, [driverId]: setup } };
   return weekend;
 }
 
-function carrySetupForward(weekend: OfflineWeekend): OfflineWeekend {
+function carrySetupForward(weekend: OfflineWeekend, driverIds: string[]): OfflineWeekend {
   const nextPhase = WeekendManager.getNextPhase(weekend.currentPhase);
   if (!nextPhase) return weekend;
 
   if (weekend.currentPhase === 'fp1' && nextPhase === 'fp2') {
-    return updateSetupForPhase(weekend, 'fp2', { ...getSetupForPhase(weekend, 'fp1') });
+    return driverIds.reduce(
+      (nextWeekend, driverId) => updateSetupForPhase(nextWeekend, 'fp2', driverId, { ...getSetupForPhase(nextWeekend, 'fp1', driverId) }),
+      weekend
+    );
   }
 
   if (weekend.currentPhase === 'fp2' && nextPhase === 'fp3') {
-    return updateSetupForPhase(weekend, 'fp3', { ...getSetupForPhase(weekend, 'fp2') });
+    return driverIds.reduce(
+      (nextWeekend, driverId) => updateSetupForPhase(nextWeekend, 'fp3', driverId, { ...getSetupForPhase(nextWeekend, 'fp2', driverId) }),
+      weekend
+    );
   }
 
   return weekend;
 }
 
-function createAICompetitors(playerTeam: string, phaseSetup: SessionSetupState): AICompetitorState[] {
+function createAICompetitors(controlledDriverIds: string[], phaseSetup: SessionSetupState): AICompetitorState[] {
+  const controlledDriverIdSet = new Set(controlledDriverIds);
   return DRIVERS
-    .filter((driver) => driver.team !== playerTeam)
+    .filter((driver) => !controlledDriverIdSet.has(driver.id))
     .map((driver) => ({
       driverId: driver.id,
       driverName: driver.name,
@@ -672,11 +693,29 @@ function formatLapTime(seconds: number | null): string {
 export const PracticeQualiDev: React.FC = () => {
   const navigate = useNavigate();
   const [trackId, setTrackId] = useState<string>(DEFAULT_TRACK.id);
-  const selectedDriver = useMemo(
-    () => DRIVERS.find((driver) => driver.id === DRIVER_ID),
+  const defaultDriver = useMemo(
+    () => DRIVERS.find((driver) => driver.id === DEFAULT_DRIVER_ID) ?? DRIVERS[0],
     []
   );
-  const playerTeam = selectedDriver?.team ?? 'McLaren';
+  const playerTeam = defaultDriver?.team ?? 'McLaren';
+  const controlledDrivers = useMemo(
+    () => DRIVERS.filter((driver) => driver.team === playerTeam).slice(0, 2),
+    [playerTeam]
+  );
+  const controlledDriverIds = useMemo(
+    () => controlledDrivers.map((driver) => driver.id),
+    [controlledDrivers]
+  );
+  const [activeDriverId, setActiveDriverId] = useState<string>(() => defaultDriver?.id ?? DEFAULT_DRIVER_ID);
+  const selectedDriver = useMemo(
+    () => controlledDrivers.find((driver) => driver.id === activeDriverId) ?? controlledDrivers[0] ?? defaultDriver,
+    [activeDriverId, controlledDrivers, defaultDriver]
+  );
+  const playerTeamSpecs = useMemo<TeamSpecs | undefined>(() => {
+    const baseSpecs = TEAM_TEMPLATES.find((team) => team.name === playerTeam)?.specs;
+    const storedSpecs = loadTeamSpecs()[playerTeam];
+    return storedSpecs ?? baseSpecs;
+  }, [playerTeam]);
 
   const selectedTrack = useMemo(
     () => TRACK_OPTIONS.find((track) => track.id === trackId) ?? DEFAULT_TRACK,
@@ -687,14 +726,14 @@ export const PracticeQualiDev: React.FC = () => {
     [selectedTrack]
   );
 
-  const [weekend, setWeekend] = useState<OfflineWeekend>(() => createWeekend(selectedTrack));
+  const [weekend, setWeekend] = useState<OfflineWeekend>(() => createWeekend(selectedTrack, controlledDriverIds));
   const [practiceDevelopment, setPracticeDevelopment] = useState<PracticeDevelopmentState>(createPracticeDevelopmentState);
-  const [aiCompetitors, setAiCompetitors] = useState<AICompetitorState[]>(() => createAICompetitors(playerTeam, { ...NEUTRAL_SETUP }));
-  const [activePlayback, setActivePlayback] = useState<ActivePlaybackState | null>(null);
-  const [pendingRunContext, setPendingRunContext] = useState<PendingRunContext | null>(null);
+  const [aiCompetitors, setAiCompetitors] = useState<AICompetitorState[]>(() => createAICompetitors(controlledDriverIds, { ...NEUTRAL_SETUP }));
+  const [activePlaybackByDriver, setActivePlaybackByDriver] = useState<Record<string, ActivePlaybackState | null>>({});
+  const [pendingRunContextByDriver, setPendingRunContextByDriver] = useState<Record<string, PendingRunContext | null>>({});
   const [sceneSpeed, setSceneSpeed] = useState(1);
   const [sessionPaused, setSessionPaused] = useState(false);
-  const [garageOpen, setGarageOpen] = useState(true);
+  const [garageOpenByDriver, setGarageOpenByDriver] = useState<Record<string, boolean>>({});
   const aiWaitAccumulatorByPhaseRef = useRef<Record<TimedSessionPhase, number>>({
     fp1: 0,
     fp2: 0,
@@ -707,51 +746,68 @@ export const PracticeQualiDev: React.FC = () => {
   const tractionByPhaseRef = useRef(practiceDevelopment.trackTractionByPhase);
 
   useEffect(() => {
-    setWeekend(createWeekend(selectedTrack));
+    setWeekend(createWeekend(selectedTrack, controlledDriverIds));
     const nextDevelopment = createPracticeDevelopmentState();
-    nextDevelopment.lastCommittedSetupByPhase.fp1 = { ...NEUTRAL_SETUP };
+    controlledDriverIds.forEach((driverId) => {
+      nextDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(driverId, 'fp1')] = { ...NEUTRAL_SETUP };
+    });
     setPracticeDevelopment(nextDevelopment);
-    setAiCompetitors(createAICompetitors(playerTeam, { ...NEUTRAL_SETUP }));
+    setAiCompetitors(createAICompetitors(controlledDriverIds, { ...NEUTRAL_SETUP }));
     aiWaitAccumulatorByPhaseRef.current = { fp1: 0, fp2: 0, fp3: 0, q1: 0, q2: 0, q3: 0 };
-    setActivePlayback(null);
-    setPendingRunContext(null);
+    setActivePlaybackByDriver(controlledDriverIds.reduce<Record<string, ActivePlaybackState | null>>((acc, driverId) => {
+      acc[driverId] = null;
+      return acc;
+    }, {}));
+    setPendingRunContextByDriver(controlledDriverIds.reduce<Record<string, PendingRunContext | null>>((acc, driverId) => {
+      acc[driverId] = null;
+      return acc;
+    }, {}));
+    setGarageOpenByDriver(controlledDriverIds.reduce<Record<string, boolean>>((acc, driverId) => {
+      acc[driverId] = true;
+      return acc;
+    }, {}));
     setSessionPaused(false);
-  }, [selectedTrack, playerTeam]);
+  }, [selectedTrack, controlledDriverIds]);
 
   const currentSetup = useMemo(
-    () => getSetupForPhase(weekend, weekend.currentPhase),
-    [weekend]
+    () => getSetupForPhase(weekend, weekend.currentPhase, selectedDriver?.id ?? activeDriverId),
+    [weekend, selectedDriver, activeDriverId]
   );
 
   useEffect(() => {
     if (!isTimedSessionPhase(weekend.currentPhase)) return;
     const phase = weekend.currentPhase;
-    const defaultTyreSetId = chooseDefaultTyreSetId(weekend.tyreAllocations[DRIVER_ID] ?? []);
+    const driverId = selectedDriver?.id ?? activeDriverId;
+    const phaseKey = getPhaseDriverKey(driverId, phase);
+    const defaultTyreSetId = chooseDefaultTyreSetId(weekend.tyreAllocations[driverId] ?? []);
     setPracticeDevelopment((current) => {
-      const hasCommittedSetup = !!current.lastCommittedSetupByPhase[phase];
-      const hasTyreSet = !!current.selectedTyreSetByPhase[phase];
+      const hasCommittedSetup = !!current.lastCommittedSetupByPhase[phaseKey];
+      const hasTyreSet = !!current.selectedTyreSetByPhase[phaseKey];
       if ((hasCommittedSetup || !currentSetup) && (hasTyreSet || !defaultTyreSetId)) return current;
       return {
         ...current,
         lastCommittedSetupByPhase: {
           ...current.lastCommittedSetupByPhase,
-          ...(hasCommittedSetup ? {} : { [phase]: { ...currentSetup } }),
+          ...(hasCommittedSetup ? {} : { [phaseKey]: { ...currentSetup } }),
         },
         selectedTyreSetByPhase: {
           ...current.selectedTyreSetByPhase,
-          ...(hasTyreSet || !defaultTyreSetId ? {} : { [phase]: defaultTyreSetId }),
+          ...(hasTyreSet || !defaultTyreSetId ? {} : { [phaseKey]: defaultTyreSetId }),
         },
       };
     });
-  }, [currentSetup, weekend.currentPhase, weekend.tyreAllocations]);
+  }, [activeDriverId, currentSetup, selectedDriver, weekend.currentPhase, weekend.tyreAllocations]);
 
   useEffect(() => {
     if (isTimedSessionPhase(weekend.currentPhase)) {
-      setGarageOpen(true);
+      setGarageOpenByDriver((current) => controlledDriverIds.reduce<Record<string, boolean>>((acc, driverId) => {
+        acc[driverId] = current[driverId] ?? true;
+        return acc;
+      }, {}));
       setSessionPaused(false);
       aiWaitAccumulatorByPhaseRef.current[weekend.currentPhase] = 0;
     }
-  }, [weekend.currentPhase]);
+  }, [weekend.currentPhase, controlledDriverIds]);
   useEffect(() => {
     trackPreparationRef.current = practiceDevelopment.trackPreparation;
     tractionByPhaseRef.current = practiceDevelopment.trackTractionByPhase;
@@ -769,20 +825,26 @@ export const PracticeQualiDev: React.FC = () => {
     ? practiceDevelopment.qualifying[weekend.currentPhase]
     : null;
   const currentEffects = useMemo(
-    () => buildSetupPhysicsEffects(selectedTrack, currentSetup),
-    [selectedTrack, currentSetup]
+    () => buildSetupPhysicsEffects(selectedTrack, currentSetup, playerTeamSpecs),
+    [selectedTrack, currentSetup, playerTeamSpecs]
   );
   const currentPhaseElapsedSeconds = isTimedSession ? practiceDevelopment.sessionElapsedSeconds[weekend.currentPhase] : 0;
   const currentPhaseDurationSeconds = isTimedSession ? SESSION_DURATION_SECONDS[weekend.currentPhase] : 0;
   const currentPhaseRemainingSeconds = isTimedSession ? Math.max(0, currentPhaseDurationSeconds - currentPhaseElapsedSeconds) : 0;
   const timedSessionPhase: TimedSessionPhase = isTimedSession ? (weekend.currentPhase as TimedSessionPhase) : 'fp1';
   const currentTrackTraction = isTimedSession ? practiceDevelopment.trackTractionByPhase[timedSessionPhase] : 0;
-  const playerAllocation = weekend.tyreAllocations[DRIVER_ID] ?? EMPTY_TYRE_SETS;
+  const activeDriverRuntimeId = selectedDriver?.id ?? activeDriverId;
+  const activePlayback = activePlaybackByDriver[activeDriverRuntimeId] ?? null;
+  const pendingRunContext = pendingRunContextByDriver[activeDriverRuntimeId] ?? null;
+  const garageOpen = garageOpenByDriver[activeDriverRuntimeId] ?? true;
+  const playerAllocation = weekend.tyreAllocations[activeDriverRuntimeId] ?? EMPTY_TYRE_SETS;
   const availableTyreSets = useMemo(
     () => playerAllocation.filter((set) => !set.returned),
     [playerAllocation]
   );
-  const selectedTyreSetId = isTimedSession ? (practiceDevelopment.selectedTyreSetByPhase[timedSessionPhase] ?? chooseDefaultTyreSetId(playerAllocation)) : null;
+  const selectedTyreSetId = isTimedSession
+    ? (practiceDevelopment.selectedTyreSetByPhase[getPhaseDriverKey(activeDriverRuntimeId, timedSessionPhase)] ?? chooseDefaultTyreSetId(playerAllocation))
+    : null;
   const selectedTyreSet = selectedTyreSetId ? playerAllocation.find((set) => set.id === selectedTyreSetId) ?? null : null;
   const selectedTyreCompound: TyreCompound = selectedTyreSet?.compound ?? 'soft';
   const selectedTyreWear = selectedTyreSet?.wear ?? 0;
@@ -812,9 +874,19 @@ export const PracticeQualiDev: React.FC = () => {
     [currentEffects, displayKnowledge]
   );
   const qualifyingLeaderboard = useMemo(() => {
-    if (!isQualifyingSession || !selectedDriver) return [];
-    const phase = weekend.currentPhase;
-    const playerBest = practiceDevelopment.qualifying[phase].bestLapSeconds;
+    if (!isQualifyingSession) return [];
+    const phase = weekend.currentPhase as QualifyingPhase;
+    const playerRows = controlledDrivers.map((driver) => ({
+      driverId: driver.id,
+      driverName: driver.name,
+      team: driver.team,
+      bestLapSeconds: practiceDevelopment.qualifying[phase].bestLapSeconds,
+      laps: practiceDevelopment.qualifying[phase].lapsCompleted,
+      tyreCompound: weekend.tyreAllocations[driver.id]?.find(
+        (set) => set.id === practiceDevelopment.selectedTyreSetByPhase[getPhaseDriverKey(driver.id, phase)]
+      )?.compound ?? null,
+      isPlayer: true,
+    }));
     const aiRows = aiCompetitors
       .map((entry) => ({
         driverId: entry.driverId,
@@ -825,16 +897,7 @@ export const PracticeQualiDev: React.FC = () => {
         tyreCompound: entry.tyreByPhase[phase] ?? null,
         isPlayer: false,
       }));
-    const playerRow = {
-      driverId: selectedDriver.id,
-      driverName: selectedDriver.name,
-      team: selectedDriver.team,
-      bestLapSeconds: playerBest,
-      laps: practiceDevelopment.qualifying[phase].lapsCompleted,
-      tyreCompound: selectedTyreCompound,
-      isPlayer: true,
-    };
-    return [...aiRows, playerRow]
+    return [...aiRows, ...playerRows]
       .sort((a, b) => {
         if (a.bestLapSeconds === null && b.bestLapSeconds === null) return 0;
         if (a.bestLapSeconds === null) return 1;
@@ -845,7 +908,7 @@ export const PracticeQualiDev: React.FC = () => {
         ...entry,
         position: index + 1,
       }));
-  }, [aiCompetitors, isQualifyingSession, practiceDevelopment.qualifying, selectedDriver, selectedTyreCompound, weekend.currentPhase]);
+  }, [aiCompetitors, controlledDrivers, isQualifyingSession, practiceDevelopment.qualifying, practiceDevelopment.selectedTyreSetByPhase, weekend.currentPhase, weekend.tyreAllocations]);
   const playbackSimSeconds = useMemo(() => {
     if (!activePlayback || !pendingRunContext) return 0;
     if (!isTimedSessionPhase(weekend.currentPhase)) return 0;
@@ -950,9 +1013,10 @@ export const PracticeQualiDev: React.FC = () => {
     if (!canEditSetup) return;
 
     const activePhase = weekend.currentPhase as PracticePhase;
+    const driverId = selectedDriver?.id ?? activeDriverId;
     setWeekend((currentWeekend) =>
-      updateSetupForPhase(currentWeekend, currentWeekend.currentPhase, {
-        ...getSetupForPhase(currentWeekend, currentWeekend.currentPhase),
+      updateSetupForPhase(currentWeekend, currentWeekend.currentPhase, driverId, {
+        ...getSetupForPhase(currentWeekend, currentWeekend.currentPhase, driverId),
         [parameter]: value,
       })
     );
@@ -969,16 +1033,27 @@ export const PracticeQualiDev: React.FC = () => {
   };
 
   const handleResetWeekend = () => {
-    setWeekend(createWeekend(selectedTrack));
+    setWeekend(createWeekend(selectedTrack, controlledDriverIds));
     const nextDevelopment = createPracticeDevelopmentState();
-    nextDevelopment.lastCommittedSetupByPhase.fp1 = { ...NEUTRAL_SETUP };
+    controlledDriverIds.forEach((driverId) => {
+      nextDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(driverId, 'fp1')] = { ...NEUTRAL_SETUP };
+    });
     setPracticeDevelopment(nextDevelopment);
-    setAiCompetitors(createAICompetitors(playerTeam, { ...NEUTRAL_SETUP }));
+    setAiCompetitors(createAICompetitors(controlledDriverIds, { ...NEUTRAL_SETUP }));
     aiWaitAccumulatorByPhaseRef.current = { fp1: 0, fp2: 0, fp3: 0, q1: 0, q2: 0, q3: 0 };
-    setActivePlayback(null);
+    setActivePlaybackByDriver(controlledDriverIds.reduce<Record<string, ActivePlaybackState | null>>((acc, driverId) => {
+      acc[driverId] = null;
+      return acc;
+    }, {}));
     setSessionPaused(false);
-    setPendingRunContext(null);
-    setGarageOpen(true);
+    setPendingRunContextByDriver(controlledDriverIds.reduce<Record<string, PendingRunContext | null>>((acc, driverId) => {
+      acc[driverId] = null;
+      return acc;
+    }, {}));
+    setGarageOpenByDriver(controlledDriverIds.reduce<Record<string, boolean>>((acc, driverId) => {
+      acc[driverId] = true;
+      return acc;
+    }, {}));
   };
 
   const handlePracticePhaseUpdate = <K extends keyof PracticePhaseState>(key: K, value: PracticePhaseState[K]) => {
@@ -1015,11 +1090,12 @@ export const PracticeQualiDev: React.FC = () => {
   const handleTyreSetSelection = (setId: string) => {
     if (!isTimedSessionPhase(weekend.currentPhase)) return;
     const activePhase = weekend.currentPhase;
+    const phaseKey = getPhaseDriverKey(activeDriverRuntimeId, activePhase);
     setPracticeDevelopment((current) => ({
       ...current,
       selectedTyreSetByPhase: {
         ...current.selectedTyreSetByPhase,
-        [activePhase]: setId,
+        [phaseKey]: setId,
       },
     }));
   };
@@ -1171,22 +1247,25 @@ export const PracticeQualiDev: React.FC = () => {
     simulateAiSessionSlice,
   ]);
 
-  const commitSessionRun = useCallback((context: PendingRunContext, availableSeconds: number) => {
-    if (!selectedDriver) return;
+  const commitSessionRun = useCallback((driverId: string, context: PendingRunContext, availableSeconds: number) => {
+    const driver = controlledDrivers.find((entry) => entry.id === driverId);
+    if (!driver) return;
     const activePhase = context.phase;
-    const selectedSet = (weekend.tyreAllocations[DRIVER_ID] ?? EMPTY_TYRE_SETS).find((set) => set.id === context.selectedTyreSetId) ?? null;
+    const selectedSet = (weekend.tyreAllocations[driverId] ?? EMPTY_TYRE_SETS).find((set) => set.id === context.selectedTyreSetId) ?? null;
     if (!selectedSet) return;
+    const driverSetup = getSetupForPhase(weekend, activePhase, driverId);
+    const driverEffects = buildSetupPhysicsEffects(selectedTrack, driverSetup, playerTeamSpecs);
     const runWindow = simulateSessionLaps(context.plannedLaps, context.lapTimeSeconds, availableSeconds, context.setupChangeSeconds);
 
     if (runWindow.completedLaps > 0) {
-      const wearGain = runWindow.completedLaps * context.lapTimeSeconds * TYRE_COMPOUNDS[selectedSet.compound].baseWearRate * currentEffects.tyreWearFactor;
+      const wearGain = runWindow.completedLaps * context.lapTimeSeconds * TYRE_COMPOUNDS[selectedSet.compound].baseWearRate * driverEffects.tyreWearFactor;
       setWeekend((currentWeekend) => {
-        const allocation = currentWeekend.tyreAllocations[DRIVER_ID] ?? EMPTY_TYRE_SETS;
+        const allocation = currentWeekend.tyreAllocations[driverId] ?? EMPTY_TYRE_SETS;
         return {
           ...currentWeekend,
           tyreAllocations: {
             ...currentWeekend.tyreAllocations,
-            [DRIVER_ID]: allocation.map((set) => (
+            [driverId]: allocation.map((set) => (
               set.id === selectedSet.id
                 ? { ...set, wear: clamp(set.wear + wearGain, 0, 100) }
                 : set
@@ -1203,13 +1282,14 @@ export const PracticeQualiDev: React.FC = () => {
       const focusAllocation = getFocusAllocation(phaseState.focusMode);
       const stintResult = SetupFeedbackSystem.runPracticeStint(
         selectedTrack,
-        currentSetup,
+        driverSetup,
         practiceDevelopment.biasKnowledge,
         hiddenIdealSetup,
-        driverLearning,
+        driver.learning,
         focusAllocation,
         runWindow.completedLaps,
-        practiceDevelopment.trackPreparation
+        practiceDevelopment.trackPreparation,
+        playerTeamSpecs
       );
       setPracticeDevelopment((current) => {
         const currentPhaseState = current.phases[activePhase];
@@ -1229,7 +1309,7 @@ export const PracticeQualiDev: React.FC = () => {
           },
           lastCommittedSetupByPhase: {
             ...current.lastCommittedSetupByPhase,
-            [activePhase]: { ...currentSetup },
+            [getPhaseDriverKey(driverId, activePhase)]: { ...driverSetup },
           },
           phases: {
             ...current.phases,
@@ -1258,7 +1338,7 @@ export const PracticeQualiDev: React.FC = () => {
 
     const lapTimes: number[] = [];
     for (let lap = 0; lap < runWindow.completedLaps; lap += 1) {
-      const variance = (deterministicNoise(lap + context.releaseElapsedSeconds * 0.1 + driverLearning) - 0.5) * (1.2 - (selectedDriver.skill.consistency / 120));
+      const variance = (deterministicNoise(lap + context.releaseElapsedSeconds * 0.1 + driver.learning) - 0.5) * (1.2 - (driver.skill.consistency / 120));
       lapTimes.push(context.lapTimeSeconds + variance);
     }
     const bestLapFromRun = lapTimes.length ? Math.min(...lapTimes) : null;
@@ -1297,16 +1377,14 @@ export const PracticeQualiDev: React.FC = () => {
       };
     });
   }, [
-    selectedDriver,
-    weekend.tyreAllocations,
+    controlledDrivers,
+    weekend,
     practiceDevelopment.trackPreparation,
     practiceDevelopment.phases,
     practiceDevelopment.biasKnowledge,
-    currentEffects.tyreWearFactor,
-    currentSetup,
     selectedTrack,
     hiddenIdealSetup,
-    driverLearning,
+    playerTeamSpecs,
   ]);
 
   const handleRunSessionStint = () => {
@@ -1320,7 +1398,7 @@ export const PracticeQualiDev: React.FC = () => {
       ? practiceDevelopment.phases[activePhase].plannedLaps
       : practiceDevelopment.qualifying[activePhase].plannedLaps;
     if (!selectedTyreSet) return;
-    const committedSetup = practiceDevelopment.lastCommittedSetupByPhase[activePhase] ?? currentSetup;
+    const committedSetup = practiceDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(activeDriverRuntimeId, activePhase)] ?? currentSetup;
     const setupChangeSeconds = activePhase.startsWith('q') ? 0 : calculateSetupChangeSeconds(committedSetup, currentSetup);
     const traffic = estimateTrafficImpact(
       activePhase,
@@ -1346,7 +1424,9 @@ export const PracticeQualiDev: React.FC = () => {
       practiceDevelopment.trackTractionByPhase[activePhase] ?? 0,
       'run'
     );
-    setActivePlayback({
+    setActivePlaybackByDriver((current) => ({
+      ...current,
+      [activeDriverRuntimeId]: {
       plan: {
         phase: activePhase,
         player: {
@@ -1362,8 +1442,11 @@ export const PracticeQualiDev: React.FC = () => {
       },
       progressRatio: 0,
       durationSeconds: clamp(runWindow.timeUsedSeconds / 20, 6, 22),
-    });
-    setPendingRunContext({
+      },
+    }));
+    setPendingRunContextByDriver((current) => ({
+      ...current,
+      [activeDriverRuntimeId]: {
       phase: activePhase,
       plannedLaps,
       setupChangeSeconds,
@@ -1372,38 +1455,37 @@ export const PracticeQualiDev: React.FC = () => {
       releaseElapsedSeconds: elapsedSeconds,
       trafficPenaltySeconds: traffic.trafficPenaltySeconds,
       trafficStatus: traffic.trafficStatus,
-    });
-    setGarageOpen(false);
+      },
+    }));
+    setGarageOpenByDriver((current) => ({ ...current, [activeDriverRuntimeId]: false }));
   };
 
   const handleCallToGarage = () => {
     if (activePlayback && pendingRunContext) {
       const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[pendingRunContext.phase] ?? pendingRunContext.releaseElapsedSeconds;
       const partialSeconds = Math.max(0, phaseElapsed - pendingRunContext.releaseElapsedSeconds);
-      commitSessionRun(pendingRunContext, partialSeconds);
-      setPendingRunContext(null);
+      commitSessionRun(activeDriverRuntimeId, pendingRunContext, partialSeconds);
+      setPendingRunContextByDriver((current) => ({ ...current, [activeDriverRuntimeId]: null }));
     }
-    setActivePlayback(null);
-    setGarageOpen(true);
+    setActivePlaybackByDriver((current) => ({ ...current, [activeDriverRuntimeId]: null }));
+    setGarageOpenByDriver((current) => ({ ...current, [activeDriverRuntimeId]: true }));
   };
 
   useEffect(() => {
-    if (!activePlayback || !pendingRunContext) return;
-    if (playbackProgressRatio < 1) return;
-    const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[pendingRunContext.phase] ?? pendingRunContext.releaseElapsedSeconds;
-    commitSessionRun(pendingRunContext, Math.max(0, phaseElapsed - pendingRunContext.releaseElapsedSeconds));
-    setPendingRunContext(null);
-    setActivePlayback(null);
-  }, [activePlayback, pendingRunContext, playbackProgressRatio, commitSessionRun, practiceDevelopment.sessionElapsedSeconds]);
-
-  useEffect(() => {
-    if (!activePlayback || !pendingRunContext) return;
-    const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[pendingRunContext.phase] ?? 0;
-    if (phaseElapsed < SESSION_DURATION_SECONDS[pendingRunContext.phase]) return;
-    commitSessionRun(pendingRunContext, Math.max(0, phaseElapsed - pendingRunContext.releaseElapsedSeconds));
-    setPendingRunContext(null);
-    setActivePlayback(null);
-  }, [activePlayback, pendingRunContext, commitSessionRun, practiceDevelopment.sessionElapsedSeconds]);
+    controlledDriverIds.forEach((driverId) => {
+      const playback = activePlaybackByDriver[driverId];
+      const context = pendingRunContextByDriver[driverId];
+      if (!playback || !context) return;
+      const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[context.phase] ?? context.releaseElapsedSeconds;
+      const elapsedSinceRelease = Math.max(0, phaseElapsed - context.releaseElapsedSeconds);
+      const reachedRunEnd = elapsedSinceRelease >= playback.plan.elapsedSeconds;
+      const reachedChequered = phaseElapsed >= SESSION_DURATION_SECONDS[context.phase];
+      if (!reachedRunEnd && !reachedChequered) return;
+      commitSessionRun(driverId, context, elapsedSinceRelease);
+      setPendingRunContextByDriver((current) => ({ ...current, [driverId]: null }));
+      setActivePlaybackByDriver((current) => ({ ...current, [driverId]: null }));
+    });
+  }, [activePlaybackByDriver, commitSessionRun, controlledDriverIds, pendingRunContextByDriver, practiceDevelopment.sessionElapsedSeconds]);
 
   const handleRaceAction = () => {
     if (weekend.currentPhase === 'race') {
@@ -1411,10 +1493,19 @@ export const PracticeQualiDev: React.FC = () => {
       return;
     }
 
-    setActivePlayback(null);
-    setPendingRunContext(null);
-    setGarageOpen(true);
-    setWeekend((currentWeekend) => WeekendManager.transitionToNextPhase(carrySetupForward(currentWeekend)));
+    setActivePlaybackByDriver((current) => controlledDriverIds.reduce<Record<string, ActivePlaybackState | null>>((acc, driverId) => {
+      acc[driverId] = null;
+      return acc;
+    }, current));
+    setPendingRunContextByDriver((current) => controlledDriverIds.reduce<Record<string, PendingRunContext | null>>((acc, driverId) => {
+      acc[driverId] = null;
+      return acc;
+    }, current));
+    setGarageOpenByDriver((current) => controlledDriverIds.reduce<Record<string, boolean>>((acc, driverId) => {
+      acc[driverId] = true;
+      return acc;
+    }, current));
+    setWeekend((currentWeekend) => WeekendManager.transitionToNextPhase(carrySetupForward(currentWeekend, controlledDriverIds)));
   };
 
   return (
@@ -1430,7 +1521,7 @@ export const PracticeQualiDev: React.FC = () => {
                 Practice & Qualifying Control
               </h1>
               <p className="mt-2 max-w-3xl text-sm md:text-base text-gray-300">
-                Unified control style with the race sandbox: run plans, live track scene, session board and setup decisions in one flow.
+                Unified control style with the race sandbox: run plans, live track scene, session board and setup decisions in one flow for {selectedDriver?.name}.
               </p>
             </div>
           </div>
@@ -1443,6 +1534,26 @@ export const PracticeQualiDev: React.FC = () => {
               <ChevronLeft size={16} /> Back
             </GlassButton>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
+          {controlledDrivers.map((driver) => {
+            const isActive = driver.id === activeDriverRuntimeId;
+            return (
+              <button
+                key={driver.id}
+                type="button"
+                onClick={() => setActiveDriverId(driver.id)}
+                className={clsx(
+                  'rounded-lg px-4 py-2 text-sm font-semibold transition',
+                  isActive
+                    ? 'bg-f1-red text-white'
+                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                )}
+              >
+                {driver.name}
+              </button>
+            );
+          })}
         </div>
 
         <GlassCard className="space-y-5 border-white/10">
@@ -2032,17 +2143,17 @@ export const PracticeQualiDev: React.FC = () => {
                 <div className="rounded-lg border border-white/10 bg-white/5 p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Q1 locked snapshot</div>
                   <div className="mt-3 space-y-2 text-sm text-gray-200">
-                    <div>Front wing: {weekend.q1Setup[DRIVER_ID]?.frontWingAngle ?? '—'}</div>
-                    <div>Rear wing: {weekend.q1Setup[DRIVER_ID]?.rearWingAngle ?? '—'}</div>
-                    <div>Ride height: {weekend.q1Setup[DRIVER_ID]?.rideHeight ?? '—'}</div>
+                    <div>Front wing: {weekend.q1Setup[activeDriverRuntimeId]?.frontWingAngle ?? '—'}</div>
+                    <div>Rear wing: {weekend.q1Setup[activeDriverRuntimeId]?.rearWingAngle ?? '—'}</div>
+                    <div>Ride height: {weekend.q1Setup[activeDriverRuntimeId]?.rideHeight ?? '—'}</div>
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-white/5 p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Race locked snapshot</div>
                   <div className="mt-3 space-y-2 text-sm text-gray-200">
-                    <div>Front wing: {weekend.raceSetup[DRIVER_ID]?.frontWingAngle ?? '—'}</div>
-                    <div>Rear wing: {weekend.raceSetup[DRIVER_ID]?.rearWingAngle ?? '—'}</div>
-                    <div>Ride height: {weekend.raceSetup[DRIVER_ID]?.rideHeight ?? '—'}</div>
+                    <div>Front wing: {weekend.raceSetup[activeDriverRuntimeId]?.frontWingAngle ?? '—'}</div>
+                    <div>Rear wing: {weekend.raceSetup[activeDriverRuntimeId]?.rearWingAngle ?? '—'}</div>
+                    <div>Ride height: {weekend.raceSetup[activeDriverRuntimeId]?.rideHeight ?? '—'}</div>
                   </div>
                 </div>
               </div>

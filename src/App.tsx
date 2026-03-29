@@ -13,6 +13,7 @@ import { Settings } from './pages/Settings';
 import { TeamSelection } from './pages/TeamSelection';
 import { OfflineChampionship } from './pages/OfflineChampionship';
 import { OfflineWeekend } from './pages/OfflineWeekend';
+import { Championship } from './pages/Championship';
 import { PracticeQualiDev } from './pages/PracticeQualiDev';
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
@@ -55,6 +56,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/race-dev" element={<RaceControl devMode />} />
         <Route path="/practice-quali-dev" element={<PracticeQualiDev />} />
+        <Route path="/career" element={<Championship />} />
         <Route path="/offline" element={<OfflineChampionship />} />
         <Route path="/offline/weekend" element={<OfflineWeekend />} />
         <Route

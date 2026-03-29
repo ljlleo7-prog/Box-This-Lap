@@ -207,6 +207,9 @@ const fetchTelemetryForSession = async ({
   resume,
   apiKey
 }) => {
+  const circuitName = meeting.circuit_short_name || meeting.meeting_name || String(meeting.meeting_key);
+  const sessionLabel = `${session.session_key}-${session.session_name || session.session_type || 'session'}`;
+  console.log(`[Fetch] Start ${circuitName} | ${sessionLabel}`);
   const sessionDirName = `${session.session_key}-${sanitize(session.session_name || session.session_type || 'session')}`;
   const sessionDir = path.join(outputDir, String(session.meeting_key), sessionDirName);
   await ensureDir(sessionDir);
@@ -221,6 +224,9 @@ const fetchTelemetryForSession = async ({
   const driverScoped = new Set(['car_data', 'location']);
   const driverList = drivers && drivers.length ? drivers : [null];
   const completionToleranceMs = 2 * 60 * 1000;
+  const updatedFiles = new Set();
+  const skippedFiles = new Set();
+  const jobs = [];
   const lapsPath = path.join(sessionDir, 'laps.jsonl');
   const laps = await readJsonl(lapsPath);
   const driverLapEndMs = new Map();
@@ -253,6 +259,7 @@ const fetchTelemetryForSession = async ({
         const driverEndMs = driverNumber ? driverLapEndMs.get(driverNumber) : null;
         const complete = await isFileComplete(filePath, end.getTime(), completionToleranceMs, driverEndMs);
         if (complete) {
+          skippedFiles.add(fileKey);
           continue;
         }
       }
@@ -265,12 +272,14 @@ const fetchTelemetryForSession = async ({
         }
       }
       if (resume && progress[fileKey] === 'ended') {
+        skippedFiles.add(fileKey);
         continue;
       }
       const resumeFromMs = resume ? await getLastTimestamp(filePath) : null;
       if (!useDateRange) {
         const hasData = resumeFromMs !== null;
         if (resume && hasData) {
+          skippedFiles.add(fileKey);
           continue;
         }
       }
@@ -279,7 +288,24 @@ const fetchTelemetryForSession = async ({
           ? boundedChunks.filter(([, chunkEnd]) => chunkEnd.getTime() > resumeFromMs)
           : boundedChunks)
         : [[start, end]];
-      for (const [chunkStart, chunkEnd] of chunkList) {
+      jobs.push({
+        endpoint,
+        useDrivers,
+        useDateRange,
+        driverNumber,
+        fileKey,
+        filePath,
+        progressPath,
+        progress,
+        resumeFromMs,
+        chunkList
+      });
+    }
+  }
+  const totalUpdatableFiles = jobs.length;
+  for (const job of jobs) {
+    for (const [chunkStart, chunkEnd] of job.chunkList) {
+      const { endpoint, useDrivers, useDateRange, driverNumber, fileKey, filePath, progressPath, resumeFromMs } = job;
         const effectiveStart = resumeFromMs && chunkStart.getTime() <= resumeFromMs && chunkEnd.getTime() > resumeFromMs
           ? new Date(resumeFromMs + 1)
           : chunkStart;
@@ -297,15 +323,20 @@ const fetchTelemetryForSession = async ({
         try {
           const payload = await fetchJson(url, apiKey);
           await appendJsonl(filePath, payload);
+          const fileUpdatedNow = !updatedFiles.has(fileKey);
+          updatedFiles.add(fileKey);
+          if (fileUpdatedNow) {
+            console.log(`[Fetch] Progress ${updatedFiles.size}/${totalUpdatableFiles} files finished (${fileKey})`);
+          }
           if (resume) {
-            progress[fileKey] = chunkEnd.toISOString();
-            await fs.writeFile(progressPath, JSON.stringify(progress, null, 2));
+            job.progress[fileKey] = chunkEnd.toISOString();
+            await fs.writeFile(progressPath, JSON.stringify(job.progress, null, 2));
           }
         } catch (error) {
           if (error.status === 404) {
             if (resume) {
-              progress[fileKey] = 'ended';
-              await fs.writeFile(progressPath, JSON.stringify(progress, null, 2));
+              job.progress[fileKey] = 'ended';
+              await fs.writeFile(progressPath, JSON.stringify(job.progress, null, 2));
             }
             break;
           }
@@ -314,7 +345,16 @@ const fetchTelemetryForSession = async ({
         await sleep(150);
       }
     }
-  }
+  const netSkipped = [...skippedFiles].filter(file => !updatedFiles.has(file));
+  console.log(`[Fetch] Done  ${circuitName} | ${sessionLabel} | updated=${updatedFiles.size} skipped=${netSkipped.length}`);
+  return {
+    circuit: circuitName,
+    sessionKey: session.session_key,
+    updatedCount: updatedFiles.size,
+    skippedCount: netSkipped.length,
+    updatedFiles: [...updatedFiles],
+    skippedFiles: netSkipped
+  };
 };
 
 const main = async () => {
@@ -335,6 +375,29 @@ const main = async () => {
   const sessionKeys = parseList('--session-keys').map(value => Number(value)).filter(Boolean);
 
   const targetEndpoints = endpoints.length ? endpoints : ['car_data', 'location', 'laps'];
+  const aggregate = {
+    updatedCount: 0,
+    skippedCount: 0,
+    updatedCircuits: new Set(),
+    skippedCircuits: new Set()
+  };
+  const mergeSummary = (summary) => {
+    if (!summary) return;
+    aggregate.updatedCount += summary.updatedCount;
+    aggregate.skippedCount += summary.skippedCount;
+    if (summary.updatedCount > 0) {
+      aggregate.updatedCircuits.add(summary.circuit);
+    } else if (summary.skippedCount > 0) {
+      aggregate.skippedCircuits.add(summary.circuit);
+    }
+  };
+  const printAggregate = () => {
+    const updatedCircuits = [...aggregate.updatedCircuits];
+    const skippedOnlyCircuits = [...aggregate.skippedCircuits].filter(c => !aggregate.updatedCircuits.has(c));
+    console.log(`[Fetch] Summary | files updated=${aggregate.updatedCount} skipped=${aggregate.skippedCount}`);
+    console.log(`[Fetch] Circuits updated (${updatedCircuits.length}): ${updatedCircuits.length ? updatedCircuits.join(', ') : '-'}`);
+    console.log(`[Fetch] Circuits skipped-only (${skippedOnlyCircuits.length}): ${skippedOnlyCircuits.length ? skippedOnlyCircuits.join(', ') : '-'}`);
+  };
 
   await ensureDir(outputDir);
 
@@ -353,7 +416,7 @@ const main = async () => {
         continue;
       }
       const drivers = driverFilter.length ? driverFilter : await getDriversForSession(session.session_key, apiKey);
-      await fetchTelemetryForSession({
+      const summary = await fetchTelemetryForSession({
         meeting,
         session,
         outputDir: path.join(outputDir, String(session.year)),
@@ -364,7 +427,9 @@ const main = async () => {
         resume,
         apiKey
       });
+      mergeSummary(summary);
     }
+    printAggregate();
     return;
   }
 
@@ -387,7 +452,7 @@ const main = async () => {
       }
       for (const session of limitedSessions) {
         const drivers = driverFilter.length ? driverFilter : await getDriversForSession(session.session_key, apiKey);
-        await fetchTelemetryForSession({
+        const summary = await fetchTelemetryForSession({
           meeting,
           session,
           outputDir: path.join(outputDir, String(meeting.year)),
@@ -398,8 +463,10 @@ const main = async () => {
           resume,
           apiKey
         });
+        mergeSummary(summary);
       }
     }
+    printAggregate();
     return;
   }
 
@@ -428,7 +495,7 @@ const main = async () => {
 
       for (const session of limitedSessions) {
         const drivers = driverFilter.length ? driverFilter : await getDriversForSession(session.session_key, apiKey);
-        await fetchTelemetryForSession({
+        const summary = await fetchTelemetryForSession({
           meeting,
           session,
           outputDir: path.join(outputDir, String(year)),
@@ -439,9 +506,11 @@ const main = async () => {
           resume,
           apiKey
         });
+        mergeSummary(summary);
       }
     }
   }
+  printAggregate();
 };
 
 main().catch(error => {

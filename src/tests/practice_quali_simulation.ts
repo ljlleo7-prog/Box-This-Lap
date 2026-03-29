@@ -5,7 +5,7 @@ import { SetupFeedbackSystem } from '../engine/systems/SetupFeedbackSystem';
 import { buildSetupPhysicsEffects } from '../engine/systems/SetupModel';
 import { TyreManager } from '../engine/systems/TyreManager';
 import { WeekendManager } from '../engine/systems/WeekendManager';
-import type { OfflineWeekend, SessionSetupState, SetupFeedback, SetupTuningParameter } from '../types';
+import type { OfflineWeekend, SessionSetupState, SetupFeedback, SetupTuningParameter, TeamSpecs } from '../types';
 
 function fail(message: string): never {
   throw new Error(message);
@@ -558,6 +558,62 @@ function runDirectionalNarrowingProbe(): void {
   assert(shrinkingRuns >= 4, 'Feedback ranges should continue to narrow over consecutive runs instead of stalling early.');
 }
 
+function runTeamDevelopmentBiasIntegrationProbe(): void {
+  const neutralSetup = toSessionSetup({
+    frontWingAngle: 50,
+    rearWingAngle: 50,
+    rideHeight: 50,
+    suspensionStiffness: 50,
+    toeOut: 50,
+    camber: 50,
+    gearboxSetting: 50,
+  });
+
+  const baseTeamSpecs: TeamSpecs = {
+    acceleration: 80,
+    braking: 80,
+    drag_reduction: 80,
+    cornering_low: 80,
+    cornering_mid: 80,
+    cornering_high: 80,
+    ers_efficiency: 80,
+    cooling: 80,
+    lifespan: 80,
+    drs_efficiency: 80,
+  };
+
+  const qualiFocusedSpecs: TeamSpecs = {
+    ...baseTeamSpecs,
+    acceleration: 95,
+    drag_reduction: 94,
+    drs_efficiency: 95,
+    ers_efficiency: 92,
+    cooling: 70,
+    lifespan: 72,
+  };
+
+  const longRunFocusedSpecs: TeamSpecs = {
+    ...baseTeamSpecs,
+    acceleration: 74,
+    drag_reduction: 74,
+    drs_efficiency: 74,
+    ers_efficiency: 76,
+    cooling: 96,
+    lifespan: 97,
+    braking: 90,
+  };
+
+  const noTeamEffects = buildSetupPhysicsEffects(MONZA, neutralSetup);
+  const qualiEffects = buildSetupPhysicsEffects(MONZA, neutralSetup, qualiFocusedSpecs);
+  const longRunEffects = buildSetupPhysicsEffects(MONZA, neutralSetup, longRunFocusedSpecs);
+
+  assert(noTeamEffects.runPlanBias === 0, 'Neutral setup should be setup-balanced without team development input.');
+  assert(qualiEffects.runPlanBias > noTeamEffects.runPlanBias + 0.06, 'Quali-focused team development should push run-plan bias toward qualifying.');
+  assert(longRunEffects.runPlanBias < noTeamEffects.runPlanBias - 0.06, 'Long-run-focused team development should push run-plan bias toward race pace.');
+  assert(qualiEffects.straightFactor > longRunEffects.straightFactor + 0.005, 'Quali-focused development should provide stronger straight-line output.');
+  assert(longRunEffects.tyreWearFactor < qualiEffects.tyreWearFactor - 0.01, 'Long-run-focused development should improve tyre wear profile.');
+}
+
 function main(): void {
   console.log('Running practice and qualifying dev module checks...');
   runPracticeKnowledgeProbe();
@@ -572,6 +628,8 @@ function main(): void {
   console.log('Practice development probe passed.');
   runDirectionalNarrowingProbe();
   console.log('Directional narrowing probe passed.');
+  runTeamDevelopmentBiasIntegrationProbe();
+  console.log('Team development integration probe passed.');
   runQualifyingParcFermeProbe();
   console.log('Qualifying parc ferme probe passed.');
   console.log('Practice and qualifying dev module completed successfully.');

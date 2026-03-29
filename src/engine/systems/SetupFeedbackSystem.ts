@@ -1,4 +1,4 @@
-import { SessionSetupState, SetupFeedback, SetupTuningParameter, Track } from '../../types';
+import { SessionSetupState, SetupFeedback, SetupTuningParameter, TeamSpecs, Track } from '../../types';
 import { buildFeedbackMap, buildHandlingFeedback, buildSetupPhysicsEffects, getIdealSetup, TUNABLE_SETUP_PARAMETERS } from './SetupModel';
 
 export interface SetupFeedbackResult {
@@ -93,7 +93,8 @@ export class SetupFeedbackSystem {
     driverLearning: number,
     focusAllocation: PracticeFocusAllocation,
     laps: number,
-    currentTrackPreparation: number
+    currentTrackPreparation: number,
+    teamSpecs?: TeamSpecs
   ): PracticeStintResult {
     const feedbackQualityGain = SetupFeedbackSystem.calculateFeedbackQualityGain(
       driverLearning,
@@ -117,7 +118,8 @@ export class SetupFeedbackSystem {
               currentSetup,
               currentKnowledge,
               idealSetup,
-              setupKnowledgeSkill
+              setupKnowledgeSkill,
+              teamSpecs
             )
           : null,
       feedbackQuality,
@@ -133,11 +135,12 @@ export class SetupFeedbackSystem {
     currentSetup: SessionSetupState,
     currentKnowledge: Partial<Record<DrivingBiasMetricKey, DrivingBiasFeedback>> | undefined,
     idealSetup: Partial<Record<SetupTuningParameter, number>>,
-    driverSetupKnowledgeSkill: number
+    driverSetupKnowledgeSkill: number,
+    teamSpecs?: TeamSpecs
   ): DrivingBiasFeedbackResult {
     const newKnowledge = { ...(currentKnowledge ?? {}) };
-    const currentBias = SetupFeedbackSystem.buildDrivingBiasSnapshot(track, currentSetup);
-    const targetBias = SetupFeedbackSystem.buildDrivingBiasSnapshot(track, idealSetup as SessionSetupState);
+    const currentBias = SetupFeedbackSystem.buildDrivingBiasSnapshot(track, currentSetup, teamSpecs);
+    const targetBias = SetupFeedbackSystem.buildDrivingBiasSnapshot(track, idealSetup as SessionSetupState, teamSpecs);
     const metricBaseWidths: Record<DrivingBiasMetricKey, number> = {
       cornerEntryBalance: 0.1,
       midCornerBalance: 0.08,
@@ -161,7 +164,7 @@ export class SetupFeedbackSystem {
 
     (Object.keys(metricBaseWidths) as DrivingBiasMetricKey[]).forEach((metric) => {
       const currentValue = currentBias[metric];
-      const targetValue = metric === 'runPlanBalance' ? 0 : targetBias[metric];
+      const targetValue = metric === 'runPlanBalance' && !teamSpecs ? 0 : targetBias[metric];
       const diff = Math.abs(currentValue - targetValue);
       const width = metricBaseWidths[metric];
       const domain = metricDomains[metric];
@@ -317,9 +320,10 @@ export class SetupFeedbackSystem {
 
   private static buildDrivingBiasSnapshot(
     track: Track,
-    setup: SessionSetupState
+    setup: SessionSetupState,
+    teamSpecs?: TeamSpecs
   ): Record<DrivingBiasMetricKey, number> {
-    const effects = buildSetupPhysicsEffects(track, setup);
+    const effects = buildSetupPhysicsEffects(track, setup, teamSpecs);
 
     return {
       cornerEntryBalance: effects.entryRotationDelta,
