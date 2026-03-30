@@ -8,12 +8,14 @@ import { clsx } from 'clsx';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import { PageHeader } from '../components/ui/PageHeader';
+import { useChampionshipStore } from '../store/championshipStore';
 
 type Tab = 'standings' | 'calendar' | 'teams';
 
 export const ChampionshipDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const setActiveOnlineContext = useChampionshipStore((state) => state.setActiveOnlineContext);
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
   const [championship, setChampionship] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
@@ -21,7 +23,7 @@ export const ChampionshipDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [myTeam, setMyTeam] = useState<any>(null);
-  
+
   // Create Weekend Form State
   const [showCreateWeekend, setShowCreateWeekend] = useState(false);
   const [selectedTrackId, setSelectedTrackId] = useState(TRACKS[0].id);
@@ -29,8 +31,11 @@ export const ChampionshipDetails: React.FC = () => {
   const [creatingWeekend, setCreatingWeekend] = useState(false);
 
   useEffect(() => {
-    if (id) loadData();
-  }, [id]);
+    if (id) {
+      setActiveOnlineContext({ championshipId: id });
+      loadData();
+    }
+  }, [id, setActiveOnlineContext]);
 
   const loadData = async () => {
     try {
@@ -42,6 +47,11 @@ export const ChampionshipDetails: React.FC = () => {
         return;
       }
       setMyTeam(myTeamData);
+      setActiveOnlineContext({
+        championshipId: id!,
+        teamId: myTeamData.id,
+        teamName: myTeamData.name,
+      });
 
       // 1. Get Championship
       const { data: champ, error: champError } = await supabase
@@ -49,7 +59,7 @@ export const ChampionshipDetails: React.FC = () => {
         .select('*')
         .eq('id', id)
         .single();
-      
+
       if (champError) throw champError;
       setChampionship(champ);
 
@@ -58,7 +68,7 @@ export const ChampionshipDetails: React.FC = () => {
         .from('tcc_teams')
         .select('*, owner:tcc_players!tcc_teams_owner_id_fkey(username)')
         .eq('championship_id', id);
-        
+
       if (teamsError) throw teamsError;
       setTeams(teamsData || []);
 
@@ -68,7 +78,7 @@ export const ChampionshipDetails: React.FC = () => {
         .select('*')
         .eq('championship_id', id)
         .order('round_number', { ascending: true });
-        
+
       if (weekendsError) throw weekendsError;
       setWeekends(weekendsData || []);
 

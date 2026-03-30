@@ -6,11 +6,13 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import { Loader2, DollarSign, Users, TrendingUp, Car } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useChampionshipStore } from '../store/championshipStore';
 
 export const TeamSelection: React.FC = () => {
   const { id: championshipId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  
+  const setActiveOnlineContext = useChampionshipStore((state) => state.setActiveOnlineContext);
+
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
@@ -19,9 +21,10 @@ export const TeamSelection: React.FC = () => {
 
   useEffect(() => {
     if (championshipId) {
+      setActiveOnlineContext({ championshipId });
       loadData();
     }
-  }, [championshipId]);
+  }, [championshipId, setActiveOnlineContext]);
 
   const loadData = async () => {
     try {
@@ -32,9 +35,9 @@ export const TeamSelection: React.FC = () => {
         navigate('/login');
         return;
       }
-      let [teamsResponse, walletResponse] = await Promise.all([
+      const [teamsResponse, walletResponse] = await Promise.all([
         TCC_API.getAvailableTeams(championshipId!),
-        TCC_API.getWalletBalance()
+        TCC_API.getWalletBalance(championshipId!)
       ]);
 
       if (teamsResponse.error) throw teamsResponse.error;
@@ -48,7 +51,7 @@ export const TeamSelection: React.FC = () => {
         if (!retry.error) availableTeams = retry.data || [];
       }
       setTeams(availableTeams);
-      setWalletBalance(walletResponse.data?.token_balance || 0);
+      setWalletBalance(walletResponse.data?.wallet?.token_balance || 0);
     } catch (err) {
       console.error('Failed to load data:', err);
       setError('Failed to load teams or wallet balance.');
@@ -65,10 +68,15 @@ export const TeamSelection: React.FC = () => {
     setPurchasing(team.id);
     try {
       const { data, error } = await TCC_API.purchaseTeam(team.id);
-      
+
       if (error) throw error;
-      
+
       if (data && data.success) {
+        setActiveOnlineContext({
+          championshipId: championshipId!,
+          teamId: team.id,
+          teamName: team.name,
+        });
         navigate(`/championships/${championshipId}`);
       } else {
         alert(data?.message || 'Failed to purchase team');
@@ -180,8 +188,9 @@ export const TeamSelection: React.FC = () => {
                   <p className="text-xs text-gray-500 mb-2 uppercase font-bold tracking-wider">Drivers</p>
                   <div className="space-y-1">
                     {team.drivers?.map(d => {
-                      const s = (d as any).skills || {};
-                      const pace = (d as any).basePace ?? s.pace ?? '—';
+                      const rawDriver = d as unknown as { skills?: Record<string, number | string>; basePace?: number };
+                      const s = rawDriver.skills || {};
+                      const pace = rawDriver.basePace ?? s.pace ?? '—';
                       const consistency = s.consistency ?? '—';
                       const tire = s.tire_management ?? '—';
                       const racecraft = s.racecraft ?? '—';

@@ -17,12 +17,13 @@ import {
   deriveInstalledTeamSpecs,
 } from '../lib/researchDevelopment';
 import {
-  loadResearchState,
-  saveResearchState,
-  deriveAndSaveResearchTeamSpecs,
+  loadResearchStateScoped,
+  saveResearchStateScoped,
+  deriveAndSaveResearchTeamSpecsScoped,
   loadSaveGame,
   saveSaveGame,
 } from '../lib/localSaves';
+import { useChampionshipStore } from '../store/championshipStore';
 
 type TrackCharacteristic = {
   trackName: string;
@@ -209,6 +210,11 @@ const ICON_MAP: Record<PartCategory, React.ElementType> = {
 };
 
 export const ResearchDevelopment: React.FC = () => {
+  const mode = useChampionshipStore((state) => state.mode);
+  const championshipId = useChampionshipStore((state) => state.championshipId);
+  const teamId = useChampionshipStore((state) => state.teamId);
+  const teamName = useChampionshipStore((state) => state.teamName);
+  const activeLocalChampionship = useChampionshipStore((state) => state.activeChampionship);
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [researchState, setResearchState] = useState<ResearchDepartmentState | null>(null);
@@ -229,26 +235,73 @@ export const ResearchDevelopment: React.FC = () => {
   const [manufactureMode, setManufactureMode] = useState<ManufacturingMode>('normal');
 
   const loadTeamData = useCallback(async () => {
+    setLoading(true);
+
     try {
-      const { data: championships } = await TCC_API.getChampionships();
-      if (championships && championships.length > 0) {
-        const { data: myTeam } = await TCC_API.getMyTeam(championships[0].id);
+      if (mode === 'online') {
+        if (!championshipId) {
+          setTeam(null);
+          setResearchState(null);
+          return;
+        }
+
+        const { data: myTeam } = await TCC_API.getMyTeam(championshipId);
         if (myTeam) {
           setTeam(myTeam);
+        } else {
+          setTeam(null);
+          setResearchState(null);
+        }
+        return;
+      }
+
+      if (mode === 'local' && activeLocalChampionship) {
+        const playerTeam = activeLocalChampionship.teams.find(
+          (entry) => entry.teamId === activeLocalChampionship.selectedTeamId
+        );
+        if (playerTeam) {
+          setTeam({
+            id: playerTeam.teamId,
+            name: playerTeam.teamName,
+            color: playerTeam.color,
+            budget: 0,
+            reputation: 0,
+            token_cost: 0,
+            performance: {
+              car: 0,
+              industry: 0,
+              drivers: 0,
+            },
+            specs: playerTeam.specs,
+            championship_id: activeLocalChampionship.id,
+          } as Team);
+          return;
         }
       }
+
+      setTeam(null);
+      setResearchState(null);
     } catch (error) {
       console.error('Failed to load team data', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeLocalChampionship, championshipId, mode]);
 
   useEffect(() => {
     loadTeamData();
   }, [loadTeamData]);
 
-  const teamKey = team?.name || 'default';
+  const teamKey = team?.name || teamName || 'default';
+  const scopedStorageContext = useMemo(() => {
+    if (!mode || !championshipId || !teamId) return null;
+    return {
+      mode,
+      championshipId,
+      teamId,
+    };
+  }, [championshipId, mode, teamId]);
+
   const baseSpecs = useMemo<TeamSpecs>(() => {
     const template = TEAM_TEMPLATES.find((t) => t.name === team?.name);
     return template?.specs ?? team?.specs ?? {
@@ -259,36 +312,43 @@ export const ResearchDevelopment: React.FC = () => {
   }, [team]);
 
   useEffect(() => {
-    if (!teamKey) return;
-
-    // Try to load from championship first
-    const saveGame = loadSaveGame();
-    if (saveGame.championship) {
-      const playerTeam = saveGame.championship.teams.find(
-        (t) => t.teamId === saveGame.championship?.selectedTeamId
-      );
-      if (playerTeam?.researchDepartment) {
-        setResearchState(playerTeam.researchDepartment);
-        return;
-      }
+    if (mode === 'online') {
+      if (!scopedStorageContext) return;
+      const state = loadResearchStateScoped(scopedStorageContext, teamKey, 5);
+      setResearchState(state);
+      return;
     }
 
-    // Fallback to standalone R&D state
-    const state = loadResearchState(teamKey, 5);
-    setResearchState(state);
-  }, [teamKey]);
+    if (mode === 'local' && activeLocalChampionship) {
+      const playerTeam = activeLocalChampionship.teams.find(
+        (entry) => entry.teamId === activeLocalChampionship.selectedTeamId
+      );
+      setResearchState(playerTeam?.researchDepartment ?? null);
+      return;
+    }
+
+    setResearchState(null);
+  }, [activeLocalChampionship, mode, scopedStorageContext, teamKey]);
 
   useEffect(() => {
-    if (!teamKey || !researchState) return;
+    if (!researchState) return;
 
-    // Save to championship if it exists
-    const saveGame = loadSaveGame();
-    if (saveGame.championship) {
-      const updatedTeams = saveGame.championship.teams.map((t) => {
-        if (t.teamId === saveGame.championship?.selectedTeamId) {
-          return { ...t, researchDepartment: researchState };
+    if (mode === 'online') {
+      if (!scopedStorageContext) return;
+      saveResearchStateScoped(scopedStorageContext, researchState);
+      deriveAndSaveResearchTeamSpecsScoped(scopedStorageContext, baseSpecs, researchState);
+      return;
+    }
+
+    if (mode === 'local') {
+      const saveGame = loadSaveGame();
+      if (!saveGame.championship) return;
+
+      const updatedTeams = saveGame.championship.teams.map((entry) => {
+        if (entry.teamId === saveGame.championship?.selectedTeamId) {
+          return { ...entry, researchDepartment: researchState };
         }
-        return t;
+        return entry;
       });
       saveGame.championship = {
         ...saveGame.championship,
@@ -297,11 +357,7 @@ export const ResearchDevelopment: React.FC = () => {
       };
       saveSaveGame(saveGame);
     }
-
-    // Also save standalone for backward compatibility
-    saveResearchState(teamKey, researchState);
-    deriveAndSaveResearchTeamSpecs(teamKey, baseSpecs, researchState);
-  }, [teamKey, researchState, baseSpecs]);
+  }, [baseSpecs, mode, researchState, scopedStorageContext]);
 
   const normalizedBiases = useMemo(() => {
     if (!selectedProject) return [];

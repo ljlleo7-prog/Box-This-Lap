@@ -8,17 +8,20 @@ import { loadSaveGame, saveSaveGame } from '../lib/localSaves';
 import { createLocalChampionship, advanceChampionshipRound } from '../lib/championshipHelpers';
 import { TRACKS } from '../data/tracks';
 import type { OfflineChampionship } from '../types';
+import { useChampionshipStore } from '../store/championshipStore';
 
 export const Championship: React.FC = () => {
   const navigate = useNavigate();
+  const setActiveLocalContext = useChampionshipStore((state) => state.setActiveLocalContext);
   const [championship, setChampionship] = useState<OfflineChampionship | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const saveGame = loadSaveGame();
     setChampionship(saveGame.championship);
+    setActiveLocalContext(saveGame.championship);
     setLoading(false);
-  }, []);
+  }, [setActiveLocalContext]);
 
   const handleCreateChampionship = () => {
     // For now, hardcode a simple setup - later this can be a modal
@@ -30,6 +33,7 @@ export const Championship: React.FC = () => {
     saveSaveGame(saveGame);
 
     setChampionship(newChampionship);
+    setActiveLocalContext(newChampionship);
   };
 
   const handleAdvanceRound = () => {
@@ -42,6 +46,7 @@ export const Championship: React.FC = () => {
     saveSaveGame(saveGame);
 
     setChampionship(updatedChampionship);
+    setActiveLocalContext(updatedChampionship);
   };
 
   if (loading) {
@@ -149,6 +154,14 @@ export const Championship: React.FC = () => {
             icon={<Zap size={20} />}
           >
             R&D Department
+          </GlassButton>
+          <GlassButton
+            onClick={() => navigate('/training-calendar')}
+            variant="secondary"
+            className="justify-start"
+            icon={<Users size={20} />}
+          >
+            Training Calendar
           </GlassButton>
           <GlassButton
             onClick={() => navigate('/race-control')}

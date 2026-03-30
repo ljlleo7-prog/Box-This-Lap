@@ -25,6 +25,15 @@ export interface Driver {
   };
   morale: number; // 0-100
   trust: number; // 0-100
+  xp?: number;
+  level?: number; // 1-10
+  strength?: number; // 0-100, affects skill multipliers
+  skillCaps?: {
+    racecraft: number;
+    consistency: number;
+    tyreManagement: number;
+    wetWeather: number;
+  };
 }
 
 export interface TrackSector {
@@ -204,6 +213,8 @@ export interface Team {
     cooling: number;
     lifespan: number;
     drs_efficiency: number;
+    pitStopErrorRate?: number;
+    pitStopSpeedBonus?: number;
   };
   drivers?: Driver[];
   championship_id: string;

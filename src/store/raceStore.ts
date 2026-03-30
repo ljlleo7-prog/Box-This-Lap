@@ -4,7 +4,8 @@ import { RaceState, TeamSpecs, PreRaceSetup } from '../types';
 import { DRIVERS } from '../data/initialData';
 import { TRACKS } from '../data/tracks';
 import { TEAM_TEMPLATES } from '../data/teams';
-import { loadTeamSpecs } from '../lib/localSaves';
+import { loadTeamSpecsScoped, loadSaveGame } from '../lib/localSaves';
+import { useChampionshipStore } from './championshipStore';
 
 interface RaceStore {
   engine: SimulationEngine | null;
@@ -39,6 +40,7 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
 
   initRace: (trackId) => {
     const { selectedTrackId } = get();
+    const { mode, championshipId, teamId, teamName } = useChampionshipStore.getState();
     const resolvedTrackId = trackId ?? selectedTrackId;
     const track = TRACKS.find(t => t.id === resolvedTrackId) || TRACKS[0];
     const drivers = DRIVERS;
@@ -48,9 +50,29 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
       return acc;
     }, {});
 
-    const storedSpecs = loadTeamSpecs();
+    const scopedSpecs = mode && championshipId && teamId
+      ? loadTeamSpecsScoped({ mode, championshipId, teamId }, teamName ?? '')
+      : null;
+    const saveGame = loadSaveGame();
 
-    const teamSpecsByTeam = { ...baseSpecsByTeam, ...storedSpecs };
+    const teamSpecsByTeam = scopedSpecs && teamName && baseSpecsByTeam[teamName]
+      ? { ...baseSpecsByTeam, [teamName]: { ...baseSpecsByTeam[teamName], ...scopedSpecs } }
+      : { ...baseSpecsByTeam };
+
+    if (mode === 'local') {
+      const championship = saveGame.championship;
+      const playerTeam = championship?.teams.find(t => t.teamId === championship.selectedTeamId);
+      const pitCrew = playerTeam?.crew.find(c => c.department === 'pit_crew');
+      const selectedTeamName = playerTeam?.teamName;
+
+      if (selectedTeamName && pitCrew && teamSpecsByTeam[selectedTeamName]) {
+        teamSpecsByTeam[selectedTeamName] = {
+          ...teamSpecsByTeam[selectedTeamName],
+          pitStopErrorRate: pitCrew.errorRate ?? 50,
+          pitStopSpeedBonus: pitCrew.speedBonus ?? 0,
+        };
+      }
+    }
     const engine = new SimulationEngine(track, drivers, seed, teamSpecsByTeam, '2025');
 
     set({

@@ -5,6 +5,7 @@ import { Plus, Trophy, Calendar, Users, ChevronRight, Loader2 } from 'lucide-rea
 import { clsx } from 'clsx';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
+import { useChampionshipStore } from '../store/championshipStore';
 
 export const Championships: React.FC = () => {
   const [championships, setChampionships] = useState<any[]>([]);
@@ -12,6 +13,7 @@ export const Championships: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [newChampName, setNewChampName] = useState('');
   const navigate = useNavigate();
+  const setActiveOnlineContext = useChampionshipStore((state) => state.setActiveOnlineContext);
 
   useEffect(() => {
     loadChampionships();
@@ -27,6 +29,11 @@ export const Championships: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenChampionship = (championshipId: string) => {
+    setActiveOnlineContext({ championshipId });
+    navigate(`/championships/${championshipId}`);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -101,7 +108,7 @@ export const Championships: React.FC = () => {
             <GlassCard 
               key={champ.id}
               hoverEffect={true}
-              onClick={() => navigate(`/championships/${champ.id}`)}
+              onClick={() => handleOpenChampionship(champ.id)}
               className="group cursor-pointer min-h-[200px] flex flex-col justify-between"
             >
               <div>

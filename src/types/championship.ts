@@ -45,6 +45,27 @@ export type CrewDepartment =
   | 'pit_crew'
   | 'operations';
 
+export type WearyState = 'fresh' | 'tired' | 'exhausted' | 'burnt-out';
+
+export type DriverTrainingType = 'pace' | 'consistency' | 'tyre_management' | 'wet_weather' | 'racecraft' | 'fitness';
+export type TrainingIntensity = 'light' | 'moderate' | 'intense';
+export type DriverActivity = 'simulation' | 'exercise' | 'chill';
+export type PitCrewActivity = 'drills' | 'exercise' | 'chill';
+
+export interface DaySchedule {
+  dayNumber: number; // 1-14
+  isRaceDay: boolean;
+  amActivity: DriverActivity | PitCrewActivity | null;
+  pmActivity: DriverActivity | PitCrewActivity | null;
+}
+
+export interface DriverTrainingPlan {
+  type: DriverTrainingType;
+  intensity: TrainingIntensity;
+  daysRemaining: number;
+  skillBoost?: number; // Temporary boost during championship
+}
+
 export interface OfflineDriverState {
   driverId: string;
   morale: number;
@@ -53,7 +74,21 @@ export interface OfflineDriverState {
   confidence: number;
   setupKnowledge: number;
   fatigue: number;
+  xp: number;
+  level: number;
+  strength: number; // 0-100, decays without exercise
+  wearyState: WearyState;
+  trainingSchedule: DaySchedule[]; // 14 days between races
+  trainingPlan?: DriverTrainingPlan; // Legacy, can be removed later
   trainingFocus?: 'pace' | 'consistency' | 'tyre_management' | 'wet_weather' | 'racecraft';
+}
+
+export type CrewSpecialization = 'speed' | 'consistency' | 'adaptability';
+export type CrewTrainingType = 'efficiency' | 'speed' | 'morale';
+
+export interface CrewTrainingPlan {
+  type: CrewTrainingType;
+  daysRemaining: number;
 }
 
 export interface CrewState {
@@ -62,6 +97,12 @@ export interface CrewState {
   workload: number;
   efficiency: number;
   morale: number;
+  xp: number;
+  errorRate?: number; // 0-100, lower is better (only for pit_crew)
+  speedBonus?: number; // Accumulated speed bonus from training (only for pit_crew)
+  specialization?: CrewSpecialization;
+  trainingSchedule?: DaySchedule[]; // Only for pit_crew
+  trainingPlan?: CrewTrainingPlan; // Legacy
   assignedDriverIds?: string[];
 }
 

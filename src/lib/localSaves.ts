@@ -6,6 +6,12 @@ export const SAVE_GAME_STORAGE_KEY = 'offline-save-game';
 export const TEAM_SPECS_STORAGE_KEY = 'rd-team-specs';
 export const RESEARCH_STATE_STORAGE_KEY = 'rd-research-state';
 
+type ScopedStorageContext = {
+  championshipId: string;
+  mode: 'online' | 'local';
+  teamId: string;
+};
+
 const isBrowser = () => typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
 const safeParse = <T>(value: string | null, fallback: T): T => {
@@ -17,6 +23,12 @@ const safeParse = <T>(value: string | null, fallback: T): T => {
     return fallback;
   }
 };
+
+const buildScopedStorageSuffix = ({ championshipId, mode, teamId }: ScopedStorageContext) => `${mode}:${championshipId}:${teamId}`;
+
+const buildScopedResearchStateKey = (context: ScopedStorageContext) => `${RESEARCH_STATE_STORAGE_KEY}:${buildScopedStorageSuffix(context)}`;
+
+const buildScopedTeamSpecsKey = (context: ScopedStorageContext) => `${TEAM_SPECS_STORAGE_KEY}:${buildScopedStorageSuffix(context)}`;
 
 export const createEmptySaveGame = (): SaveGame => ({
   version: SAVE_VERSION,
@@ -90,5 +102,64 @@ export const deriveAndSaveResearchTeamSpecs = (
 ): TeamSpecs => {
   const derivedSpecs = deriveInstalledTeamSpecs(baseSpecs, researchState);
   saveDerivedTeamSpecs(teamKey, derivedSpecs);
+  return derivedSpecs;
+};
+
+export const loadResearchStateScoped = (
+  context: ScopedStorageContext,
+  teamKey: string,
+  constructorStanding = 5
+): ResearchDepartmentState => {
+  if (!isBrowser()) return createEmptyResearchState(constructorStanding);
+
+  const scopedKey = buildScopedResearchStateKey(context);
+  const scopedState = safeParse<ResearchDepartmentState | null>(window.localStorage.getItem(scopedKey), null);
+  if (scopedState) return scopedState;
+
+  const legacyState = loadResearchState(teamKey, constructorStanding);
+  window.localStorage.setItem(scopedKey, JSON.stringify(legacyState));
+  return legacyState;
+};
+
+export const saveResearchStateScoped = (
+  context: ScopedStorageContext,
+  state: ResearchDepartmentState
+): void => {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(buildScopedResearchStateKey(context), JSON.stringify(state));
+};
+
+export const loadTeamSpecsScoped = (
+  context: ScopedStorageContext,
+  teamKey: string
+): TeamSpecs | null => {
+  if (!isBrowser()) return null;
+
+  const scopedKey = buildScopedTeamSpecsKey(context);
+  const scopedSpecs = safeParse<TeamSpecs | null>(window.localStorage.getItem(scopedKey), null);
+  if (scopedSpecs) return scopedSpecs;
+
+  const legacySpecs = loadTeamSpecs()[teamKey] ?? null;
+  if (legacySpecs) {
+    window.localStorage.setItem(scopedKey, JSON.stringify(legacySpecs));
+  }
+  return legacySpecs;
+};
+
+export const saveTeamSpecsScoped = (
+  context: ScopedStorageContext,
+  specs: TeamSpecs
+): void => {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(buildScopedTeamSpecsKey(context), JSON.stringify(specs));
+};
+
+export const deriveAndSaveResearchTeamSpecsScoped = (
+  context: ScopedStorageContext,
+  baseSpecs: TeamSpecs,
+  researchState: ResearchDepartmentState
+): TeamSpecs => {
+  const derivedSpecs = deriveInstalledTeamSpecs(baseSpecs, researchState);
+  saveTeamSpecsScoped(context, derivedSpecs);
   return derivedSpecs;
 };

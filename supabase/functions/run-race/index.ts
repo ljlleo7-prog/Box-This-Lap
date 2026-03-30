@@ -19,7 +19,6 @@ serve(async (req) => {
 
     const { weekendId } = await req.json()
 
-    // Get weekend and quali results
     const { data: weekend, error: weekendError } = await supabase
       .from('tcc_weekends')
       .select(`
@@ -34,12 +33,6 @@ serve(async (req) => {
       throw new Error(`Invalid status: ${weekend.status}. Expected 'quali_complete'.`)
     }
 
-    // Get grid order
-    // tcc_quali_results is an array (relation), likely 1 item due to single() on weekend?
-    // Wait, relation is one-to-many potentially?
-    // Actually, select with join usually returns array if not specified.
-    // But since I used .single() on weekend, relations are usually arrays.
-    // Let's assume tcc_quali_results is an array.
     const qualiResult = weekend.tcc_quali_results?.[0];
     if (!qualiResult || !qualiResult.grid) {
         throw new Error("Qualifying results not found");
@@ -49,7 +42,6 @@ serve(async (req) => {
         .sort((a: any, b: any) => a.position - b.position)
         .map((g: any) => g.driverId);
 
-    // Get teams
     const { data: teams, error: teamsError } = await supabase
       .from('tcc_teams')
       .select(`
@@ -66,31 +58,14 @@ serve(async (req) => {
     const track = TRACKS.find(t => t.id === weekend.track_id)
     if (!track) throw new Error(`Track not found: ${weekend.track_id}`)
 
-    // Flatten drivers list for engine
     const drivers = simulationInput.flatMap(t => t.drivers);
 
-    // Initialize Engine with Grid Order
     const engine = new SimulationEngine(track, drivers, Date.now(), gridOrder);
-    
-    // Configure Simulation
-    // Inject strategy plans? 
-    // The engine's StrategySystem usually initializes defaults.
-    // We should map the DB plans to the engine's expected strategy format.
-    // Currently mapTeamsToSimulationInput puts them in `raceStrategy`.
-    // We need to ensure the engine uses them.
-    // The current engine implementation pulls strategy in `initializeRace`.
-    // It calls `strategySystem.initializeStrategy`.
-    // We might need to inject the user's specific strategy *after* initialization or modify `initializeRace` to accept it.
-    // For now, we'll rely on the default generated strategy or assume engine adaptation.
-    // (Ideally, we'd pass strategy map to constructor).
-    
     engine.startRace();
 
-    // Run Simulation Loop
-    // Use 1.0s time step for speed
     const dt = 1.0; 
     let steps = 0;
-    const MAX_STEPS = 10000; // Safety break (approx 3 hours race time)
+    const MAX_STEPS = 10000;
 
     while (engine.getState().status === 'racing' && steps < MAX_STEPS) {
         engine.update(dt);
@@ -98,8 +73,8 @@ serve(async (req) => {
     }
 
     const finalState = engine.getState();
+    const cashRewardMap = [2500000, 1800000, 1500000, 1200000, 1000000, 800000, 600000, 400000, 250000, 150000];
 
-    // Prepare Results
     const classification = finalState.vehicles
         .sort((a, b) => {
             if (a.hasFinished && !b.hasFinished) return -1;
@@ -112,36 +87,54 @@ serve(async (req) => {
             driverId: v.driverId,
             teamId: teams.find((t: any) => t.tcc_drivers.some((d: any) => d.id === v.driverId))?.id,
             laps: v.lapCount,
-            totalTime: v.elapsedTime, // or finish time
+            totalTime: v.elapsedTime,
             status: v.damage >= 100 ? 'DNF' : 'Finished',
-            points: 0 // To be calculated
+            points: 0,
+            cashReward: 0
         }));
 
-    // Calculate Points (F1 style: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1)
     const pointsMap = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
     const pointsAwarded: any = {};
+    const teamCashRewards: Record<string, number> = {};
     
     classification.forEach((entry, index) => {
+        if (entry.status !== 'DNF' && index < cashRewardMap.length) {
+            entry.cashReward = cashRewardMap[index];
+            teamCashRewards[entry.teamId] = (teamCashRewards[entry.teamId] || 0) + entry.cashReward;
+        }
+        if (entry.status !== 'DNF') {
+            teamCashRewards[entry.teamId] = (teamCashRewards[entry.teamId] || 0) + 100000;
+        }
         if (entry.status !== 'DNF' && index < pointsMap.length) {
             entry.points = pointsMap[index];
             pointsAwarded[entry.teamId] = (pointsAwarded[entry.teamId] || 0) + entry.points;
         }
     });
 
-    // Store Results
+    const fastestLap = finalState.vehicles
+      .filter(v => Number.isFinite(v.bestLapTime) && v.bestLapTime > 0)
+      .sort((a, b) => a.bestLapTime - b.bestLapTime)[0];
+
+    if (fastestLap) {
+      const fastestLapEntry = classification.find((entry: any) => entry.driverId === fastestLap.driverId);
+      if (fastestLapEntry?.teamId) {
+        fastestLapEntry.cashReward = (fastestLapEntry.cashReward || 0) + 200000;
+        teamCashRewards[fastestLapEntry.teamId] = (teamCashRewards[fastestLapEntry.teamId] || 0) + 200000;
+      }
+    }
+
     const { error: insertError } = await supabase
         .from('tcc_race_results')
         .insert({
             weekend_id: weekendId,
             classification: classification,
-            lap_summary: {}, // Placeholder for detailed logs
-            incidents: [], // Placeholder
+            lap_summary: {},
+            incidents: [],
             points_awarded: pointsAwarded
         })
 
     if (insertError) throw insertError
 
-    // Update Weekend Status
     const { error: updateError } = await supabase
         .from('tcc_weekends')
         .update({ status: 'race_complete' })
@@ -149,7 +142,50 @@ serve(async (req) => {
 
     if (updateError) throw updateError
 
-    return new Response(JSON.stringify({ success: true, classification }), {
+    for (const team of teams) {
+      if (!team.owner_id) continue
+      const cashAmount = Math.round(teamCashRewards[team.id] || 0)
+      if (cashAmount <= 0) continue
+      await supabase.rpc('tcc_reward_cash', {
+        p_championship_id: weekend.championship_id,
+        p_user_id: team.owner_id,
+        p_cash_amount: cashAmount,
+        p_reason: 'race_position',
+        p_metadata: {
+          weekend_id: weekendId,
+          round_number: weekend.round_number,
+          team_id: team.id
+        }
+      })
+    }
+
+    const { count: totalRounds } = await supabase
+      .from('tcc_weekends')
+      .select('*', { count: 'exact', head: true })
+      .eq('championship_id', weekend.championship_id)
+      .neq('status', 'cancelled')
+
+    const { count: completedRounds } = await supabase
+      .from('tcc_weekends')
+      .select('*', { count: 'exact', head: true })
+      .eq('championship_id', weekend.championship_id)
+      .eq('status', 'race_complete')
+
+    let seasonAward: any = null
+    if ((totalRounds || 0) > 0 && totalRounds === completedRounds) {
+      const { data: seasonAwardData, error: seasonAwardError } = await supabase.rpc('tcc_award_season_tokens', {
+        p_championship_id: weekend.championship_id
+      })
+      if (!seasonAwardError) {
+        seasonAward = seasonAwardData
+      }
+      await supabase
+        .from('tcc_championships')
+        .update({ status: 'completed' })
+        .eq('id', weekend.championship_id)
+    }
+
+    return new Response(JSON.stringify({ success: true, classification, teamCashRewards, seasonAward }), {
       headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
     })
   } catch (error) {

@@ -102,18 +102,16 @@ export const TCC_API = {
       .is('owner_id', null)
       .order('name'),
 
-  getWalletBalance: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { data: null, error: 'No user' };
-    
-    // Read-only: wallets table uses user_uid to reference auth.users(id)
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('token_balance')
-      .eq('user_id', user.id)
-      .maybeSingle();
+  getWalletBalance: async (championshipId: string) => {
+    return supabase.rpc('tcc_get_wallet_economy', { p_championship_id: championshipId });
+  },
 
-    return { data, error };
+  convertTokensToCash: async (championshipId: string, tokenAmount: number, weekNumber?: number) => {
+    return supabase.rpc('tcc_convert_token_to_cash', {
+      p_championship_id: championshipId,
+      p_token_amount: tokenAmount,
+      p_week_number: weekNumber ?? null
+    });
   },
 
   purchaseTeam: async (teamId: string) => {

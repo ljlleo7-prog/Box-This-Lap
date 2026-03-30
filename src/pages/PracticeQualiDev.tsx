@@ -508,6 +508,7 @@ function simulateSessionLaps(
   setupChangeSeconds: number
 ): {
   completedLaps: number;
+  equivalentLaps: number;
   timeUsedSeconds: number;
   cutoffByChequered: boolean;
   outLapSeconds: number;
@@ -516,6 +517,7 @@ function simulateSessionLaps(
   if (remainingSeconds <= 0) {
     return {
       completedLaps: 0,
+      equivalentLaps: 0,
       timeUsedSeconds: 0,
       cutoffByChequered: true,
       outLapSeconds: 0,
@@ -528,6 +530,7 @@ function simulateSessionLaps(
   if (setupChangeSeconds >= remainingSeconds) {
     return {
       completedLaps: 0,
+      equivalentLaps: 0,
       timeUsedSeconds: remainingSeconds,
       cutoffByChequered: true,
       outLapSeconds: 0,
@@ -537,10 +540,13 @@ function simulateSessionLaps(
   const trackWindow = Math.max(0, remainingSeconds - fixedRunSeconds);
   const possibleLaps = Math.floor(trackWindow / lapTimeSeconds);
   const completedLaps = Math.max(0, Math.min(plannedLaps, possibleLaps));
+  const trackWorkSeconds = Math.max(0, remainingSeconds - setupChangeSeconds);
+  const equivalentLaps = trackWorkSeconds / Math.max(lapTimeSeconds, 1);
   const fullPlanTime = fixedRunSeconds + plannedLaps * lapTimeSeconds;
   if (fullPlanTime > remainingSeconds) {
     return {
       completedLaps,
+      equivalentLaps,
       timeUsedSeconds: remainingSeconds,
       cutoffByChequered: true,
       outLapSeconds,
@@ -549,6 +555,7 @@ function simulateSessionLaps(
   }
   return {
     completedLaps,
+    equivalentLaps,
     timeUsedSeconds: fixedRunSeconds + completedLaps * lapTimeSeconds,
     cutoffByChequered: false,
     outLapSeconds,
@@ -1256,9 +1263,11 @@ export const PracticeQualiDev: React.FC = () => {
     const driverSetup = getSetupForPhase(weekend, activePhase, driverId);
     const driverEffects = buildSetupPhysicsEffects(selectedTrack, driverSetup, playerTeamSpecs);
     const runWindow = simulateSessionLaps(context.plannedLaps, context.lapTimeSeconds, availableSeconds, context.setupChangeSeconds);
+    const progressionLaps = Math.max(runWindow.completedLaps, runWindow.equivalentLaps);
+    const feedbackLaps = Math.max(runWindow.completedLaps, Math.round(runWindow.equivalentLaps));
 
-    if (runWindow.completedLaps > 0) {
-      const wearGain = runWindow.completedLaps * context.lapTimeSeconds * TYRE_COMPOUNDS[selectedSet.compound].baseWearRate * driverEffects.tyreWearFactor;
+    if (progressionLaps > 0) {
+      const wearGain = progressionLaps * context.lapTimeSeconds * TYRE_COMPOUNDS[selectedSet.compound].baseWearRate * driverEffects.tyreWearFactor;
       setWeekend((currentWeekend) => {
         const allocation = currentWeekend.tyreAllocations[driverId] ?? EMPTY_TYRE_SETS;
         return {
@@ -1275,7 +1284,7 @@ export const PracticeQualiDev: React.FC = () => {
       });
     }
 
-    const prepDelta = calculateDriverPrepDelta(selectedSet.compound, runWindow.completedLaps, activePhase);
+    const prepDelta = calculateDriverPrepDelta(selectedSet.compound, progressionLaps, activePhase);
 
     if (isPracticePhase(activePhase)) {
       const phaseState = practiceDevelopment.phases[activePhase];
@@ -1287,7 +1296,7 @@ export const PracticeQualiDev: React.FC = () => {
         hiddenIdealSetup,
         driver.learning,
         focusAllocation,
-        runWindow.completedLaps,
+        feedbackLaps,
         practiceDevelopment.trackPreparation,
         playerTeamSpecs
       );
@@ -1305,7 +1314,7 @@ export const PracticeQualiDev: React.FC = () => {
           totalPracticeLaps: current.totalPracticeLaps + runWindow.completedLaps,
           trackTractionByPhase: {
             ...current.trackTractionByPhase,
-            [activePhase]: clamp(current.trackTractionByPhase[activePhase] + runWindow.completedLaps * 0.3, 0, 100),
+            [activePhase]: clamp(current.trackTractionByPhase[activePhase] + progressionLaps * 0.3, 0, 100),
           },
           lastCommittedSetupByPhase: {
             ...current.lastCommittedSetupByPhase,
@@ -1355,7 +1364,7 @@ export const PracticeQualiDev: React.FC = () => {
         raceConservePrep: clamp(current.raceConservePrep + prepDelta.raceConserve, 0, 100),
         trackTractionByPhase: {
           ...current.trackTractionByPhase,
-          [activePhase]: clamp(current.trackTractionByPhase[activePhase] + runWindow.completedLaps * 0.3, 0, 100),
+          [activePhase]: clamp(current.trackTractionByPhase[activePhase] + progressionLaps * 0.3, 0, 100),
         },
         qualifying: {
           ...current.qualifying,

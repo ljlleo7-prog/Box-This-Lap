@@ -286,7 +286,7 @@ export class RaceLogicSystem {
           }
 
           this.refreshExecutionState(vehicle, state, track, drivers);
-          this.handlePitStopLogic(vehicle, state, track, dt, strategySystem);
+          this.handlePitStopLogic(vehicle, state, track, dt, strategySystem, teamSpecsByTeam[drivers.get(vehicle.driverId)?.team ?? '']);
           this.updateDRS(vehicle, state, track);
           this.attemptOvertake(vehicle, state, track, drivers);
           this.updateTactics(vehicle, state, track, drivers);
@@ -786,7 +786,7 @@ export class RaceLogicSystem {
       }
   }
 
-  private handlePitStopLogic(vehicle: VehicleState, state: RaceState, track: Track, dt: number, strategySystem: StrategySystem): void {
+  private handlePitStopLogic(vehicle: VehicleState, state: RaceState, track: Track, dt: number, strategySystem: StrategySystem, teamSpecs?: TeamSpecs): void {
       if (!vehicle.isInPit) return;
 
       const existingPitState = this.pitStates.get(vehicle.id);
@@ -816,8 +816,17 @@ export class RaceLogicSystem {
       if (!this.pitStates.has(vehicle.id)) {
           // 1. Calculate Stop Duration (Mechanics)
           let stopDuration = this.rng.range(2.0, 2.8);
-          // 1% chance of error (4-10s)
-          if (this.rng.chance(0.01)) {
+
+          const pitStopSpeedBonus = teamSpecs?.pitStopSpeedBonus ?? 0;
+          if (pitStopSpeedBonus > 0) {
+              stopDuration *= Math.max(0.7, 1 - pitStopSpeedBonus / 100);
+          }
+
+          const pitStopErrorRate = teamSpecs?.pitStopErrorRate ?? 50;
+          const errorChance = pitStopErrorRate / 5000;
+
+          // Pit crew error chance -> very long stop
+          if (this.rng.chance(errorChance)) {
               stopDuration = this.rng.range(4.0, 10.0);
           }
           

@@ -15,6 +15,9 @@ import { OfflineChampionship } from './pages/OfflineChampionship';
 import { OfflineWeekend } from './pages/OfflineWeekend';
 import { Championship } from './pages/Championship';
 import { PracticeQualiDev } from './pages/PracticeQualiDev';
+import { DriverDevelopment } from './pages/DriverDevelopment';
+import { CrewManagement } from './pages/CrewManagement';
+import { TrainingCalendar } from './pages/TrainingCalendar';
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
@@ -57,6 +60,9 @@ function App() {
         <Route path="/race-dev" element={<RaceControl devMode />} />
         <Route path="/practice-quali-dev" element={<PracticeQualiDev />} />
         <Route path="/career" element={<Championship />} />
+        <Route path="/driver-development" element={<DriverDevelopment />} />
+        <Route path="/crew-management" element={<CrewManagement />} />
+        <Route path="/training-calendar" element={<TrainingCalendar />} />
         <Route path="/offline" element={<OfflineChampionship />} />
         <Route path="/offline/weekend" element={<OfflineWeekend />} />
         <Route

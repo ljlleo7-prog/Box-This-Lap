@@ -5,6 +5,7 @@ import { getTrackProfileLookahead, getTrackProfileMinimumSpeedAhead, lookupTrack
 import { TyreModel, TYRE_COMPOUNDS } from './TyreModel';
 import { IPhysicsSystem } from './IPhysicsSystem';
 import { buildSetupPhysicsEffects } from './SetupModel';
+import { getStrengthMultiplier } from '../../lib/driverDevelopment';
 
 export class PhysicsSystem2025 implements IPhysicsSystem {
   private rng: SeededRNG;
@@ -60,7 +61,9 @@ export class PhysicsSystem2025 implements IPhysicsSystem {
         profileDynamics
       ) * gripFactor * accelFactor;
       
-      const driverBrakeSkill = driver.skill?.racecraft ?? 50; // Use racecraft for braking ability
+      const strengthMultiplier = getStrengthMultiplier(driver.strength ?? 75);
+
+      const driverBrakeSkill = (driver.skill?.racecraft ?? 50) * strengthMultiplier; // Strength affects control skills
       const driverBrakeFactor = 1.0 + ((driverBrakeSkill - 50) / 100) * 0.15; // ±15% braking force based on skill
 
       // calculateMaxBraking already factors in aero, so we don't need artificial 1.5 multipliers
@@ -96,9 +99,9 @@ export class PhysicsSystem2025 implements IPhysicsSystem {
       const curvature = a_lat_tel / (v_tel * v_tel);
 
       // Our car's grip multiplier derived from the target speed ratio and driver stats
-      const driverCorneringStat = sectorType === 'corner_high_speed' ? (driver.performance?.corneringHigh ?? 50) : 
-                                  sectorType === 'corner_medium_speed' ? (driver.performance?.corneringMedium ?? 50) : 
-                                  (driver.performance?.corneringLow ?? 50);
+      const driverCorneringStat = (sectorType === 'corner_high_speed' ? (driver.performance?.corneringHigh ?? 50) :
+                                  sectorType === 'corner_medium_speed' ? (driver.performance?.corneringMedium ?? 50) :
+                                  (driver.performance?.corneringLow ?? 50)) * strengthMultiplier;
       const driverCorneringFactor = 1.0 + ((driverCorneringStat - 50) / 100) * 0.15; // ±15% grip through corners based on skill
       
       const overallGripMultiplier = Math.max(0.7, Math.min(1.2, targetSpeed / Math.max(1, profileDynamics.profileBaseSpeed))) * driverCorneringFactor;
