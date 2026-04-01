@@ -25,6 +25,9 @@ serve(async (req) => {
       championshipId,
       trackId,
       speedMultiplier,
+      practiceSpeedMultiplier,
+      qualiSpeedMultiplier,
+      raceSpeedMultiplier,
       hostLocalDatetime,
       weatherMode,
       realismPreset
@@ -38,16 +41,26 @@ serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    // Check role using Admin client to avoid RLS issues on members table if any
+    // Check host authorization using admin client because function writes with service role
     const { data: member } = await supabaseAdmin
         .from('tcc_championship_members')
         .select('role')
         .eq('championship_id', championshipId)
         .eq('user_id', user.id)
-        .single()
-    
-    if (!member || !['host', 'developer', 'player'].includes(member.role)) {
-        throw new Error('Forbidden: Must be a championship member')
+        .maybeSingle()
+
+    const { data: championship } = await supabaseAdmin
+      .from('tcc_championships')
+      .select('created_by')
+      .eq('id', championshipId)
+      .maybeSingle()
+
+    const isCreator = championship?.created_by === user.id
+    const memberRole = member?.role ?? null
+    const isHost = memberRole === 'host' || memberRole === 'developer'
+
+    if (!isCreator && !isHost) {
+        throw new Error('Forbidden: Only the championship host can schedule weekends')
     }
 
     // Convert host local time to UTC
@@ -94,13 +107,20 @@ serve(async (req) => {
     
     const roundNumber = (count || 0) + 1;
 
+    const resolvedPracticeSpeed = [1, 2, 5, 10].includes(practiceSpeedMultiplier) ? practiceSpeedMultiplier : ([1, 2, 5, 10].includes(speedMultiplier) ? speedMultiplier : 1);
+    const resolvedQualiSpeed = [1, 2, 5, 10].includes(qualiSpeedMultiplier) ? qualiSpeedMultiplier : ([1, 2, 5, 10].includes(speedMultiplier) ? speedMultiplier : 1);
+    const resolvedRaceSpeed = [1, 2, 5, 10].includes(raceSpeedMultiplier) ? raceSpeedMultiplier : ([1, 2, 5, 10].includes(speedMultiplier) ? speedMultiplier : 1);
+
     // Create weekend using Admin client
     const { data: weekend, error } = await supabaseAdmin
       .from('tcc_weekends')
       .insert({
         championship_id: championshipId,
         track_id: trackId,
-        speed_multiplier: speedMultiplier,
+        speed_multiplier: speedMultiplier ?? resolvedRaceSpeed,
+        practice_speed_multiplier: resolvedPracticeSpeed,
+        quali_speed_multiplier: resolvedQualiSpeed,
+        race_speed_multiplier: resolvedRaceSpeed,
         weather_mode: weatherMode,
         realism_preset: realismPreset,
         host_timezone: hostTimezone,

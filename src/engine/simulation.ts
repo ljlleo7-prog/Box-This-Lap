@@ -8,6 +8,8 @@ import { RaceLogicSystem } from './systems/RaceLogicSystem';
 import { StrategySystem } from './systems/StrategySystem';
 import { buildTrackProfile } from './trackProfile';
 
+const cloneRaceState = (state: RaceState): RaceState => JSON.parse(JSON.stringify(state));
+
 export class SimulationEngine {
   private state: RaceState;
   private track: Track;
@@ -147,7 +149,11 @@ export class SimulationEngine {
   public getState(): RaceState {
     return this.state;
   }
-  
+
+  public replaceState(nextState: RaceState): void {
+    this.state = cloneRaceState(nextState);
+  }
+
   public updateStrategy(driverId: string, type: string, value: any): void {
       const vehicle = this.state.vehicles.find(v => v.driverId === driverId);
       if (!vehicle) return;

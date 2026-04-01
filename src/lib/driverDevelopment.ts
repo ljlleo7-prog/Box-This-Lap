@@ -1,8 +1,12 @@
 import type { OfflineDriverState, WearyState, DriverTrainingPlan, TrainingIntensity, DaySchedule, DriverActivity } from '../types/championship';
 
 // Strength System
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
 export const applyStrengthDecay = (strength: number, daysWithoutExercise: number): number => {
-  return strength * Math.pow(0.99, daysWithoutExercise);
+  const forgettingPressure = Math.pow(daysWithoutExercise, 1.2);
+  const decayRatio = 1 - Math.exp(-0.0007 * forgettingPressure);
+  return strength * (1 - decayRatio);
 };
 
 export const getStrengthMultiplier = (strength: number): number => {
@@ -12,12 +16,27 @@ export const getStrengthMultiplier = (strength: number): number => {
 
 // Create Empty Schedule
 export const createEmptySchedule = (raceDays: number[] = [3, 4, 5]): DaySchedule[] => {
-  return Array.from({ length: 14 }, (_, i) => ({
-    dayNumber: i + 1,
-    isRaceDay: raceDays.includes(i + 1),
-    amActivity: null,
-    pmActivity: null,
-  }));
+  return Array.from({ length: 14 }, (_, i) => {
+    const isRaceDay = raceDays.includes(i + 1);
+    return {
+      dayNumber: i + 1,
+      isRaceDay,
+      amActivity: isRaceDay ? null : 'chill',
+      pmActivity: isRaceDay ? null : 'chill',
+    };
+  });
+};
+
+const getSimulationXpGain = (learning: number, fatigueLoad: number) => {
+  const learningFactor = 1 + Math.pow(clamp(learning, 40, 100) / 100, 1.35);
+  const fatiguePenalty = 1 - 0.35 * Math.pow(clamp(fatigueLoad, 0, 100) / 100, 1.2);
+  return 1.8 * learningFactor * Math.max(0.55, fatiguePenalty);
+};
+
+const getExerciseStrengthGain = (strength: number, fatigueLoad: number) => {
+  const headroom = clamp((100 - strength) / 100, 0.12, 1);
+  const fatiguePenalty = 1 - 0.45 * Math.pow(clamp(fatigueLoad, 0, 100) / 100, 1.15);
+  return 3.8 * Math.pow(headroom, 0.7) * Math.max(0.4, fatiguePenalty);
 };
 
 // Process Driver Schedule
@@ -34,49 +53,48 @@ export const processDriverSchedule = (
   let totalFatigue = 0;
   let currentStrength = driver.strength;
   let daysWithoutExercise = 0;
+  let currentFatigue = driver.fatigue;
 
   schedule.forEach((day) => {
     if (day.isRaceDay) {
-      totalFatigue += 35;
-      totalXP += 10;
-      daysWithoutExercise++;
       return;
     }
 
     [day.amActivity, day.pmActivity].forEach((activity) => {
       if (!activity) {
-        daysWithoutExercise++;
         return;
       }
 
       switch (activity as DriverActivity) {
-        case 'simulation':
-          totalXP += 3;
-          totalFatigue += 2;
+        case 'simulation': {
+          totalXP += getSimulationXpGain(driver.level * 5 + driver.setupKnowledge, currentFatigue);
+          totalFatigue += 2.5;
+          currentFatigue = clamp(currentFatigue + 2.5, 0, 100);
           daysWithoutExercise++;
           break;
-        case 'exercise':
-          totalXP += 1;
-          totalFatigue += 3;
-          currentStrength = Math.min(100, currentStrength + 1.5);
+        }
+        case 'exercise': {
+          totalXP += 0.8;
+          totalFatigue += 4;
+          currentStrength = Math.min(100, currentStrength + getExerciseStrengthGain(currentStrength, currentFatigue));
+          currentFatigue = clamp(currentFatigue + 4, 0, 100);
           daysWithoutExercise = 0;
           break;
-        case 'chill':
-          totalFatigue -= 5;
+        }
+        case 'chill': {
+          totalFatigue -= 4;
+          currentFatigue = clamp(currentFatigue - 4, 0, 100);
           daysWithoutExercise++;
+          currentStrength = applyStrengthDecay(currentStrength, daysWithoutExercise);
           break;
+        }
       }
     });
   });
 
-  // Apply strength decay
-  if (daysWithoutExercise > 0) {
-    currentStrength = applyStrengthDecay(currentStrength, daysWithoutExercise);
-  }
-
   return {
-    xpGain: totalXP,
-    fatigueChange: totalFatigue,
+    xpGain: Math.round(totalXP),
+    fatigueChange: Math.round(totalFatigue),
     strengthChange: currentStrength - driver.strength,
     finalStrength: currentStrength,
   };

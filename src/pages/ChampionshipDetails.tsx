@@ -39,19 +39,28 @@ export const ChampionshipDetails: React.FC = () => {
 
   const loadData = async () => {
     try {
+      await TCC_API.ensurePlayerProfile();
       // Check if user has a team (is a participant)
       const { data: myTeamData } = await TCC_API.getMyTeam(id!);
       if (!myTeamData) {
-        // Redirect to team selection if not a participant
-        navigate(`/championships/${id}/select-team`);
-        return;
+        const { data: championshipsData } = await TCC_API.getChampionships();
+        const matchedChampionship = championshipsData?.find((entry: any) => entry.id === id);
+        const isCreator = matchedChampionship?.created_by === (await supabase.auth.getUser()).data.user?.id;
+        if (isCreator) {
+          setActiveOnlineContext({ championshipId: id! });
+        } else {
+          // Redirect to team selection if not a participant
+          navigate(`/championships/${id}/select-team`);
+          return;
+        }
+      } else {
+        setMyTeam(myTeamData);
+        setActiveOnlineContext({
+          championshipId: id!,
+          teamId: myTeamData.id,
+          teamName: myTeamData.name,
+        });
       }
-      setMyTeam(myTeamData);
-      setActiveOnlineContext({
-        championshipId: id!,
-        teamId: myTeamData.id,
-        teamName: myTeamData.name,
-      });
 
       // 1. Get Championship
       const { data: champ, error: champError } = await supabase
@@ -101,7 +110,9 @@ export const ChampionshipDetails: React.FC = () => {
       await TCC_API.createWeekend({
         championshipId: id,
         trackId: selectedTrackId,
-        speedMultiplier: 1,
+        practiceSpeedMultiplier: 1,
+        qualiSpeedMultiplier: 1,
+        raceSpeedMultiplier: 1,
         hostLocalDatetime: new Date(weekendDateTime).toISOString(),
         weatherMode: 'realistic',
         realismPreset: 'standard'
@@ -109,9 +120,9 @@ export const ChampionshipDetails: React.FC = () => {
       
       setShowCreateWeekend(false);
       loadData(); // Reload to show new weekend
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create weekend:', err);
-      alert('Failed to create weekend');
+      alert(err?.message || err?.error?.message || err?.error || 'Failed to create weekend');
     } finally {
       setCreatingWeekend(false);
     }
@@ -161,7 +172,7 @@ export const ChampionshipDetails: React.FC = () => {
       <PageHeader 
         title={championship.name}
         subtitle="OFFICIAL SERIES"
-        backgroundImage="https://images.unsplash.com/photo-1516216628859-9bccecab13ca?q=80&w=2069&auto=format&fit=crop"
+        backgroundImage="https://f1chronicle.com/wp-content/uploads/2024/01/SI202412010400-1920x1080.jpg"
         tags={
             <>
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-sm text-gray-300">
@@ -293,7 +304,7 @@ export const ChampionshipDetails: React.FC = () => {
                         </h4>
                         <div className="flex items-center gap-4 text-sm text-gray-400 mt-1">
                           <span className="flex items-center gap-1"><MapPin size={14} /> {track?.location ? `${track.location.lat.toFixed(2)}°, ${track.location.long.toFixed(2)}°` : 'Unknown Location'}</span>
-                          <span className="flex items-center gap-1"><Clock size={14} /> {new Date(weekend.start_time).toLocaleDateString()}</span>
+                          <span className="flex items-center gap-1"><Clock size={14} /> {new Date(weekend.scheduled_race_at_utc || weekend.start_time).toLocaleDateString()}</span>
                         </div>
                       </div>
                     </div>

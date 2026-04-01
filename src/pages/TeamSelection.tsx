@@ -17,6 +17,9 @@ export const TeamSelection: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletCashBalance, setWalletCashBalance] = useState<number | null>(null);
+  const [isBetaChampionship, setIsBetaChampionship] = useState(false);
+  const [selectedTeamBudgetPreview, setSelectedTeamBudgetPreview] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,6 +55,9 @@ export const TeamSelection: React.FC = () => {
       }
       setTeams(availableTeams);
       setWalletBalance(walletResponse.data?.wallet?.token_balance || 0);
+      setWalletCashBalance(walletResponse.data?.wallet?.cash_balance || 0);
+      setIsBetaChampionship(!!walletResponse.data?.economy?.is_beta);
+      setSelectedTeamBudgetPreview(null);
     } catch (err) {
       console.error('Failed to load data:', err);
       setError('Failed to load teams or wallet balance.');
@@ -72,6 +78,10 @@ export const TeamSelection: React.FC = () => {
       if (error) throw error;
 
       if (data && data.success) {
+        if (isBetaChampionship) {
+          setWalletCashBalance(data.cash_awarded ?? team.budget ?? 0);
+          setSelectedTeamBudgetPreview(data.cash_awarded ?? team.budget ?? 0);
+        }
         setActiveOnlineContext({
           championshipId: championshipId!,
           teamId: team.id,
@@ -113,7 +123,9 @@ export const TeamSelection: React.FC = () => {
             SELECT YOUR TEAM
           </h1>
           <p className="text-gray-400 text-lg">
-            Choose a team to compete in this championship. Better teams cost more tokens.
+            {isBetaChampionship
+              ? 'Choose a team to join this beta championship. Team selection is free and your starting cash comes from that team’s operating budget.'
+              : 'Choose a team to compete in this championship. Better teams cost more tokens.'}
           </p>
         </div>
         
@@ -122,8 +134,14 @@ export const TeamSelection: React.FC = () => {
             <DollarSign className="text-yellow-400" size={24} />
           </div>
           <div>
-            <div className="text-xs text-yellow-200/70 uppercase font-bold tracking-wider">Wallet Balance</div>
-            <div className="text-2xl font-black text-white">{walletBalance} TKN</div>
+            <div className="text-xs text-yellow-200/70 uppercase font-bold tracking-wider">
+              {isBetaChampionship ? 'Starting Cash' : 'Wallet Balance'}
+            </div>
+            <div className="text-2xl font-black text-white">
+              {isBetaChampionship
+                ? `${(selectedTeamBudgetPreview ?? walletCashBalance ?? 0).toLocaleString()} CASH`
+                : `${walletBalance} TKN`}
+            </div>
           </div>
         </GlassCard>
       </div>
@@ -211,7 +229,9 @@ export const TeamSelection: React.FC = () => {
 
               <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between gap-4">
                 <div className="text-xl font-bold text-yellow-400">
-                  {team.token_cost} <span className="text-sm text-yellow-400/70">TKN</span>
+                  {isBetaChampionship
+                    ? `${(team.budget || 0).toLocaleString()} CASH budget`
+                    : <>{team.token_cost} <span className="text-sm text-yellow-400/70">TKN</span></>}
                 </div>
                 <GlassButton 
                   onClick={() => handlePurchase(team)}

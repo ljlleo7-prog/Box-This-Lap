@@ -73,6 +73,13 @@ serve(async (req) => {
     }
 
     const finalState = engine.getState();
+    const { data: economyConfig } = await supabase
+      .from('tcc_economy_config')
+      .select('disable_rewards')
+      .eq('championship_id', weekend.championship_id)
+      .maybeSingle();
+
+    const rewardsDisabled = !!economyConfig?.disable_rewards;
     const cashRewardMap = [2500000, 1800000, 1500000, 1200000, 1000000, 800000, 600000, 400000, 250000, 150000];
 
     const classification = finalState.vehicles
@@ -98,11 +105,11 @@ serve(async (req) => {
     const teamCashRewards: Record<string, number> = {};
     
     classification.forEach((entry, index) => {
-        if (entry.status !== 'DNF' && index < cashRewardMap.length) {
+        if (!rewardsDisabled && entry.status !== 'DNF' && index < cashRewardMap.length) {
             entry.cashReward = cashRewardMap[index];
             teamCashRewards[entry.teamId] = (teamCashRewards[entry.teamId] || 0) + entry.cashReward;
         }
-        if (entry.status !== 'DNF') {
+        if (!rewardsDisabled && entry.status !== 'DNF') {
             teamCashRewards[entry.teamId] = (teamCashRewards[entry.teamId] || 0) + 100000;
         }
         if (entry.status !== 'DNF' && index < pointsMap.length) {
@@ -115,7 +122,7 @@ serve(async (req) => {
       .filter(v => Number.isFinite(v.bestLapTime) && v.bestLapTime > 0)
       .sort((a, b) => a.bestLapTime - b.bestLapTime)[0];
 
-    if (fastestLap) {
+    if (!rewardsDisabled && fastestLap) {
       const fastestLapEntry = classification.find((entry: any) => entry.driverId === fastestLap.driverId);
       if (fastestLapEntry?.teamId) {
         fastestLapEntry.cashReward = (fastestLapEntry.cashReward || 0) + 200000;
@@ -142,21 +149,23 @@ serve(async (req) => {
 
     if (updateError) throw updateError
 
-    for (const team of teams) {
-      if (!team.owner_id) continue
-      const cashAmount = Math.round(teamCashRewards[team.id] || 0)
-      if (cashAmount <= 0) continue
-      await supabase.rpc('tcc_reward_cash', {
-        p_championship_id: weekend.championship_id,
-        p_user_id: team.owner_id,
-        p_cash_amount: cashAmount,
-        p_reason: 'race_position',
-        p_metadata: {
-          weekend_id: weekendId,
-          round_number: weekend.round_number,
-          team_id: team.id
-        }
-      })
+    if (!rewardsDisabled) {
+      for (const team of teams) {
+        if (!team.owner_id) continue
+        const cashAmount = Math.round(teamCashRewards[team.id] || 0)
+        if (cashAmount <= 0) continue
+        await supabase.rpc('tcc_reward_cash', {
+          p_championship_id: weekend.championship_id,
+          p_user_id: team.owner_id,
+          p_cash_amount: cashAmount,
+          p_reason: 'race_position',
+          p_metadata: {
+            weekend_id: weekendId,
+            round_number: weekend.round_number,
+            team_id: team.id
+          }
+        })
+      }
     }
 
     const { count: totalRounds } = await supabase
@@ -172,7 +181,7 @@ serve(async (req) => {
       .eq('status', 'race_complete')
 
     let seasonAward: any = null
-    if ((totalRounds || 0) > 0 && totalRounds === completedRounds) {
+    if (!rewardsDisabled && (totalRounds || 0) > 0 && totalRounds === completedRounds) {
       const { data: seasonAwardData, error: seasonAwardError } = await supabase.rpc('tcc_award_season_tokens', {
         p_championship_id: weekend.championship_id
       })
@@ -185,7 +194,7 @@ serve(async (req) => {
         .eq('id', weekend.championship_id)
     }
 
-    return new Response(JSON.stringify({ success: true, classification, teamCashRewards, seasonAward }), {
+    return new Response(JSON.stringify({ success: true, classification, teamCashRewards, seasonAward, rewardsDisabled }), {
       headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
     })
   } catch (error) {

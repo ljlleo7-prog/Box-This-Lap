@@ -7,6 +7,7 @@ import { clsx } from 'clsx';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import { PageHeader } from '../components/ui/PageHeader';
+import { supabase } from '../lib/supabase';
 
 export const WeekendDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +15,9 @@ export const WeekendDetails: React.FC = () => {
   const [weekend, setWeekend] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [runningSession, setRunningSession] = useState<string | null>(null);
+  const [sessionSpeeds, setSessionSpeeds] = useState({ practice: 1 as 1 | 2 | 5 | 10, quali: 1 as 1 | 2 | 5 | 10, race: 1 as 1 | 2 | 5 | 10 });
+  const [savingSessionSpeed, setSavingSessionSpeed] = useState<'practice' | 'quali' | 'race' | null>(null);
+  const [canManageSessionSpeed, setCanManageSessionSpeed] = useState(false);
 
   useEffect(() => {
     if (id) loadWeekend();
@@ -24,6 +28,29 @@ export const WeekendDetails: React.FC = () => {
       const { data, error } = await TCC_API.getWeekend(id!);
       if (error) throw error;
       setWeekend(data);
+      setSessionSpeeds({
+        practice: data.practice_speed_multiplier ?? data.speed_multiplier ?? 1,
+        quali: data.quali_speed_multiplier ?? data.speed_multiplier ?? 1,
+        race: data.race_speed_multiplier ?? data.speed_multiplier ?? 1,
+      });
+
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth.user?.id;
+      if (!userId) {
+        setCanManageSessionSpeed(false);
+      } else {
+        const { data: membership } = await supabase
+          .from('tcc_championship_members')
+          .select('role')
+          .eq('championship_id', data.championship_id)
+          .eq('user_id', userId)
+          .maybeSingle();
+        setCanManageSessionSpeed(
+          data.tcc_championships?.created_by === userId ||
+          membership?.role === 'host' ||
+          membership?.role === 'developer'
+        );
+      }
     } catch (err) {
       console.error('Failed to load weekend:', err);
     } finally {
@@ -38,7 +65,7 @@ export const WeekendDetails: React.FC = () => {
       if (type === 'practice') await TCC_API.runPractice(id);
       if (type === 'quali') await TCC_API.runQuali(id);
       if (type === 'race') await TCC_API.runRace(id);
-      
+
       // Reload data to show updated status
       await loadWeekend();
     } catch (err) {
@@ -46,6 +73,26 @@ export const WeekendDetails: React.FC = () => {
       alert(`Failed to run ${type}. Check console for details.`);
     } finally {
       setRunningSession(null);
+    }
+  };
+
+  const setSessionSpeed = async (sessionType: 'practice' | 'quali' | 'race', speed: 1 | 2 | 5 | 10) => {
+    if (!id) return;
+    setSavingSessionSpeed(sessionType);
+    try {
+      const { data, error } = await TCC_API.setWeekendSessionSpeed(id, sessionType, speed);
+      if (error) throw error;
+      if (!data?.success) {
+        alert(data?.message || 'Failed to update session speed');
+        return;
+      }
+      setSessionSpeeds((prev) => ({ ...prev, [sessionType]: speed }));
+      await loadWeekend();
+    } catch (err: any) {
+      console.error(`Failed to set ${sessionType} speed:`, err);
+      alert(err?.message || err?.error_description || err?.details || 'Failed to update session speed');
+    } finally {
+      setSavingSessionSpeed(null);
     }
   };
 
@@ -86,8 +133,8 @@ export const WeekendDetails: React.FC = () => {
     // Logic for actionable state
     let isActionable = false;
     if (type === 'practice' && weekend.status === 'scheduled') isActionable = true;
-    if (type === 'quali' && weekend.status === 'practice_completed') isActionable = true;
-    if (type === 'race' && weekend.status === 'quali_completed') isActionable = true;
+    if (type === 'quali' && weekend.status === 'practice_complete') isActionable = true;
+    if (type === 'race' && weekend.status === 'quali_complete') isActionable = true;
 
     return (
       <GlassCard 
@@ -168,7 +215,7 @@ export const WeekendDetails: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-sm text-gray-300">
                     <Calendar size={14} className="text-[#00FFFF]" /> 
-                    {new Date(weekend.start_time).toLocaleString()}
+                    {new Date(weekend.scheduled_race_at_utc || weekend.start_time).toLocaleString()}
                 </div>
                 <div className="px-3 py-1 rounded-full text-sm border font-medium bg-gray-800 border-gray-700 text-gray-400 uppercase">
                    {weekend.status?.replace('_', ' ')}
@@ -176,6 +223,46 @@ export const WeekendDetails: React.FC = () => {
             </>
         }
       />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {(['practice', 'quali', 'race'] as const).map((sessionType) => {
+          const scheduledAt = sessionType === 'practice'
+            ? weekend.scheduled_practice_at_utc
+            : sessionType === 'quali'
+              ? weekend.scheduled_quali_at_utc
+              : weekend.scheduled_race_at_utc;
+          const isLocked = scheduledAt ? Date.now() >= (new Date(scheduledAt).getTime() - 3 * 60 * 60 * 1000) : false;
+          return (
+            <GlassCard key={`speed-${sessionType}`} className="p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-widest mb-2">{sessionType} speed</div>
+              <div className="text-sm text-gray-400 mb-3">
+                {scheduledAt ? `Locks 3h before ${new Date(scheduledAt).toLocaleString()}` : 'No session time set'}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {[1, 2, 5, 10].map((speed) => (
+                  <button
+                    key={`${sessionType}-${speed}`}
+                    onClick={() => setSessionSpeed(sessionType, speed as 1 | 2 | 5 | 10)}
+                    disabled={!canManageSessionSpeed || isLocked || savingSessionSpeed === sessionType}
+                    className={clsx(
+                      'px-3 py-1.5 rounded border text-xs font-mono font-bold transition-colors',
+                      sessionSpeeds[sessionType] === speed
+                        ? 'border-[#00FFFF] bg-[#00FFFF]/10 text-[#00FFFF]'
+                        : 'border-white/10 bg-black/30 text-gray-400',
+                      (!canManageSessionSpeed || isLocked) && 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-gray-500">
+                {!canManageSessionSpeed ? 'Host only.' : isLocked ? 'Locked for this session.' : 'Host editable.'}
+              </div>
+            </GlassCard>
+          );
+        })}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <SessionCard 
@@ -189,8 +276,8 @@ export const WeekendDetails: React.FC = () => {
           title="Qualifying" 
           type="quali" 
           status={
-            ['scheduled', 'practice_completed'].includes(weekend.status) 
-              ? (weekend.status === 'practice_completed' ? 'ready' : 'locked')
+            ['scheduled', 'practice_complete'].includes(weekend.status)
+              ? (weekend.status === 'practice_complete' ? 'ready' : 'locked')
               : 'completed'
           } 
           onRun={() => runSession('quali')}
@@ -200,15 +287,15 @@ export const WeekendDetails: React.FC = () => {
           title="Race" 
           type="race" 
           status={
-            weekend.status === 'completed' ? 'completed' : 
-            weekend.status === 'quali_completed' ? 'ready' : 'locked'
+            weekend.status === 'race_complete' ? 'completed' :
+            weekend.status === 'quali_complete' ? 'ready' : 'locked'
           }
           onRun={() => navigate(`/race/${id}`)}
           results={weekend.tcc_race_results} 
         />
       </div>
 
-      {weekend.status === 'completed' && (
+      {weekend.status === 'race_complete' && (
         <GlassCard className="mt-8">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                 <CheckCircle className="text-green-400" /> Event Summary

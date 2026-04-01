@@ -34,6 +34,14 @@ export const Facilities: React.FC = () => {
   const [cashPerToken, setCashPerToken] = useState<number>(10000);
   const [weeklyRemaining, setWeeklyRemaining] = useState<number>(0);
   const [seasonRemainingCash, setSeasonRemainingCash] = useState<number>(0);
+  const [dailyBudgetCash, setDailyBudgetCash] = useState<number | null>(null);
+  const [dailyBudgetRemainingCash, setDailyBudgetRemainingCash] = useState<number | null>(null);
+  const [weeklyBudgetCash, setWeeklyBudgetCash] = useState<number | null>(null);
+  const [weeklyBudgetRemainingCash, setWeeklyBudgetRemainingCash] = useState<number | null>(null);
+  const [budgetDate, setBudgetDate] = useState<string | null>(null);
+  const [budgetWeek, setBudgetWeek] = useState<string | null>(null);
+  const [budgetTimezone, setBudgetTimezone] = useState<string>('UTC');
+  const [isBetaEconomy, setIsBetaEconomy] = useState(false);
   const [tokenToConvert, setTokenToConvert] = useState<number>(100);
   const [converting, setConverting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -79,6 +87,14 @@ export const Facilities: React.FC = () => {
         setCashPerToken(walletRes.data.pricing?.cash_per_token || 10000);
         setWeeklyRemaining(walletRes.data.caps?.weekly_investment_remaining_tkn || 0);
         setSeasonRemainingCash(walletRes.data.caps?.seasonal_converted_cash_remaining || 0);
+        setDailyBudgetCash(walletRes.data.caps?.daily_budget_cash ?? null);
+        setDailyBudgetRemainingCash(walletRes.data.caps?.daily_budget_remaining_cash ?? null);
+        setWeeklyBudgetCash(walletRes.data.caps?.weekly_budget_cash ?? null);
+        setWeeklyBudgetRemainingCash(walletRes.data.caps?.weekly_budget_remaining_cash ?? null);
+        setBudgetDate(walletRes.data.economy?.budget_date ?? null);
+        setBudgetWeek(walletRes.data.economy?.budget_week ?? null);
+        setBudgetTimezone(walletRes.data.economy?.budget_timezone || 'UTC');
+        setIsBetaEconomy(walletRes.data.economy?.mode === 'beta_calendar_budget');
       }
     } catch {
       setError('Failed to load facilities.');
@@ -134,41 +150,72 @@ export const Facilities: React.FC = () => {
       <PageHeader title="Facilities" description="Upgrade your team infrastructure" />
       <div className="flex items-center justify-between">
         <div className="text-gray-400">
-          Wallet:
-          <span className="text-white font-bold ml-2">{tokenBalance} TKN</span>
-          <span className="text-gray-500 mx-2">|</span>
-          <span className="text-white font-bold">{cashBalance.toLocaleString()} CASH</span>
+          {isBetaEconomy ? (
+            <>
+              Budget:
+              <span className="text-white font-bold ml-2">{cashBalance.toLocaleString()} CASH</span>
+            </>
+          ) : (
+            <>
+              Wallet:
+              <span className="text-white font-bold ml-2">{tokenBalance} TKN</span>
+              <span className="text-gray-500 mx-2">|</span>
+              <span className="text-white font-bold">{cashBalance.toLocaleString()} CASH</span>
+            </>
+          )}
         </div>
         <GlassButton onClick={completeReady}>Complete Ready Upgrades</GlassButton>
       </div>
       <GlassCard className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div>
-            <div className="text-xs text-gray-500 mb-1">Token Price</div>
-            <div className="text-white font-bold">1 TKN = {Math.round(cashPerToken).toLocaleString()} CASH</div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500 mb-1">Weekly Remaining</div>
-            <div className="text-white font-bold">{Math.floor(weeklyRemaining)} TKN</div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500 mb-1">Season Cap Remaining</div>
-            <div className="text-white font-bold">{seasonRemainingCash.toLocaleString()} CASH</div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500 mb-1">Convert TKN → CASH</div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                value={tokenToConvert}
-                onChange={(e) => setTokenToConvert(Number(e.target.value))}
-                className="w-24 bg-[#1a1a1a] border border-white/10 text-white p-2 rounded-lg focus:border-f1-red outline-none"
-              />
-              <GlassButton onClick={convertToCash} isLoading={converting}>Convert</GlassButton>
+        {isBetaEconomy ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Daily Budget</div>
+              <div className="text-white font-bold">{(dailyBudgetCash ?? 0).toLocaleString()} CASH</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Daily Remaining</div>
+              <div className="text-white font-bold">{(dailyBudgetRemainingCash ?? 0).toLocaleString()} CASH</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Weekly Remaining</div>
+              <div className="text-white font-bold">{(weeklyBudgetRemainingCash ?? 0).toLocaleString()} CASH</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Budget Window</div>
+              <div className="text-white font-bold">{budgetDate ?? '—'}</div>
+              <div className="text-xs text-gray-500 mt-1">{budgetWeek ?? '—'} · {budgetTimezone}</div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Token Price</div>
+              <div className="text-white font-bold">1 TKN = {Math.round(cashPerToken).toLocaleString()} CASH</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Weekly Remaining</div>
+              <div className="text-white font-bold">{Math.floor(weeklyRemaining)} TKN</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Season Cap Remaining</div>
+              <div className="text-white font-bold">{seasonRemainingCash.toLocaleString()} CASH</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Convert TKN → CASH</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={tokenToConvert}
+                  onChange={(e) => setTokenToConvert(Number(e.target.value))}
+                  className="w-24 bg-[#1a1a1a] border border-white/10 text-white p-2 rounded-lg focus:border-f1-red outline-none"
+                />
+                <GlassButton onClick={convertToCash} isLoading={converting}>Convert</GlassButton>
+              </div>
+            </div>
+          </div>
+        )}
       </GlassCard>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {Object.entries(FACILITY_CONFIG).map(([key, cfg]) => (

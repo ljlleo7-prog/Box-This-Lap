@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
-import { Zap, Activity, Wind, Gauge, Battery, Thermometer, Plus, X, Calendar } from 'lucide-react';
+import { Zap, Activity, Wind, Gauge, Battery, Thermometer, Plus, X, Calendar, Wallet } from 'lucide-react';
 import { TCC_API } from '../lib/tcc-api';
 import type { Team, TeamSpecs, ResearchDepartmentState, PartDesign, PartCategory, CarId, ManufacturingMode, ManufacturingOrder } from '../types';
 import { TEAM_TEMPLATES } from '../data/teams';
@@ -221,6 +221,9 @@ export const ResearchDevelopment: React.FC = () => {
   const [showStartModal, setShowStartModal] = useState(false);
   const [showManufactureModal, setShowManufactureModal] = useState(false);
   const [selectedDesignForManufacture, setSelectedDesignForManufacture] = useState<PartDesign | null>(null);
+  const [cashBalance, setCashBalance] = useState(0);
+  const [cashLedger, setCashLedger] = useState<any[]>([]);
+  const [cashError, setCashError] = useState<string | null>(null);
 
   // Modal state
   const [selectedProject, setSelectedProject] = useState<ResearchProjectDefinition | null>(null);
@@ -242,15 +245,26 @@ export const ResearchDevelopment: React.FC = () => {
         if (!championshipId) {
           setTeam(null);
           setResearchState(null);
+          setCashBalance(0);
+          setCashLedger([]);
           return;
         }
 
-        const { data: myTeam } = await TCC_API.getMyTeam(championshipId);
+        const [{ data: myTeam }, walletRes, ledgerRes] = await Promise.all([
+          TCC_API.getMyTeam(championshipId),
+          TCC_API.getWalletBalance(championshipId),
+          TCC_API.getCashLedger(championshipId, 8),
+        ]);
         if (myTeam) {
           setTeam(myTeam);
+          setCashBalance(walletRes.data?.wallet?.cash_balance || 0);
+          setCashLedger(ledgerRes.data || []);
+          setCashError(null);
         } else {
           setTeam(null);
           setResearchState(null);
+          setCashBalance(0);
+          setCashLedger([]);
         }
         return;
       }
@@ -264,7 +278,7 @@ export const ResearchDevelopment: React.FC = () => {
             id: playerTeam.teamId,
             name: playerTeam.teamName,
             color: playerTeam.color,
-            budget: 0,
+            budget: TEAM_TEMPLATES.find((template) => template.name === playerTeam.teamName)?.budget ?? 0,
             reputation: 0,
             token_cost: 0,
             performance: {
@@ -275,14 +289,20 @@ export const ResearchDevelopment: React.FC = () => {
             specs: playerTeam.specs,
             championship_id: activeLocalChampionship.id,
           } as Team);
+          setCashBalance(TEAM_TEMPLATES.find((template) => template.name === playerTeam.teamName)?.budget ?? 0);
+          setCashLedger([]);
+          setCashError(null);
           return;
         }
       }
 
       setTeam(null);
       setResearchState(null);
+      setCashBalance(0);
+      setCashLedger([]);
     } catch (error) {
       console.error('Failed to load team data', error);
+      setCashError('Failed to load cash data');
     } finally {
       setLoading(false);
     }
@@ -378,8 +398,41 @@ export const ResearchDevelopment: React.FC = () => {
     return calculateDevelopmentTimeWeeks(selectedProject, money, windTunnel, cfd);
   }, [selectedProject, money, windTunnel, cfd]);
 
-  const handleStartProject = () => {
+  const nowMs = Date.now();
+
+  const getDesignDueAt = (design: PartDesign) => new Date(design.startedAt).getTime() + (design.projectedDurationWeeks * 7 * 24 * 60 * 60 * 1000);
+  const isDesignReady = (design: PartDesign) => nowMs >= getDesignDueAt(design);
+  const getManufactureDueAt = (order: ManufacturingOrder) => {
+    if (order.completesAt) return new Date(order.completesAt).getTime();
+    return new Date(order.startedAt).getTime() + (order.durationDays * 24 * 60 * 60 * 1000);
+  };
+  const isManufactureReady = (order: ManufacturingOrder) => nowMs >= getManufactureDueAt(order);
+
+
+  const handleStartProject = async () => {
     if (!selectedProject || !researchState) return;
+
+    const projectCost = Math.max(0, Math.round(money));
+    if (mode === 'online') {
+      if (!championshipId) return;
+      const spendRes = await TCC_API.spendCash(
+        championshipId,
+        projectCost,
+        `R&D project started: ${customName || selectedProject.name}`,
+        { type: 'rd_project', partCategory: selectedProject.id, investment: projectCost }
+      );
+      if (spendRes.error || (spendRes.data && !spendRes.data.success)) {
+        setCashError(spendRes.data?.message || 'Insufficient cash for project.');
+        return;
+      }
+      setCashBalance((prev) => Math.max(0, prev - projectCost));
+      await loadTeamData();
+    } else if (projectCost > cashBalance) {
+      setCashError('Insufficient cash for project.');
+      return;
+    } else {
+      setCashBalance((prev) => Math.max(0, prev - projectCost));
+    }
 
     const newDesign: PartDesign = {
       id: `design-${Date.now()}`,
@@ -394,7 +447,7 @@ export const ResearchDevelopment: React.FC = () => {
       biasAllocations: normalizedBiases,
       projectedEffects,
       actualEffects: projectedEffects,
-      investment: { money },
+      investment: { money: projectCost },
       aero: { windTunnelHours: windTunnel, cfdHours: cfd },
       startedAt: new Date().toISOString(),
       projectedDurationWeeks: projectedDuration,
@@ -411,6 +464,7 @@ export const ResearchDevelopment: React.FC = () => {
       },
     });
 
+    setCashError(null);
     setShowStartModal(false);
     setSelectedProject(null);
     setBiasWeights({});
@@ -420,7 +474,7 @@ export const ResearchDevelopment: React.FC = () => {
   const handleCompleteProject = (designId: string) => {
     if (!researchState) return;
     const design = researchState.activeDesignProjects.find((d) => d.id === designId);
-    if (!design) return;
+    if (!design || !isDesignReady(design)) return;
 
     setResearchState({
       ...researchState,
@@ -467,7 +521,7 @@ export const ResearchDevelopment: React.FC = () => {
     });
   };
 
-  const handleStartManufacture = () => {
+  const handleStartManufacture = async () => {
     if (!selectedDesignForManufacture || !researchState) return;
 
     const projectDef = PROJECTS.find((p) => p.id === selectedDesignForManufacture.partCategory);
@@ -479,6 +533,33 @@ export const ResearchDevelopment: React.FC = () => {
       manufactureMode
     );
 
+    if (mode === 'online') {
+      if (!championshipId) return;
+      const spendRes = await TCC_API.spendCash(
+        championshipId,
+        cost,
+        `Manufacturing started: ${selectedDesignForManufacture.displayName}`,
+        {
+          type: 'manufacturing_order',
+          designId: selectedDesignForManufacture.id,
+          quantity: manufactureQuantity,
+          manufacturingMode: manufactureMode,
+        }
+      );
+      if (spendRes.error || (spendRes.data && !spendRes.data.success)) {
+        setCashError(spendRes.data?.message || 'Insufficient cash for manufacturing.');
+        return;
+      }
+      setCashBalance((prev) => Math.max(0, prev - cost));
+      await loadTeamData();
+    } else if (cost > cashBalance) {
+      setCashError('Insufficient cash for manufacturing.');
+      return;
+    } else {
+      setCashBalance((prev) => Math.max(0, prev - cost));
+    }
+
+    const completesAt = new Date(Date.now() + (durationDays * 24 * 60 * 60 * 1000)).toISOString();
     const newOrder: ManufacturingOrder = {
       id: `mfg-${Date.now()}`,
       designId: selectedDesignForManufacture.id,
@@ -489,6 +570,7 @@ export const ResearchDevelopment: React.FC = () => {
       cost,
       durationDays,
       startedAt: new Date().toISOString(),
+      completesAt,
     };
 
     setResearchState({
@@ -496,6 +578,7 @@ export const ResearchDevelopment: React.FC = () => {
       manufacturingQueue: [...researchState.manufacturingQueue, newOrder],
     });
 
+    setCashError(null);
     setShowManufactureModal(false);
     setSelectedDesignForManufacture(null);
     setManufactureQuantity(1);
@@ -505,7 +588,7 @@ export const ResearchDevelopment: React.FC = () => {
   const handleCompleteManufacture = (orderId: string) => {
     if (!researchState) return;
     const order = researchState.manufacturingQueue.find((o) => o.id === orderId);
-    if (!order) return;
+    if (!order || !isManufactureReady(order)) return;
 
     const updatedDesigns = researchState.completedDesigns.map((design) => {
       if (design.id !== order.designId) return design;
@@ -559,7 +642,63 @@ export const ResearchDevelopment: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <PageHeader title="R&D" description="Develop car parts and manage installations" />
+      <PageHeader
+        title="R&D"
+        description="Develop car parts and manage installations"
+        action={
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Available Cash</div>
+            <div className="mt-1 flex items-center justify-end gap-2 text-2xl font-black text-white">
+              <Wallet size={20} className="text-green-400" />
+              <span>{cashBalance.toLocaleString()} CASH</span>
+            </div>
+          </div>
+        }
+      />
+
+      {cashError && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {cashError}
+        </div>
+      )}
+
+      {/* Cash Flow */}
+      <GlassCard className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-white">Cash Flow</h3>
+            <p className="text-xs text-gray-400">R&D spending and recent championship cash activity</p>
+          </div>
+          {team?.budget ? (
+            <div className="text-right text-sm text-gray-400">
+              Team budget
+              <div className="text-lg font-bold text-white">{team.budget.toLocaleString()} CASH</div>
+            </div>
+          ) : null}
+        </div>
+
+        {mode === 'online' ? (
+          cashLedger.length === 0 ? (
+            <p className="text-sm text-gray-400">No cash entries recorded yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {cashLedger.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-sm">
+                  <div>
+                    <div className="font-semibold text-white">{entry.description || entry.entry_type}</div>
+                    <div className="text-xs text-gray-500">{new Date(entry.created_at).toLocaleString()}</div>
+                  </div>
+                  <div className={entry.amount_cash >= 0 ? 'font-bold text-green-400' : 'font-bold text-red-400'}>
+                    {entry.amount_cash >= 0 ? '+' : ''}{Number(entry.amount_cash || 0).toLocaleString()} CASH
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <p className="text-sm text-gray-400">Offline mode uses the selected team budget as available development cash.</p>
+        )}
+      </GlassCard>
 
       {/* Current Performance Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -858,6 +997,8 @@ export const ResearchDevelopment: React.FC = () => {
           <div className="space-y-3">
             {researchState.activeDesignProjects.map((design) => {
               const Icon = ICON_MAP[design.partCategory];
+              const designDueAt = getDesignDueAt(design);
+              const ready = isDesignReady(design);
               return (
                 <div key={design.id} className="bg-black/40 border border-white/10 rounded-lg p-4">
                   <div className="flex items-center gap-3">
@@ -867,14 +1008,19 @@ export const ResearchDevelopment: React.FC = () => {
                     <div className="flex-1">
                       <div className="text-sm font-bold text-white">{design.displayName}</div>
                       <div className="text-xs text-gray-500">{design.code}</div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        Ready {new Date(designDueAt).toLocaleString()}
+                      </div>
                     </div>
                     <div className="text-xs text-gray-400">{design.projectedDurationWeeks}w</div>
                     <GlassButton
                       onClick={() => handleCompleteProject(design.id)}
                       variant="secondary"
                       className="text-xs px-3 py-1"
+                      disabled={!ready}
+                      title={ready ? 'Project is ready to complete' : 'Project is still in development'}
                     >
-                      Complete
+                      {ready ? 'Complete' : 'In Progress'}
                     </GlassButton>
                   </div>
                 </div>
@@ -947,6 +1093,8 @@ export const ResearchDevelopment: React.FC = () => {
             {researchState.manufacturingQueue.map((order) => {
               const design = researchState.completedDesigns.find((d) => d.id === order.designId);
               const Icon = design ? ICON_MAP[design.partCategory] : Activity;
+              const ready = isManufactureReady(order);
+              const completesAt = getManufactureDueAt(order);
               return (
                 <div key={order.id} className="bg-black/40 border border-white/10 rounded-lg p-4">
                   <div className="flex items-center gap-3">
@@ -958,13 +1106,18 @@ export const ResearchDevelopment: React.FC = () => {
                       <div className="text-xs text-gray-500">
                         {order.quantity}x · {order.mode} mode · {order.durationDays} days · ${order.cost.toLocaleString()}
                       </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        Ready {new Date(completesAt).toLocaleString()}
+                      </div>
                     </div>
                     <GlassButton
                       onClick={() => handleCompleteManufacture(order.id)}
                       variant="secondary"
                       className="text-xs px-3 py-1"
+                      disabled={!ready}
+                      title={ready ? 'Order is ready to complete' : 'Order is still building'}
                     >
-                      Complete
+                      {ready ? 'Complete' : 'Building'}
                     </GlassButton>
                   </div>
                 </div>
@@ -1187,7 +1340,7 @@ export const ResearchDevelopment: React.FC = () => {
                     >
                       Back
                     </GlassButton>
-                    <GlassButton onClick={handleStartProject} className="flex-1">
+                    <GlassButton onClick={handleStartProject} className="flex-1" disabled={money > cashBalance}>
                       Start Development
                     </GlassButton>
                   </div>
@@ -1305,7 +1458,7 @@ export const ResearchDevelopment: React.FC = () => {
                 >
                   Cancel
                 </GlassButton>
-                <GlassButton onClick={handleStartManufacture} className="flex-1">
+                <GlassButton onClick={handleStartManufacture} className="flex-1" disabled={calculateManufacturingOrder(PROJECTS.find((p) => p.id === selectedDesignForManufacture.partCategory)!, manufactureQuantity, manufactureMode).cost > cashBalance}>
                   Start Manufacturing
                 </GlassButton>
               </div>

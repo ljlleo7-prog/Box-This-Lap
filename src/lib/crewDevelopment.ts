@@ -1,5 +1,19 @@
 import type { CrewState, CrewSpecialization, CrewTrainingPlan, CrewDepartment, DaySchedule, PitCrewActivity } from '../types/championship';
 
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const getDrillErrorReduction = (currentErrorRate: number, fatigueLoad: number) => {
+  const headroom = clamp(currentErrorRate / 100, 0.2, 1);
+  const fatiguePenalty = 1 - 0.4 * Math.pow(clamp(fatigueLoad, 0, 100) / 100, 1.1);
+  return 2.8 * Math.pow(headroom, 0.9) * Math.max(0.45, fatiguePenalty);
+};
+
+const getExerciseSpeedGain = (currentSpeedBonus: number, fatigueLoad: number) => {
+  const diminishingReturns = 1 / (1 + Math.max(0, currentSpeedBonus) / 6);
+  const fatiguePenalty = 1 - 0.35 * Math.pow(clamp(fatigueLoad, 0, 100) / 100, 1.15);
+  return 0.9 * diminishingReturns * Math.max(0.5, fatiguePenalty);
+};
+
 // Process Pit Crew Schedule
 export const processPitCrewSchedule = (
   crew: CrewState,
@@ -14,38 +28,54 @@ export const processPitCrewSchedule = (
   let totalFatigue = 0;
   let errorRateChange = 0;
   let speedBonusChange = 0;
+  let currentFatigue = crew.workload;
+  let currentErrorRate = crew.errorRate ?? 50;
+  let currentSpeedBonus = crew.speedBonus ?? 0;
 
   schedule.forEach((day) => {
     if (day.isRaceDay) {
-      totalFatigue += 30;
-      totalXP += 5;
       return;
     }
 
     [day.amActivity, day.pmActivity].forEach((activity) => {
-      if (!activity) return;
+      if (!activity) {
+        return;
+      }
 
       switch (activity as PitCrewActivity) {
-        case 'drills':
-          totalXP += 3;
-          totalFatigue += 2;
-          errorRateChange -= 2;
+        case 'drills': {
+          totalXP += Math.round(2 + currentErrorRate / 40);
+          totalFatigue += 2.5;
+          currentFatigue = clamp(currentFatigue + 2.5, 0, 100);
+          const reduction = getDrillErrorReduction(currentErrorRate, currentFatigue);
+          errorRateChange -= reduction;
+          currentErrorRate = clamp(currentErrorRate - reduction, 0, 100);
           break;
-        case 'exercise':
+        }
+        case 'exercise': {
           totalXP += 1;
-          totalFatigue += 3;
-          speedBonusChange += 0.5;
+          totalFatigue += 3.5;
+          currentFatigue = clamp(currentFatigue + 3.5, 0, 100);
+          const gain = getExerciseSpeedGain(currentSpeedBonus, currentFatigue);
+          speedBonusChange += gain;
+          currentSpeedBonus += gain;
           break;
-        case 'chill':
-          totalFatigue -= 5;
+        }
+        case 'chill': {
+          totalFatigue -= 3;
+          currentFatigue = clamp(currentFatigue - 3, 0, 100);
+          const drift = 0.45 + 1.35 * Math.pow(currentFatigue / 100, 1.35);
+          errorRateChange += drift;
+          currentErrorRate = clamp(currentErrorRate + drift, 0, 100);
           break;
+        }
       }
     });
   });
 
   return {
     xpGain: totalXP,
-    fatigueChange: totalFatigue,
+    fatigueChange: Math.round(totalFatigue),
     errorRateChange,
     speedBonusChange,
   };

@@ -12,6 +12,7 @@ export const Championships: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newChampName, setNewChampName] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
   const navigate = useNavigate();
   const setActiveOnlineContext = useChampionshipStore((state) => state.setActiveOnlineContext);
 
@@ -41,19 +42,30 @@ export const Championships: React.FC = () => {
     if (!newChampName.trim()) return;
 
     setCreating(true);
+    setCreateError(null);
     try {
       const result = await TCC_API.createChampionship(newChampName);
+      if (result?.error) {
+        throw new Error(result.error);
+      }
       // Result contains the new championship object
-      if (result && result.championship) {
-        setChampionships([...championships, result.championship]);
+      if (result && result.id) {
+        setChampionships([...championships, result]);
+        setActiveOnlineContext({ championshipId: result.id });
         setNewChampName('');
+        navigate(`/championships/${result.id}`);
+      } else if (result && result.championship) {
+        setChampionships([...championships, result.championship]);
+        setActiveOnlineContext({ championshipId: result.championship.id });
+        setNewChampName('');
+        navigate(`/championships/${result.championship.id}`);
       } else {
         // Fallback reload if response structure varies
         loadChampionships();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create championship:', err);
-      alert('Failed to create championship');
+      setCreateError(err?.message || err?.error?.message || err?.details || 'Failed to create championship');
     } finally {
       setCreating(false);
     }
@@ -90,6 +102,9 @@ export const Championships: React.FC = () => {
             Create
           </GlassButton>
         </GlassCard>
+        {createError && (
+          <div className="text-sm text-red-400">{createError}</div>
+        )}
       </div>
 
       {loading ? (

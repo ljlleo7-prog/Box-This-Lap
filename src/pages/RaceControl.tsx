@@ -15,6 +15,8 @@ import { DRIVERS } from '../data/initialData';
 import { StrategyStint, TyreCompound, PreRaceSetup, PowerUnitPhilosophy, BatteryAllocationMode, ActiveAeroMode } from '../types';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { TyreModel, TYRE_COMPOUNDS } from '../engine/systems/TyreModel';
+import { useChampionshipStore } from '../store/championshipStore';
+import { supabase } from '../lib/supabase';
 
 export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   const { weekendId } = useParams<{ weekendId: string }>();
@@ -23,24 +25,40 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   const [loading, setLoading] = useState(!!weekendId);
   const [error, setError] = useState<string | null>(null);
   const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
+  const [liveSyncError, setLiveSyncError] = useState<string | null>(null);
+  const liveSyncInFlightRef = useRef(false);
+  const hydratedLiveRevisionRef = useRef<number>(0);
 
-  const { 
-    initRace, 
-    startRace, 
-    isPlaying, 
-    raceState, 
-    setTrack, 
+  const {
+    initRace,
+    initRaceFromSnapshot,
+    startRace,
+    isPlaying,
+    raceState,
+    onlineDriverReadiness,
+    onlinePitCrewReadiness,
+    setTrack,
     selectedTrackId,
     toggleWeatherMode,
     fetchRealWeather,
     gameSpeed,
     setGameSpeed,
+    setAuthoritativeSessionSpeed,
     updateStrategy,
-    applyPreRaceSetup
+    applyPreRaceSetup,
+    isAuthoritative,
+    authorityUserId,
+    authorityRole,
+    liveRevision,
+    setLiveAuthority,
+    applyLiveSnapshot,
+    serializeLiveRaceState,
   } = useRaceStore();
+  const teamId = useChampionshipStore((state) => state.teamId);
   const playerDriverIds = useMemo(() => DRIVERS.filter(driver => driver.team === 'McLaren').map(driver => driver.id), []);
   const [preRaceSetup, setPreRaceSetup] = useState<Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }>>({});
   const hydratedPreRaceIdRef = useRef<string | null>(null);
+  const [authoritativeSpeed, setAuthoritativeSpeed] = useState<1 | 2 | 5 | 10>(1);
   
   // Start game loop
   useGameLoop();
@@ -66,10 +84,41 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
         try {
             const { data: weekend, error } = await TCC_API.getWeekend(weekendId);
             if (error) throw error;
-            
-            // Set track from weekend data
-            // Note: In a real implementation, we would also load the teams and grid here
+
             setTrack(weekend.track_id);
+
+            const sessionSpeed = searchParams.get('session') === 'practice'
+              ? (weekend.practice_speed_multiplier ?? weekend.speed_multiplier ?? 1)
+              : searchParams.get('session') === 'quali'
+                ? (weekend.quali_speed_multiplier ?? weekend.speed_multiplier ?? 1)
+                : (weekend.race_speed_multiplier ?? weekend.speed_multiplier ?? 1);
+            setAuthoritativeSpeed(sessionSpeed);
+            setAuthoritativeSessionSpeed(sessionSpeed);
+
+            const live = await TCC_API.getRaceLive(weekendId);
+            if (live.snapshot?.race_state) {
+              hydratedLiveRevisionRef.current = live.snapshot.revision;
+              await initRaceFromSnapshot(live.snapshot, weekend.track_id);
+              setLiveAuthority({
+                authorityUserId: live.authorityUserId,
+                authorityRole: live.authorityRole,
+                isAuthoritative: live.isRequesterAuthority,
+                revision: live.snapshot.revision,
+                sessionType: live.sessionType,
+                syncedAt: live.snapshot.updated_at,
+              });
+              setLoading(false);
+              return;
+            }
+
+            setLiveAuthority({
+              authorityUserId: live.authorityUserId,
+              authorityRole: live.authorityRole,
+              isAuthoritative: live.isRequesterAuthority,
+              revision: live.snapshot?.revision ?? 0,
+              sessionType: live.sessionType,
+              syncedAt: live.snapshot?.updated_at ?? null,
+            });
             setPendingTrackId(weekend.track_id);
         } catch (err) {
             console.error(err);
@@ -83,10 +132,60 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
 
   useEffect(() => {
       if (!pendingTrackId) return;
-      initRace(pendingTrackId);
-      setLoading(false);
-      setPendingTrackId(null);
+      const initialize = async () => {
+        await initRace(pendingTrackId);
+        setLoading(false);
+        setPendingTrackId(null);
+      };
+      initialize();
   }, [pendingTrackId, initRace]);
+
+  useEffect(() => {
+      if (!weekendId || devMode || !raceState || !teamId) return;
+
+      const syncLiveState = async () => {
+        if (liveSyncInFlightRef.current) return;
+        liveSyncInFlightRef.current = true;
+
+        try {
+          const live = await TCC_API.syncRaceLive({
+            weekendId,
+            teamId,
+            isRunning: isPlaying,
+            simTime: isPlaying ? raceState.elapsedTime : undefined,
+            raceState: isPlaying && isAuthoritative ? serializeLiveRaceState() : undefined,
+          });
+
+          setLiveAuthority({
+            authorityUserId: live.authorityUserId,
+            authorityRole: live.authorityRole,
+            isAuthoritative: live.isRequesterAuthority,
+            revision: live.snapshot?.revision ?? liveRevision,
+            sessionType: live.sessionType,
+            syncedAt: live.snapshot?.updated_at ?? new Date().toISOString(),
+          });
+
+          if (live.snapshot && live.snapshot.revision > hydratedLiveRevisionRef.current) {
+            const shouldHydrate = !live.isRequesterAuthority || live.snapshot.authority_user_id !== (await supabase.auth.getUser()).data.user?.id;
+            if (shouldHydrate) {
+              hydratedLiveRevisionRef.current = live.snapshot.revision;
+              applyLiveSnapshot(live.snapshot);
+            }
+          }
+
+          setLiveSyncError(null);
+        } catch (err) {
+          console.error('Failed to sync live race state', err);
+          setLiveSyncError('Live sync disconnected');
+        } finally {
+          liveSyncInFlightRef.current = false;
+        }
+      };
+
+      syncLiveState();
+      const interval = window.setInterval(syncLiveState, 2000);
+      return () => window.clearInterval(interval);
+  }, [weekendId, devMode, raceState, teamId, isPlaying, isAuthoritative, serializeLiveRaceState, setLiveAuthority, liveRevision, applyLiveSnapshot]);
 
   // Real Weather Auto-Fetch
   useEffect(() => {
@@ -228,6 +327,35 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
       ...stint,
       endLap: index === list.length - 1 ? totalLaps : stint.endLap
     }));
+  };
+
+  const getWearyColor = (state: string) => {
+    switch (state) {
+      case 'fresh': return 'text-green-400';
+      case 'tired': return 'text-yellow-400';
+      case 'exhausted': return 'text-orange-400';
+      case 'burnt-out': return 'text-red-400';
+      default: return 'text-gray-400';
+    }
+  };
+
+  const getConfidenceBarColor = (value: number) => {
+    if (value > 80) return '#4ade80';
+    if (value < 50) return '#ef4444';
+    return '#fbbf24';
+  };
+
+  const getFocusBarColor = (value: number) => {
+    if (value > 80) return '#3b82f6';
+    if (value < 50) return '#f97316';
+    return '#60a5fa';
+  };
+
+  const handleSpeedChange = (speed: 1 | 2 | 5 | 10) => {
+    if (!isAuthoritative) return;
+    setAuthoritativeSpeed(speed);
+    setAuthoritativeSessionSpeed(speed);
+    setGameSpeed(speed);
   };
 
   const handleStartRace = () => {
@@ -413,6 +541,17 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
         </div>
         
         <div className="flex items-center gap-3">
+            {!devMode && weekendId && (
+              <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-gray-300">
+                <span className={clsx(
+                  'h-2 w-2 rounded-full',
+                  liveSyncError ? 'bg-red-400' : isAuthoritative ? 'bg-emerald-400' : 'bg-amber-400'
+                )} />
+                <span>{liveSyncError ? 'Sync offline' : isAuthoritative ? `${authorityRole ?? 'participant'} authority` : 'Following authority'}</span>
+                <span className="text-gray-500">{authoritativeSpeed}x session</span>
+                {authorityUserId && <span className="text-gray-500">{authorityUserId.slice(0, 8)}</span>}
+              </div>
+            )}
             {/* Weather Mode Toggle */}
             <button
                 onClick={toggleWeatherMode}
@@ -433,10 +572,11 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                 {[1, 2, 5, 10].map(speed => (
                     <button
                         key={speed}
-                        onClick={() => setGameSpeed(speed)}
+                        onClick={() => handleSpeedChange(speed as 1 | 2 | 5 | 10)}
+                        disabled={!isAuthoritative}
                         className={clsx(
-                            "px-3 py-1.5 text-xs font-mono font-bold transition-colors hover:bg-white/10",
-                            gameSpeed === speed ? 'text-[#00FFFF] bg-[#00FFFF]/10' : 'text-gray-500'
+                            "px-3 py-1.5 text-xs font-mono font-bold transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed",
+                            authoritativeSpeed === speed ? 'text-[#00FFFF] bg-[#00FFFF]/10' : 'text-gray-500'
                         )}
                     >
                         {speed}x
@@ -701,6 +841,22 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
               </GlassButton>
             </div>
 
+            {onlinePitCrewReadiness && (
+              <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">Online Pit Crew Readiness</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="rounded border border-white/10 bg-black/30 px-3 py-3 text-gray-300">
+                    <span className="block text-gray-500 uppercase tracking-widest mb-1">Pit Stop Error Rate</span>
+                    <div className="font-bold text-white">{onlinePitCrewReadiness.pitStopErrorRate.toFixed(1)}%</div>
+                  </div>
+                  <div className="rounded border border-white/10 bg-black/30 px-3 py-3 text-gray-300">
+                    <span className="block text-gray-500 uppercase tracking-widest mb-1">Pit Stop Speed Bonus</span>
+                    <div className="font-bold text-white">+{onlinePitCrewReadiness.pitStopSpeedBonus.toFixed(1)}%</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {playerDriverIds.map(id => {
                 const setup = preRaceSetup[id];
@@ -710,6 +866,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                 const wearSeries = buildWearSeries(normalizedStints);
                 const plannedDryRuleStatus = getPlannedDryRuleStatus(normalizedStints);
                 const theoreticalRace = buildTheoreticalRaceTime(normalizedStints);
+                const readiness = onlineDriverReadiness[id];
                 return (
                   <div key={id} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
                     <div className="flex items-center justify-between">
@@ -773,6 +930,55 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                         {setup.activeAeroMode === 'low_drag' ? 'Better straight-line speed, less loaded in turns.' : setup.activeAeroMode === 'high_downforce' ? 'More grip in corners, slower at vmax.' : 'Neutral aero platform.'}
                       </div>
                     </div>
+
+                    {readiness ? (
+                      <div className="rounded-xl border border-white/10 bg-black/30 p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] text-gray-500 uppercase tracking-widest">Training Readiness</div>
+                          <div className="text-[10px] text-gray-400">Strength {Math.round(readiness.strength)}</div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <div className="flex justify-between text-[10px] mb-1">
+                              <span className="text-gray-400 uppercase tracking-widest">Confidence</span>
+                              <span className="text-gray-300">{Math.round(readiness.morale)}%</span>
+                            </div>
+                            <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+                              <div
+                                className="h-full transition-all duration-300"
+                                style={{
+                                  width: `${readiness.morale}%`,
+                                  backgroundColor: getConfidenceBarColor(readiness.morale)
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-[10px] mb-1">
+                              <span className="text-gray-400 uppercase tracking-widest">Focus</span>
+                              <span className="text-gray-300">{Math.round(readiness.concentration)}%</span>
+                            </div>
+                            <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+                              <div
+                                className="h-full transition-all duration-300"
+                                style={{
+                                  width: `${readiness.concentration}%`,
+                                  backgroundColor: getFocusBarColor(readiness.concentration)
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+                          <span className="text-gray-400">Fatigue {Math.round(readiness.fatigue)}%</span>
+                          <span className={clsx('font-bold', getWearyColor(readiness.wearyState))}>{readiness.wearyState}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                        No online training sync data for this driver.
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div className="space-y-1">
