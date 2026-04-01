@@ -1,0 +1,4596 @@
+{
+  "generatedAt": "2026-03-28T12:07:50.502Z",
+  "source": "openf1-calculated",
+  "sessionTypes": [
+    "P",
+    "Q",
+    "R"
+  ],
+  "hotlapOnly": true,
+  "sectorsByTrack": {
+    "silverstone-gp": {
+      "trackId": "silverstone-gp",
+      "name": "Silverstone Grand Prix",
+      "totalDistance": 5891,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.487Z",
+      "curveKey": "Silverstone",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 90,
+      "avgLapTime": 93.14658888888893,
+      "avgSpeedKph": 225.87767325816714,
+      "avgMaxSpeedKph": 314.3777777777778,
+      "lapTypeCounts": {
+        "hotlap": 719,
+        "pit_out": 35,
+        "pit_in": 35,
+        "start": 18,
+        "return": 15,
+        "invalid": 5
+      },
+      "pushStrengthCounts": {
+        "max": 63,
+        "push": 33,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5891,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 13
+      },
+      "sectorCount": 13,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 296,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.63752276867031,
+          "targetSpeed": 80.63752276867031,
+          "startSpeed": 72.4900282093916,
+          "endSpeed": 78.60281849637208
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 296,
+          "endDistance": 740,
+          "type": "corner_high_speed",
+          "difficulty": 0.33246222980872897,
+          "maxSpeed": 77.38028734046789,
+          "targetSpeed": 69.71810699588477,
+          "startSpeed": 78.60281849637208,
+          "endSpeed": 63.85994794379994
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 740,
+          "endDistance": 1421,
+          "type": "corner_low_speed",
+          "difficulty": 0.5651374380852168,
+          "maxSpeed": 56.41174656518237,
+          "targetSpeed": 24.907159833630423,
+          "startSpeed": 63.85994794379994,
+          "endSpeed": 74.00337948261534
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1421,
+          "endDistance": 1776,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.68320610687023,
+          "targetSpeed": 78.68320610687023,
+          "startSpeed": 74.00337948261534,
+          "endSpeed": 74.66435997556151
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1776,
+          "endDistance": 2546,
+          "type": "corner_low_speed",
+          "difficulty": 0.5245523875002223,
+          "maxSpeed": 60.5451475945291,
+          "targetSpeed": 30.731310013717422,
+          "startSpeed": 74.66435997556151,
+          "endSpeed": 75.29715676026275
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2546,
+          "endDistance": 2635,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.66360454943133,
+          "targetSpeed": 78.66360454943133,
+          "startSpeed": 75.29715676026275,
+          "endSpeed": 78.53840440365164
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2635,
+          "endDistance": 3434,
+          "type": "corner_high_speed",
+          "difficulty": 0.3000530783238971,
+          "maxSpeed": 80.62897221266614,
+          "targetSpeed": 71.74633936261843,
+          "startSpeed": 78.53840440365164,
+          "endSpeed": 82.99606724258129
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3434,
+          "endDistance": 3641,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 84.07490079365078,
+          "targetSpeed": 84.07490079365078,
+          "startSpeed": 82.99606724258129,
+          "endSpeed": 80.99803557473025
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3641,
+          "endDistance": 4440,
+          "type": "corner_medium_speed",
+          "difficulty": 0.38616790896517184,
+          "maxSpeed": 73.05923308390939,
+          "targetSpeed": 54.12166356300434,
+          "startSpeed": 80.99803557473025,
+          "endSpeed": 81.26082508136871
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4440,
+          "endDistance": 4855,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 84.21183378500452,
+          "targetSpeed": 84.21183378500452,
+          "startSpeed": 81.26082508136871,
+          "endSpeed": 81.5805674045134
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4855,
+          "endDistance": 5329,
+          "type": "corner_medium_speed",
+          "difficulty": 0.40368079741772855,
+          "maxSpeed": 71.32453402450692,
+          "targetSpeed": 56.81649831649831,
+          "startSpeed": 81.5805674045134,
+          "endSpeed": 70.35160427230616
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 5329,
+          "endDistance": 5358,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 72.68453768453769,
+          "targetSpeed": 72.68453768453769,
+          "startSpeed": 70.35160427230616,
+          "endSpeed": 68.23133648265062
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 5358,
+          "endDistance": 5891,
+          "type": "corner_low_speed",
+          "difficulty": 0.5480735239113479,
+          "maxSpeed": 58.15784696162116,
+          "targetSpeed": 28.351964769647694,
+          "startSpeed": 68.23133648265062,
+          "endSpeed": 66.52287626504838
+        }
+      ]
+    },
+    "suzuka-gp": {
+      "trackId": "suzuka-gp",
+      "name": "Suzuka Circuit",
+      "totalDistance": 5807,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.492Z",
+      "curveKey": "Suzuka",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 793,
+      "avgLapTime": 92.93167717528378,
+      "avgSpeedKph": 223.6673714480648,
+      "avgMaxSpeedKph": 311.94451450189155,
+      "lapTypeCounts": {
+        "hotlap": 977,
+        "pit_out": 21,
+        "pit_in": 21,
+        "start": 20,
+        "return": 20,
+        "invalid": 0
+      },
+      "pushStrengthCounts": {
+        "max": 392,
+        "push": 401,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5807,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 11
+      },
+      "sectorCount": 11,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 554,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 86.13,
+          "targetSpeed": 86.13,
+          "startSpeed": 79.22875518333205,
+          "endSpeed": 83.82517298041583
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 554,
+          "endDistance": 1080,
+          "type": "corner_medium_speed",
+          "difficulty": 0.46228100034656827,
+          "maxSpeed": 66.95894115930454,
+          "targetSpeed": 44.565954118873826,
+          "startSpeed": 83.82517298041583,
+          "endSpeed": 64.04449919560275
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1080,
+          "endDistance": 1430,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4966468451338887,
+          "maxSpeed": 63.4042636116843,
+          "targetSpeed": 55.8038364096996,
+          "startSpeed": 64.04449919560275,
+          "endSpeed": 56.27564938382855
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1430,
+          "endDistance": 1955,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4737581351224871,
+          "maxSpeed": 65.77539496606182,
+          "targetSpeed": 51.591982701264136,
+          "startSpeed": 57.26946856854909,
+          "endSpeed": 73.89400002629873
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1955,
+          "endDistance": 2159,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.48505853357979,
+          "targetSpeed": 78.48505853357979,
+          "startSpeed": 73.89400002629873,
+          "endSpeed": 75.5426668263731
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2159,
+          "endDistance": 2685,
+          "type": "corner_low_speed",
+          "difficulty": 0.4920926912261864,
+          "maxSpeed": 65.2575402276546,
+          "targetSpeed": 37.660466812545586,
+          "startSpeed": 75.5426668263731,
+          "endSpeed": 67.66658372469895
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2685,
+          "endDistance": 3297,
+          "type": "corner_low_speed",
+          "difficulty": 0.5298348392101622,
+          "maxSpeed": 61.37784921579601,
+          "targetSpeed": 20.319696487318264,
+          "startSpeed": 67.66658372469895,
+          "endSpeed": 74.99782843066146
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3297,
+          "endDistance": 3589,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.59359681372548,
+          "targetSpeed": 80.59359681372548,
+          "startSpeed": 74.99782843066146,
+          "endSpeed": 80.43444206080713
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3589,
+          "endDistance": 4494,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4291979275911888,
+          "maxSpeed": 70.35123355393654,
+          "targetSpeed": 42.51228128277308,
+          "startSpeed": 80.43444206080713,
+          "endSpeed": 80.91075383710115
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4494,
+          "endDistance": 5194,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 85.48554880791723,
+          "targetSpeed": 85.48554880791723,
+          "startSpeed": 80.91075383710115,
+          "endSpeed": 80.04194498077979
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 5194,
+          "endDistance": 5807,
+          "type": "corner_low_speed",
+          "difficulty": 0.5161535165145132,
+          "maxSpeed": 62.79066788087858,
+          "targetSpeed": 25.23675539896914,
+          "startSpeed": 80.04194498077979,
+          "endSpeed": 73.78525629515873
+        }
+      ]
+    },
+    "monza-gp": {
+      "trackId": "monza-gp",
+      "name": "Autodromo Nazionale Monza",
+      "totalDistance": 5793,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.493Z",
+      "curveKey": "Monza",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 728,
+      "avgLapTime": 83.279853021978,
+      "avgSpeedKph": 248.18948365114528,
+      "avgMaxSpeedKph": 338.4587912087912,
+      "lapTypeCounts": {
+        "hotlap": 900,
+        "pit_out": 19,
+        "pit_in": 19,
+        "start": 19,
+        "return": 17,
+        "invalid": 2
+      },
+      "pushStrengthCounts": {
+        "max": 241,
+        "push": 491,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5793,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 12
+      },
+      "sectorCount": 12,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 670,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 93.61571879936808,
+          "targetSpeed": 93.61571879936808,
+          "startSpeed": 89.70857923023999,
+          "endSpeed": 88.91272706395375
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 670,
+          "endDistance": 1543,
+          "type": "corner_low_speed",
+          "difficulty": 0.4900280285257027,
+          "maxSpeed": 71.15815747476802,
+          "targetSpeed": 21.026859072032504,
+          "startSpeed": 88.91272706395375,
+          "endSpeed": 85.53883969022878
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1543,
+          "endDistance": 1892,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.88546813632333,
+          "targetSpeed": 87.88546813632333,
+          "startSpeed": 85.53883969022878,
+          "endSpeed": 85.69742015654631
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1892,
+          "endDistance": 2329,
+          "type": "corner_low_speed",
+          "difficulty": 0.558221473262352,
+          "maxSpeed": 63.499562688363206,
+          "targetSpeed": 30.412892512077295,
+          "startSpeed": 85.69742015654631,
+          "endSpeed": 63.284998242976144
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 2329,
+          "endDistance": 2358,
+          "type": "corner_high_speed",
+          "difficulty": 0.4849795740070181,
+          "maxSpeed": 68.80417799999663,
+          "targetSpeed": 65.26353874883287,
+          "startSpeed": 63.284998242976144,
+          "endSpeed": 63.841232607521064
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2358,
+          "endDistance": 2678,
+          "type": "corner_medium_speed",
+          "difficulty": 0.5318933410953389,
+          "maxSpeed": 64.91417088610568,
+          "targetSpeed": 52.169018817204304,
+          "startSpeed": 63.841232607521064,
+          "endSpeed": 64.58055899293768
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2678,
+          "endDistance": 3319,
+          "type": "corner_medium_speed",
+          "difficulty": 0.46078610796986785,
+          "maxSpeed": 72.94573965619487,
+          "targetSpeed": 48.45285455053043,
+          "startSpeed": 64.58055899293768,
+          "endSpeed": 85.04516423199966
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3319,
+          "endDistance": 3726,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 89.61052836052835,
+          "targetSpeed": 89.61052836052835,
+          "startSpeed": 85.04516423199966,
+          "endSpeed": 87.57138129977935
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3726,
+          "endDistance": 4512,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4268813862304975,
+          "maxSpeed": 76.72264280594165,
+          "targetSpeed": 48.74128091312619,
+          "startSpeed": 87.57138129977935,
+          "endSpeed": 86.27202330348952
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4512,
+          "endDistance": 4949,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 89.33088140405214,
+          "targetSpeed": 89.33088140405214,
+          "startSpeed": 86.27202330348952,
+          "endSpeed": 86.45602960079832
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4949,
+          "endDistance": 5735,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4221431912419975,
+          "maxSpeed": 77.24796610571592,
+          "targetSpeed": 53.404838585998,
+          "startSpeed": 86.45602960079832,
+          "endSpeed": 86.22064377390916
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 5735,
+          "endDistance": 5793,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.81440781440782,
+          "targetSpeed": 87.81440781440782,
+          "startSpeed": 86.22064377390916,
+          "endSpeed": 86.97034841068141
+        }
+      ]
+    },
+    "spa-gp": {
+      "trackId": "spa-gp",
+      "name": "Circuit de Spa-Francorchamps",
+      "totalDistance": 7004,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.493Z",
+      "curveKey": "Spa-Francorchamps",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 72,
+      "avgLapTime": 108.41445833333336,
+      "avgSpeedKph": 229.95954998854216,
+      "avgMaxSpeedKph": 322.80555555555554,
+      "lapTypeCounts": {
+        "hotlap": 787,
+        "pit_out": 26,
+        "pit_in": 26,
+        "start": 20,
+        "return": 20,
+        "invalid": 0
+      },
+      "pushStrengthCounts": {
+        "max": 355,
+        "push": 182,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 7004,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 10
+      },
+      "sectorCount": 10,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 810,
+          "type": "corner_low_speed",
+          "difficulty": 0.4969883371665531,
+          "maxSpeed": 67.5997931034627,
+          "targetSpeed": 22.512973137973137,
+          "startSpeed": 70.5275893519124,
+          "endSpeed": 79.90407156443783
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 810,
+          "endDistance": 2182,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 89.9104938271605,
+          "targetSpeed": 89.9104938271605,
+          "startSpeed": 79.90407156443783,
+          "endSpeed": 85.4963385861297
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 2182,
+          "endDistance": 2780,
+          "type": "corner_medium_speed",
+          "difficulty": 0.521834031837902,
+          "maxSpeed": 63.44544179932692,
+          "targetSpeed": 41.21199557766722,
+          "startSpeed": 85.4963385861297,
+          "endSpeed": 66.77438479411141
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 2780,
+          "endDistance": 3449,
+          "type": "corner_low_speed",
+          "difficulty": 0.5585144881557136,
+          "maxSpeed": 60.95427264016069,
+          "targetSpeed": 32.68328779599271,
+          "startSpeed": 64.54075261523019,
+          "endSpeed": 68.40596250555488
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 3449,
+          "endDistance": 4188,
+          "type": "corner_high_speed",
+          "difficulty": 0.3781382177353681,
+          "maxSpeed": 77.70405280735478,
+          "targetSpeed": 69.35267857142857,
+          "startSpeed": 68.40596250555488,
+          "endSpeed": 79.95409602451075
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 4188,
+          "endDistance": 4294,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.48484848484848,
+          "targetSpeed": 81.48484848484848,
+          "startSpeed": 79.95409602451075,
+          "endSpeed": 78.35402087542458
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 4294,
+          "endDistance": 4787,
+          "type": "corner_medium_speed",
+          "difficulty": 0.5272912738646762,
+          "maxSpeed": 62.84880086269149,
+          "targetSpeed": 45.450793650793656,
+          "startSpeed": 78.35402087542458,
+          "endSpeed": 57.422229838153555
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 4787,
+          "endDistance": 5596,
+          "type": "corner_medium_speed",
+          "difficulty": 0.446195087648133,
+          "maxSpeed": 71.62344960680934,
+          "targetSpeed": 44.94414251207729,
+          "startSpeed": 57.409106129935566,
+          "endSpeed": 83.19473086003826
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 5596,
+          "endDistance": 6511,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.58641975308642,
+          "targetSpeed": 87.58641975308642,
+          "startSpeed": 83.19473086003826,
+          "endSpeed": 83.05741062778739
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 6511,
+          "endDistance": 7004,
+          "type": "corner_low_speed",
+          "difficulty": 0.5736459345402729,
+          "maxSpeed": 59.294685042484865,
+          "targetSpeed": 22.36646884272997,
+          "startSpeed": 83.05741062778739,
+          "endSpeed": 58.662932085551134
+        }
+      ]
+    },
+    "china-gp": {
+      "trackId": "china-gp",
+      "name": "Shanghai International Circuit",
+      "totalDistance": 5451,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.494Z",
+      "curveKey": "Shanghai",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 817,
+      "avgLapTime": 97.44698041615669,
+      "avgSpeedKph": 198.61530153408307,
+      "avgMaxSpeedKph": 318.0660954712362,
+      "lapTypeCounts": {
+        "hotlap": 977,
+        "pit_out": 25,
+        "pit_in": 25,
+        "start": 19,
+        "return": 19,
+        "invalid": 1
+      },
+      "pushStrengthCounts": {
+        "max": 303,
+        "push": 514,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5451,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 12
+      },
+      "sectorCount": 12,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 411,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 83.25195537152058,
+          "targetSpeed": 83.25195537152058,
+          "startSpeed": 77.79422429234863,
+          "endSpeed": 79.34493595445295
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 411,
+          "endDistance": 1205,
+          "type": "corner_low_speed",
+          "difficulty": 0.589619061712094,
+          "maxSpeed": 56.213896633572695,
+          "targetSpeed": 24.875406008932195,
+          "startSpeed": 79.34493595445295,
+          "endSpeed": 72.0708722990811
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1205,
+          "endDistance": 1370,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 77.3890981376857,
+          "targetSpeed": 77.3890981376857,
+          "startSpeed": 72.0708722990811,
+          "endSpeed": 75.22638704262046
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1370,
+          "endDistance": 2054,
+          "type": "corner_low_speed",
+          "difficulty": 0.5094373767667799,
+          "maxSpeed": 64.75039052612456,
+          "targetSpeed": 21.934985664035942,
+          "startSpeed": 75.22638704262046,
+          "endSpeed": 68.9299127118894
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 2054,
+          "endDistance": 2137,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 69.19442169442169,
+          "targetSpeed": 69.19442169442169,
+          "startSpeed": 68.9299127118894,
+          "endSpeed": 68.28088563598035
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2137,
+          "endDistance": 2821,
+          "type": "corner_low_speed",
+          "difficulty": 0.5675239175217961,
+          "maxSpeed": 58.5941711194032,
+          "targetSpeed": 30.389054355919583,
+          "startSpeed": 68.28088563598035,
+          "endSpeed": 69.63729090146178
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2821,
+          "endDistance": 2849,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 71.78406799193316,
+          "targetSpeed": 71.78406799193316,
+          "startSpeed": 69.63729090146178,
+          "endSpeed": 71.29698380951122
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2849,
+          "endDistance": 3753,
+          "type": "corner_low_speed",
+          "difficulty": 0.5074568390091444,
+          "maxSpeed": 64.95784087407334,
+          "targetSpeed": 25.415501708605156,
+          "startSpeed": 71.29698380951122,
+          "endSpeed": 79.48967864138369
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3753,
+          "endDistance": 4574,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.85159492470058,
+          "targetSpeed": 87.85159492470058,
+          "startSpeed": 79.48967864138369,
+          "endSpeed": 85.02908227378789
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4574,
+          "endDistance": 4985,
+          "type": "corner_low_speed",
+          "difficulty": 0.563238629836083,
+          "maxSpeed": 59.05327436121524,
+          "targetSpeed": 19.6042663476874,
+          "startSpeed": 85.02908227378789,
+          "endSpeed": 62.22663037270357
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4985,
+          "endDistance": 5396,
+          "type": "corner_medium_speed",
+          "difficulty": 0.49620063291287553,
+          "maxSpeed": 64.71890129257807,
+          "targetSpeed": 46.048845193508114,
+          "startSpeed": 62.22663037270357,
+          "endSpeed": 70.69887103519979
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 5396,
+          "endDistance": 5451,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 74.42268461852305,
+          "targetSpeed": 74.42268461852305,
+          "startSpeed": 70.69887103519979,
+          "endSpeed": 72.56612663387199
+        }
+      ]
+    },
+    "jeddah-gp": {
+      "trackId": "jeddah-gp",
+      "name": "Jeddah Corniche Circuit",
+      "totalDistance": 6174,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.494Z",
+      "curveKey": "Jeddah",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 706,
+      "avgLapTime": 94.27154390934854,
+      "avgSpeedKph": 232.84745394453,
+      "avgMaxSpeedKph": 319.0495750708215,
+      "lapTypeCounts": {
+        "hotlap": 825,
+        "pit_out": 19,
+        "pit_in": 19,
+        "start": 16,
+        "return": 18,
+        "invalid": 2
+      },
+      "pushStrengthCounts": {
+        "max": 281,
+        "push": 425,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 6174,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 12
+      },
+      "sectorCount": 12,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 279,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 86.67397660818713,
+          "targetSpeed": 86.67397660818713,
+          "startSpeed": 85.7614088658265,
+          "endSpeed": 81.60258819170802
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 279,
+          "endDistance": 776,
+          "type": "corner_low_speed",
+          "difficulty": 0.5660279754902353,
+          "maxSpeed": 58.85394158796578,
+          "targetSpeed": 24.294399654955043,
+          "startSpeed": 81.60258819170802,
+          "endSpeed": 66.98532289397967
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 776,
+          "endDistance": 807,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 69.97139084507043,
+          "targetSpeed": 69.97139084507043,
+          "startSpeed": 66.98532289397967,
+          "endSpeed": 67.31181270534802
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 807,
+          "endDistance": 1303,
+          "type": "corner_medium_speed",
+          "difficulty": 0.5163634549428586,
+          "maxSpeed": 62.68194507505672,
+          "targetSpeed": 42.22457005341315,
+          "startSpeed": 67.31181270534802,
+          "endSpeed": 66.05929967464961
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1303,
+          "endDistance": 1986,
+          "type": "corner_medium_speed",
+          "difficulty": 0.44176399583696596,
+          "maxSpeed": 70.56573110592498,
+          "targetSpeed": 57.18067426400759,
+          "startSpeed": 66.05929967464961,
+          "endSpeed": 78.65955350584015
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1986,
+          "endDistance": 2172,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.93331106657759,
+          "targetSpeed": 81.93331106657759,
+          "startSpeed": 78.65955350584015,
+          "endSpeed": 80.06351713905929
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2172,
+          "endDistance": 2761,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4909956243174608,
+          "maxSpeed": 65.38056838824501,
+          "targetSpeed": 39.43619495834685,
+          "startSpeed": 80.06351713905929,
+          "endSpeed": 73.89053038928387
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2761,
+          "endDistance": 3599,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4141044266655731,
+          "maxSpeed": 73.45081886303014,
+          "targetSpeed": 48.30304806565064,
+          "startSpeed": 73.89053038928387,
+          "endSpeed": 82.50832892154143
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3599,
+          "endDistance": 4064,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.17567728845924,
+          "targetSpeed": 87.17567728845924,
+          "startSpeed": 82.50832892154143,
+          "endSpeed": 85.55264541903951
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4064,
+          "endDistance": 4871,
+          "type": "corner_medium_speed",
+          "difficulty": 0.39572875017685294,
+          "maxSpeed": 75.35716761726692,
+          "targetSpeed": 47.47364630393505,
+          "startSpeed": 85.55264541903951,
+          "endSpeed": 84.22041209755945
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4871,
+          "endDistance": 5336,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 88.00023665838363,
+          "targetSpeed": 88.00023665838363,
+          "startSpeed": 84.22041209755945,
+          "endSpeed": 84.67952717435699
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 5336,
+          "endDistance": 6174,
+          "type": "corner_low_speed",
+          "difficulty": 0.44752328980754896,
+          "maxSpeed": 71.28554848321772,
+          "targetSpeed": 28.9925792218211,
+          "startSpeed": 84.67952717435699,
+          "endSpeed": 83.2412203876098
+        }
+      ]
+    },
+    "miami-gp": {
+      "trackId": "miami-gp",
+      "name": "Miami International Autodrome",
+      "totalDistance": 5412,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.495Z",
+      "curveKey": "Miami",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 445,
+      "avgLapTime": 91.38862921348321,
+      "avgSpeedKph": 210.11080379883535,
+      "avgMaxSpeedKph": 321.87640449438203,
+      "lapTypeCounts": {
+        "hotlap": 495,
+        "pit_out": 14,
+        "pit_in": 14,
+        "start": 17,
+        "return": 16,
+        "invalid": 3
+      },
+      "pushStrengthCounts": {
+        "max": 365,
+        "push": 80,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5412,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 10
+      },
+      "sectorCount": 10,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 190,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 83.8724584103512,
+          "targetSpeed": 83.8724584103512,
+          "startSpeed": 81.90057907207344,
+          "endSpeed": 79.002151501522
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 190,
+          "endDistance": 870,
+          "type": "corner_low_speed",
+          "difficulty": 0.5110717130168605,
+          "maxSpeed": 65.40496311168636,
+          "targetSpeed": 27.478724864456797,
+          "startSpeed": 79.002151501522,
+          "endSpeed": 77.56576642824601
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 870,
+          "endDistance": 1033,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.50669216061185,
+          "targetSpeed": 80.50669216061185,
+          "startSpeed": 77.56576642824601,
+          "endSpeed": 78.00870333341703
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1033,
+          "endDistance": 1496,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4537743956243106,
+          "maxSpeed": 70.07462266661423,
+          "targetSpeed": 56.8567620650954,
+          "startSpeed": 78.00870333341703,
+          "endSpeed": 54.10261279638065
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1496,
+          "endDistance": 2176,
+          "type": "corner_low_speed",
+          "difficulty": 0.4838062641660982,
+          "maxSpeed": 68.28555221465311,
+          "targetSpeed": 34.18340822979998,
+          "startSpeed": 57.72412552209165,
+          "endSpeed": 82.70499502637155
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2176,
+          "endDistance": 2937,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 88.97509578544062,
+          "targetSpeed": 88.97509578544062,
+          "startSpeed": 82.70499502637155,
+          "endSpeed": 84.09053441402189
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2937,
+          "endDistance": 3345,
+          "type": "corner_low_speed",
+          "difficulty": 0.6380337243766243,
+          "maxSpeed": 51.56906033717925,
+          "targetSpeed": 25.377242681775257,
+          "startSpeed": 84.09053441402189,
+          "endSpeed": 35.077248157783366
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3345,
+          "endDistance": 3998,
+          "type": "corner_low_speed",
+          "difficulty": 0.5798762086602519,
+          "maxSpeed": 57.998570475183946,
+          "targetSpeed": 22.15669445806768,
+          "startSpeed": 35.077248157783366,
+          "endSpeed": 79.84234321272382
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3998,
+          "endDistance": 4705,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 88.51030024106947,
+          "targetSpeed": 88.51030024106947,
+          "startSpeed": 79.84234321272382,
+          "endSpeed": 83.7040594058494
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4705,
+          "endDistance": 5412,
+          "type": "corner_low_speed",
+          "difficulty": 0.4959596917809683,
+          "maxSpeed": 67.00514258520714,
+          "targetSpeed": 19.901622971285892,
+          "startSpeed": 83.7040594058494,
+          "endSpeed": 78.56257920529634
+        }
+      ]
+    },
+    "imola-gp": {
+      "trackId": "imola-gp",
+      "name": "Autodromo Enzo e Dino Ferrari",
+      "totalDistance": 4909,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.495Z",
+      "curveKey": "Imola",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 646,
+      "avgLapTime": 81.18156191950467,
+      "avgSpeedKph": 216.25772853263263,
+      "avgMaxSpeedKph": 314.6795665634675,
+      "lapTypeCounts": {
+        "hotlap": 1094,
+        "pit_out": 37,
+        "pit_in": 37,
+        "start": 19,
+        "return": 18,
+        "invalid": 2
+      },
+      "pushStrengthCounts": {
+        "max": 195,
+        "push": 463,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4909,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 13
+      },
+      "sectorCount": 13,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 691,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.05928689883915,
+          "targetSpeed": 87.05928689883915,
+          "startSpeed": 80.36431325512208,
+          "endSpeed": 84.74790555005826
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 691,
+          "endDistance": 1283,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4590710486520819,
+          "maxSpeed": 68.01533564721186,
+          "targetSpeed": 41.34672444756774,
+          "startSpeed": 84.74790555005826,
+          "endSpeed": 75.35180649957684
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1283,
+          "endDistance": 1406,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 77.58718835567085,
+          "targetSpeed": 77.58718835567085,
+          "startSpeed": 75.35180649957684,
+          "endSpeed": 75.50887941635284
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1406,
+          "endDistance": 1776,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4974892771168718,
+          "maxSpeed": 63.99985805545782,
+          "targetSpeed": 45.72935941492643,
+          "startSpeed": 75.50887941635284,
+          "endSpeed": 55.59995261516298
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1776,
+          "endDistance": 2195,
+          "type": "corner_low_speed",
+          "difficulty": 0.5834354285000091,
+          "maxSpeed": 56.36928629855763,
+          "targetSpeed": 26.868907262797936,
+          "startSpeed": 55.59995261516298,
+          "endSpeed": 70.29425866416375
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2195,
+          "endDistance": 2368,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 76.61286780851998,
+          "targetSpeed": 76.61286780851998,
+          "startSpeed": 70.29425866416375,
+          "endSpeed": 75.14339981563883
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2368,
+          "endDistance": 2812,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4408898755855859,
+          "maxSpeed": 69.90169752167658,
+          "targetSpeed": 53.11320273441485,
+          "startSpeed": 75.14339981563883,
+          "endSpeed": 73.86472120415563
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2812,
+          "endDistance": 2886,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 75.18719806763285,
+          "targetSpeed": 75.18719806763285,
+          "startSpeed": 73.86472120415563,
+          "endSpeed": 71.9268513101011
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2886,
+          "endDistance": 3330,
+          "type": "corner_low_speed",
+          "difficulty": 0.5250346529006353,
+          "maxSpeed": 62.54198557366635,
+          "targetSpeed": 34.75694444444444,
+          "startSpeed": 71.9268513101011,
+          "endSpeed": 70.27366349369464
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3330,
+          "endDistance": 3922,
+          "type": "corner_low_speed",
+          "difficulty": 0.5137409937589512,
+          "maxSpeed": 63.71917795687274,
+          "targetSpeed": 27.802910052910054,
+          "startSpeed": 68.80634989263099,
+          "endSpeed": 74.81366029146658
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3922,
+          "endDistance": 4169,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.5703027465668,
+          "targetSpeed": 81.5703027465668,
+          "startSpeed": 74.81366029146658,
+          "endSpeed": 78.10840401443119
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 4169,
+          "endDistance": 4884,
+          "type": "corner_low_speed",
+          "difficulty": 0.5074592276274112,
+          "maxSpeed": 64.37175712315495,
+          "targetSpeed": 31.861828843687007,
+          "startSpeed": 78.10840401443119,
+          "endSpeed": 76.63302632083663
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 4884,
+          "endDistance": 4909,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.0985552115583,
+          "targetSpeed": 78.0985552115583,
+          "startSpeed": 76.63302632083663,
+          "endSpeed": 77.0532312983435
+        }
+      ]
+    },
+    "singapore-gp": {
+      "trackId": "singapore-gp",
+      "name": "Marina Bay Street Circuit",
+      "totalDistance": 4940,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.496Z",
+      "curveKey": "Singapore",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 830,
+      "avgLapTime": 97.3868349397588,
+      "avgSpeedKph": 180.29481614091978,
+      "avgMaxSpeedKph": 294.51807228915663,
+      "lapTypeCounts": {
+        "hotlap": 1143,
+        "pit_out": 23,
+        "pit_in": 23,
+        "start": 20,
+        "return": 20,
+        "invalid": 0
+      },
+      "pushStrengthCounts": {
+        "max": 273,
+        "push": 578,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4940,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 15
+      },
+      "sectorCount": 15,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 248,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.36303176241256,
+          "targetSpeed": 79.36303176241256,
+          "startSpeed": 74.9058114878765,
+          "endSpeed": 74.30940776860275
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 248,
+          "endDistance": 745,
+          "type": "corner_low_speed",
+          "difficulty": 0.5841323134533584,
+          "maxSpeed": 52.621762206709846,
+          "targetSpeed": 23.809023399187335,
+          "startSpeed": 74.30940776860275,
+          "endSpeed": 61.94758443668259
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 745,
+          "endDistance": 1291,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4602932852472459,
+          "maxSpeed": 63.45882781524361,
+          "targetSpeed": 38.95510925636122,
+          "startSpeed": 61.94758443668259,
+          "endSpeed": 75.2848097908934
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1291,
+          "endDistance": 1614,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.37908157378563,
+          "targetSpeed": 81.37908157378563,
+          "startSpeed": 75.2848097908934,
+          "endSpeed": 77.35035765133976
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1614,
+          "endDistance": 1911,
+          "type": "corner_low_speed",
+          "difficulty": 0.5350215185949283,
+          "maxSpeed": 57.48432532619234,
+          "targetSpeed": 31.524153572764682,
+          "startSpeed": 77.35035765133976,
+          "endSpeed": 40.47707768191378
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1911,
+          "endDistance": 2358,
+          "type": "corner_low_speed",
+          "difficulty": 0.6319794007991755,
+          "maxSpeed": 47.78577537882398,
+          "targetSpeed": 22.448868032428432,
+          "startSpeed": 42.22058487859316,
+          "endSpeed": 61.195258030312694
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2358,
+          "endDistance": 2507,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 71.41418883672404,
+          "targetSpeed": 71.41418883672404,
+          "startSpeed": 61.195258030312694,
+          "endSpeed": 65.72789493157396
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2507,
+          "endDistance": 2904,
+          "type": "corner_low_speed",
+          "difficulty": 0.6046405156446186,
+          "maxSpeed": 50.56137618378744,
+          "targetSpeed": 28.938972900779802,
+          "startSpeed": 65.72789493157396,
+          "endSpeed": 47.40610097636374
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2904,
+          "endDistance": 3277,
+          "type": "corner_low_speed",
+          "difficulty": 0.609378879429544,
+          "maxSpeed": 50.0827162361841,
+          "targetSpeed": 18.33764414268779,
+          "startSpeed": 46.18016643791456,
+          "endSpeed": 64.8404680333528
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3277,
+          "endDistance": 3401,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 72.89663332257717,
+          "targetSpeed": 72.89663332257717,
+          "startSpeed": 64.8404680333528,
+          "endSpeed": 71.24776078379783
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3401,
+          "endDistance": 3922,
+          "type": "corner_low_speed",
+          "difficulty": 0.5026058165729742,
+          "maxSpeed": 60.642113132301056,
+          "targetSpeed": 24.451964049128083,
+          "startSpeed": 71.24776078379783,
+          "endSpeed": 71.90539987836323
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 3922,
+          "endDistance": 4170,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.48086946221274,
+          "targetSpeed": 79.48086946221274,
+          "startSpeed": 71.90539987836323,
+          "endSpeed": 75.94580250640898
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 4170,
+          "endDistance": 4543,
+          "type": "corner_low_speed",
+          "difficulty": 0.5464979201447383,
+          "maxSpeed": 56.35672355357531,
+          "targetSpeed": 29.32602282929332,
+          "startSpeed": 75.94580250640898,
+          "endSpeed": 59.4701422678191
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 4543,
+          "endDistance": 4915,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4433263328509881,
+          "maxSpeed": 65.1051127824129,
+          "targetSpeed": 53.293763288447906,
+          "startSpeed": 59.4701422678191,
+          "endSpeed": 68.29484440714513
+        },
+        {
+          "id": "s15",
+          "name": "S15",
+          "startDistance": 4915,
+          "endDistance": 4940,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 71.13855421686748,
+          "targetSpeed": 71.13855421686748,
+          "startSpeed": 68.29484440714513,
+          "endSpeed": 69.14984763294451
+        }
+      ]
+    },
+    "catalunya-gp": {
+      "trackId": "catalunya-gp",
+      "name": "Circuit de Barcelona-Catalunya",
+      "totalDistance": 4657,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.496Z",
+      "curveKey": "Catalunya",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 269,
+      "avgLapTime": 79.79775836431227,
+      "avgSpeedKph": 208.50347615842017,
+      "avgMaxSpeedKph": 317.3866171003717,
+      "lapTypeCounts": {
+        "hotlap": 1058,
+        "pit_out": 54,
+        "pit_in": 54,
+        "start": 19,
+        "return": 17,
+        "invalid": 2
+      },
+      "pushStrengthCounts": {
+        "max": 50,
+        "push": 219,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4657,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 14
+      },
+      "sectorCount": 14,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 608,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.93535353535353,
+          "targetSpeed": 87.93535353535353,
+          "startSpeed": 81.84434887360592,
+          "endSpeed": 85.53368586636638
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 608,
+          "endDistance": 1287,
+          "type": "corner_low_speed",
+          "difficulty": 0.5126635648742575,
+          "maxSpeed": 64.47354255515599,
+          "targetSpeed": 37.160493827160494,
+          "startSpeed": 85.53368586636638,
+          "endSpeed": 68.8996284742252
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1287,
+          "endDistance": 1521,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.11388888888888,
+          "targetSpeed": 78.11388888888888,
+          "startSpeed": 68.8996284742252,
+          "endSpeed": 74.65712644293045
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1521,
+          "endDistance": 1919,
+          "type": "corner_low_speed",
+          "difficulty": 0.5578254371515532,
+          "maxSpeed": 59.688910909917446,
+          "targetSpeed": 36.82564917859035,
+          "startSpeed": 74.65712644293045,
+          "endSpeed": 61.51106886806366
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1919,
+          "endDistance": 2317,
+          "type": "corner_low_speed",
+          "difficulty": 0.5956695832558192,
+          "maxSpeed": 55.611144610313545,
+          "targetSpeed": 26.816568047337277,
+          "startSpeed": 60.5459478252224,
+          "endSpeed": 64.91073666391671
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2317,
+          "endDistance": 2387,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 69.8965811965812,
+          "targetSpeed": 69.8965811965812,
+          "startSpeed": 64.91073666391671,
+          "endSpeed": 65.32272335183045
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2387,
+          "endDistance": 2715,
+          "type": "corner_low_speed",
+          "difficulty": 0.5615696353696668,
+          "maxSpeed": 59.28833416267602,
+          "targetSpeed": 38.12669929309407,
+          "startSpeed": 65.32272335183045,
+          "endSpeed": 63.54008402484803
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2715,
+          "endDistance": 3159,
+          "type": "corner_high_speed",
+          "difficulty": 0.4265444464138699,
+          "maxSpeed": 70.87083698843713,
+          "targetSpeed": 62.3463687150838,
+          "startSpeed": 63.54008402484803,
+          "endSpeed": 77.34469489610495
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3159,
+          "endDistance": 3300,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.59052757793765,
+          "targetSpeed": 80.59052757793765,
+          "startSpeed": 77.34469489610495,
+          "endSpeed": 77.06948819247475
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3300,
+          "endDistance": 3627,
+          "type": "corner_low_speed",
+          "difficulty": 0.6014941132936495,
+          "maxSpeed": 54.97769095240336,
+          "targetSpeed": 29.046787231127553,
+          "startSpeed": 77.06948819247475,
+          "endSpeed": 46.752899408984824
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3627,
+          "endDistance": 4025,
+          "type": "corner_low_speed",
+          "difficulty": 0.6108967497100918,
+          "maxSpeed": 53.951696440321534,
+          "targetSpeed": 31.605681987208094,
+          "startSpeed": 46.752899408984824,
+          "endSpeed": 65.61463745365621
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 4025,
+          "endDistance": 4049,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 67.18640560331104,
+          "targetSpeed": 67.18640560331104,
+          "startSpeed": 65.61463745365621,
+          "endSpeed": 66.94142413423754
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 4049,
+          "endDistance": 4610,
+          "type": "corner_high_speed",
+          "difficulty": 0.4020411536176101,
+          "maxSpeed": 73.47042929472342,
+          "targetSpeed": 66.00109238451935,
+          "startSpeed": 66.94142413423754,
+          "endSpeed": 77.88152621332104
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 4610,
+          "endDistance": 4657,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.76765799256505,
+          "targetSpeed": 79.76765799256505,
+          "startSpeed": 77.88152621332104,
+          "endSpeed": 78.75886540142587
+        }
+      ]
+    },
+    "bahrain-gp": {
+      "trackId": "bahrain-gp",
+      "name": "Bahrain International Circuit",
+      "totalDistance": 5412,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.497Z",
+      "curveKey": "Sakhir",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 872,
+      "avgLapTime": 98.30688646788992,
+      "avgSpeedKph": 195.4944720248586,
+      "avgMaxSpeedKph": 310.79701834862385,
+      "lapTypeCounts": {
+        "hotlap": 1005,
+        "pit_out": 42,
+        "pit_in": 42,
+        "start": 20,
+        "return": 19,
+        "invalid": 1
+      },
+      "pushStrengthCounts": {
+        "max": 274,
+        "push": 598,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5412,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 14
+      },
+      "sectorCount": 14,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 490,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 85.336748852599,
+          "targetSpeed": 85.336748852599,
+          "startSpeed": 81.19528346540544,
+          "endSpeed": 81.67694231423886
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 490,
+          "endDistance": 1115,
+          "type": "corner_low_speed",
+          "difficulty": 0.5282240410161445,
+          "maxSpeed": 60.97775964081647,
+          "targetSpeed": 18.68809662257111,
+          "startSpeed": 81.67694231423886,
+          "endSpeed": 74.21698728792931
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1115,
+          "endDistance": 1305,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.24348799348799,
+          "targetSpeed": 79.24348799348799,
+          "startSpeed": 74.21698728792931,
+          "endSpeed": 75.51711465476136
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1305,
+          "endDistance": 1713,
+          "type": "corner_low_speed",
+          "difficulty": 0.5559137978097156,
+          "maxSpeed": 58.12327057779999,
+          "targetSpeed": 30.507032846141758,
+          "startSpeed": 75.51711465476136,
+          "endSpeed": 59.97581048609414
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1713,
+          "endDistance": 1741,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 64.45212589270885,
+          "targetSpeed": 64.45212589270885,
+          "startSpeed": 59.97581048609414,
+          "endSpeed": 59.5911924891069
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1741,
+          "endDistance": 2067,
+          "type": "corner_medium_speed",
+          "difficulty": 0.5260113047403792,
+          "maxSpeed": 59.784583788053396,
+          "targetSpeed": 48.49725003089853,
+          "startSpeed": 59.5911924891069,
+          "endSpeed": 55.83831289922464
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2067,
+          "endDistance": 2448,
+          "type": "corner_low_speed",
+          "difficulty": 0.625112251847378,
+          "maxSpeed": 50.844157524432546,
+          "targetSpeed": 20.89991977537104,
+          "startSpeed": 55.83831289922464,
+          "endSpeed": 62.06750122039976
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2448,
+          "endDistance": 3019,
+          "type": "corner_low_speed",
+          "difficulty": 0.5511231431078916,
+          "maxSpeed": 58.619403670967806,
+          "targetSpeed": 20.47874430300173,
+          "startSpeed": 62.06750122039976,
+          "endSpeed": 72.67143370961817
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3019,
+          "endDistance": 3236,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.16177983539094,
+          "targetSpeed": 80.16177983539094,
+          "startSpeed": 72.67143370961817,
+          "endSpeed": 77.36733738982791
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3236,
+          "endDistance": 3780,
+          "type": "corner_low_speed",
+          "difficulty": 0.4990761600559632,
+          "maxSpeed": 63.9493933285919,
+          "targetSpeed": 38.74869965819587,
+          "startSpeed": 77.36733738982791,
+          "endSpeed": 66.82704909348512
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3780,
+          "endDistance": 4433,
+          "type": "corner_low_speed",
+          "difficulty": 0.5026648273769134,
+          "maxSpeed": 63.585299032810326,
+          "targetSpeed": 34.2934564431955,
+          "startSpeed": 66.82704909348512,
+          "endSpeed": 73.20081356191272
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 4433,
+          "endDistance": 4705,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.37833904999479,
+          "targetSpeed": 80.37833904999479,
+          "startSpeed": 73.20081356191272,
+          "endSpeed": 78.36577717923439
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 4705,
+          "endDistance": 5330,
+          "type": "corner_low_speed",
+          "difficulty": 0.4752320978470498,
+          "maxSpeed": 66.3563660451689,
+          "targetSpeed": 33.33845366103431,
+          "startSpeed": 78.36577717923439,
+          "endSpeed": 76.54310207065909
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 5330,
+          "endDistance": 5412,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.29854740061162,
+          "targetSpeed": 79.29854740061162,
+          "startSpeed": 76.54310207065909,
+          "endSpeed": 78.0228221528429
+        }
+      ]
+    },
+    "montreal-gp": {
+      "trackId": "montreal-gp",
+      "name": "Circuit Gilles Villeneuve",
+      "totalDistance": 4361,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.497Z",
+      "curveKey": "Montreal",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 868,
+      "avgLapTime": 76.26994700460826,
+      "avgSpeedKph": 203.6571142682199,
+      "avgMaxSpeedKph": 315.860599078341,
+      "lapTypeCounts": {
+        "hotlap": 1198,
+        "pit_out": 82,
+        "pit_in": 46,
+        "start": 20,
+        "return": 0,
+        "invalid": 3
+      },
+      "pushStrengthCounts": {
+        "max": 232,
+        "push": 636,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4361,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 11
+      },
+      "sectorCount": 11,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 66,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.74189683440535,
+          "targetSpeed": 80.74189683440535,
+          "startSpeed": 80.39888385809606,
+          "endSpeed": 76.14598547308216
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 66,
+          "endDistance": 504,
+          "type": "corner_low_speed",
+          "difficulty": 0.6074545087213645,
+          "maxSpeed": 53.98861237538546,
+          "targetSpeed": 22.17149912944604,
+          "startSpeed": 76.14598547308216,
+          "endSpeed": 62.81754249631109
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 504,
+          "endDistance": 920,
+          "type": "corner_low_speed",
+          "difficulty": 0.5429982055942653,
+          "maxSpeed": 60.88671361288916,
+          "targetSpeed": 37.640502982229606,
+          "startSpeed": 60.64566995580138,
+          "endSpeed": 66.317162266171
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 920,
+          "endDistance": 964,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 68.77544210877544,
+          "targetSpeed": 68.77544210877544,
+          "startSpeed": 66.317162266171,
+          "endSpeed": 68.48680196258155
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 964,
+          "endDistance": 1556,
+          "type": "corner_low_speed",
+          "difficulty": 0.5292552048068337,
+          "maxSpeed": 62.334030659049624,
+          "targetSpeed": 27.874244065348858,
+          "startSpeed": 68.48680196258155,
+          "endSpeed": 73.01723113707031
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1556,
+          "endDistance": 1819,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.23660936721475,
+          "targetSpeed": 81.23660936721475,
+          "startSpeed": 73.01723113707031,
+          "endSpeed": 78.17571174356378
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 1819,
+          "endDistance": 2345,
+          "type": "corner_low_speed",
+          "difficulty": 0.4988648730172639,
+          "maxSpeed": 65.50725118534801,
+          "targetSpeed": 35.17991452991453,
+          "startSpeed": 78.17571174356378,
+          "endSpeed": 75.4110920632555
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2345,
+          "endDistance": 2454,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.82016036655212,
+          "targetSpeed": 78.82016036655212,
+          "startSpeed": 75.4110920632555,
+          "endSpeed": 78.26254359369369
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2454,
+          "endDistance": 3112,
+          "type": "corner_low_speed",
+          "difficulty": 0.507697396094939,
+          "maxSpeed": 64.58877969344323,
+          "targetSpeed": 17.79678025450508,
+          "startSpeed": 78.26254359369369,
+          "endSpeed": 78.68334501265473
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3112,
+          "endDistance": 3704,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.3863475928279,
+          "targetSpeed": 87.3863475928279,
+          "startSpeed": 78.68334501265473,
+          "endSpeed": 84.75049037845157
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3704,
+          "endDistance": 4361,
+          "type": "corner_low_speed",
+          "difficulty": 0.4569927914792702,
+          "maxSpeed": 69.82137500431477,
+          "targetSpeed": 35.33197139938713,
+          "startSpeed": 84.75049037845157,
+          "endSpeed": 79.11169170425157
+        }
+      ]
+    },
+    "spielberg-gp": {
+      "trackId": "spielberg-gp",
+      "name": "Red Bull Ring Spielberg",
+      "totalDistance": 4318,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.497Z",
+      "curveKey": "Spielberg",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 815,
+      "avgLapTime": 70.48344785276076,
+      "avgSpeedKph": 219.23780099226778,
+      "avgMaxSpeedKph": 305.57423312883435,
+      "lapTypeCounts": {
+        "hotlap": 1027,
+        "pit_out": 32,
+        "pit_in": 32,
+        "start": 17,
+        "return": 16,
+        "invalid": 4
+      },
+      "pushStrengthCounts": {
+        "max": 258,
+        "push": 557,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4318,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 11
+      },
+      "sectorCount": 11,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 239,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 83.87186036611324,
+          "targetSpeed": 83.87186036611324,
+          "startSpeed": 80.45598585930163,
+          "endSpeed": 81.39758693442317
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 239,
+          "endDistance": 846,
+          "type": "corner_low_speed",
+          "difficulty": 0.44548779093856805,
+          "maxSpeed": 68.5131844654967,
+          "targetSpeed": 35.02595360977635,
+          "startSpeed": 81.39758693442317,
+          "endSpeed": 79.73102551640324
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 846,
+          "endDistance": 1172,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 84.33070866141732,
+          "targetSpeed": 84.33070866141732,
+          "startSpeed": 79.73102551640324,
+          "endSpeed": 81.16094940205876
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1172,
+          "endDistance": 1779,
+          "type": "corner_low_speed",
+          "difficulty": 0.4908934552828297,
+          "maxSpeed": 64.01410241192346,
+          "targetSpeed": 19.712620237245503,
+          "startSpeed": 81.16094940205876,
+          "endSpeed": 78.7681021446081
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1779,
+          "endDistance": 1996,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 82.36699472257881,
+          "targetSpeed": 82.36699472257881,
+          "startSpeed": 78.7681021446081,
+          "endSpeed": 78.97213296417978
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1996,
+          "endDistance": 2452,
+          "type": "corner_low_speed",
+          "difficulty": 0.5308974142945437,
+          "maxSpeed": 59.98789601581974,
+          "targetSpeed": 28.180933852140075,
+          "startSpeed": 78.97213296417978,
+          "endSpeed": 69.20287327339561
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2452,
+          "endDistance": 2539,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 72.48463485177152,
+          "targetSpeed": 72.48463485177152,
+          "startSpeed": 69.20287327339561,
+          "endSpeed": 69.69749864029687
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2539,
+          "endDistance": 2864,
+          "type": "corner_medium_speed",
+          "difficulty": 0.5084215781363393,
+          "maxSpeed": 60.879755795626025,
+          "targetSpeed": 46.639972703917785,
+          "startSpeed": 69.69749864029687,
+          "endSpeed": 61.290625596140295
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2864,
+          "endDistance": 3407,
+          "type": "corner_medium_speed",
+          "difficulty": 0.42951029475475144,
+          "maxSpeed": 68.85033358748063,
+          "targetSpeed": 53.240590671708986,
+          "startSpeed": 61.290625596140295,
+          "endSpeed": 77.92107936468615
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3407,
+          "endDistance": 3624,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.91163548752834,
+          "targetSpeed": 80.91163548752834,
+          "startSpeed": 77.92107936468615,
+          "endSpeed": 78.48701740388555
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3624,
+          "endDistance": 4318,
+          "type": "corner_medium_speed",
+          "difficulty": 0.43914799511690705,
+          "maxSpeed": 67.88549137082084,
+          "targetSpeed": 46.17246445874037,
+          "startSpeed": 78.48701740388555,
+          "endSpeed": 76.3375920103406
+        }
+      ]
+    },
+    "hungaroring-gp": {
+      "trackId": "hungaroring-gp",
+      "name": "Hungaroring",
+      "totalDistance": 4381,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.498Z",
+      "curveKey": "Hungaroring",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 841,
+      "avgLapTime": 81.74054340071349,
+      "avgSpeedKph": 191.0535271262625,
+      "avgMaxSpeedKph": 298.8026159334126,
+      "lapTypeCounts": {
+        "hotlap": 1271,
+        "pit_out": 29,
+        "pit_in": 29,
+        "start": 20,
+        "return": 19,
+        "invalid": 1
+      },
+      "pushStrengthCounts": {
+        "max": 342,
+        "push": 499,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4381,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 14
+      },
+      "sectorCount": 14,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 440,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 82.72769764957265,
+          "targetSpeed": 82.72769764957265,
+          "startSpeed": 74.48357840613754,
+          "endSpeed": 79.1334909972649
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 440,
+          "endDistance": 881,
+          "type": "corner_low_speed",
+          "difficulty": 0.5301617885916299,
+          "maxSpeed": 58.92078730164579,
+          "targetSpeed": 24.821623589370223,
+          "startSpeed": 79.1334909972649,
+          "endSpeed": 69.13837702026716
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 881,
+          "endDistance": 1497,
+          "type": "corner_low_speed",
+          "difficulty": 0.48765553049065047,
+          "maxSpeed": 63.11438543602121,
+          "targetSpeed": 32.05503390714659,
+          "startSpeed": 69.13837702026716,
+          "endSpeed": 73.10078013786644
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1497,
+          "endDistance": 1695,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 77.81348754898244,
+          "targetSpeed": 77.81348754898244,
+          "startSpeed": 73.10078013786644,
+          "endSpeed": 75.4718002787144
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1695,
+          "endDistance": 2246,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4889305963601056,
+          "maxSpeed": 61.66902415043609,
+          "targetSpeed": 39.316781383153064,
+          "startSpeed": 75.4718002787144,
+          "endSpeed": 59.349318795305734
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2246,
+          "endDistance": 2554,
+          "type": "corner_low_speed",
+          "difficulty": 0.5992090751416157,
+          "maxSpeed": 51.95580863536329,
+          "targetSpeed": 28.842375609525163,
+          "startSpeed": 59.349318795305734,
+          "endSpeed": 49.32435524484831
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2554,
+          "endDistance": 2884,
+          "type": "corner_medium_speed",
+          "difficulty": 0.574994462523006,
+          "maxSpeed": 52.99147137252442,
+          "targetSpeed": 40.543905199387524,
+          "startSpeed": 49.43062833068917,
+          "endSpeed": 61.91843770831827
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2884,
+          "endDistance": 2906,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 64.44179894179894,
+          "targetSpeed": 64.44179894179894,
+          "startSpeed": 61.91843770831827,
+          "endSpeed": 63.8977417910447
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2906,
+          "endDistance": 3324,
+          "type": "corner_high_speed",
+          "difficulty": 0.40988150676224927,
+          "maxSpeed": 68.33788106764447,
+          "targetSpeed": 59.906512399921894,
+          "startSpeed": 63.8977417910447,
+          "endSpeed": 72.36786931654294
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3324,
+          "endDistance": 3390,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 74.88791423001949,
+          "targetSpeed": 74.88791423001949,
+          "startSpeed": 72.36786931654294,
+          "endSpeed": 70.68471496431667
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3390,
+          "endDistance": 3677,
+          "type": "corner_low_speed",
+          "difficulty": 0.5597492357573999,
+          "maxSpeed": 55.96049102547297,
+          "targetSpeed": 31.553590146750526,
+          "startSpeed": 70.68471496431667,
+          "endSpeed": 50.5042690374415
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 3677,
+          "endDistance": 3941,
+          "type": "corner_low_speed",
+          "difficulty": 0.6484243394770017,
+          "maxSpeed": 46.86361083758944,
+          "targetSpeed": 27.24776755964281,
+          "startSpeed": 50.5042690374415,
+          "endSpeed": 48.99128089993421
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 3941,
+          "endDistance": 4315,
+          "type": "corner_low_speed",
+          "difficulty": 0.5582943137116789,
+          "maxSpeed": 56.10688847199246,
+          "targetSpeed": 36.82068206820682,
+          "startSpeed": 48.99128089993421,
+          "endSpeed": 66.69183615182979
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 4315,
+          "endDistance": 4381,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 71.04769454353283,
+          "targetSpeed": 71.04769454353283,
+          "startSpeed": 66.69183615182979,
+          "endSpeed": 69.30145519602637
+        }
+      ]
+    },
+    "zandvoort-gp": {
+      "trackId": "zandvoort-gp",
+      "name": "Circuit Zandvoort",
+      "totalDistance": 4259,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.498Z",
+      "curveKey": "Zandvoort",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 499,
+      "avgLapTime": 75.29290380761515,
+      "avgSpeedKph": 202.08340945393442,
+      "avgMaxSpeedKph": 315.44088176352705,
+      "lapTypeCounts": {
+        "hotlap": 1246,
+        "pit_out": 39,
+        "pit_in": 40,
+        "start": 20,
+        "return": 17,
+        "invalid": 3
+      },
+      "pushStrengthCounts": {
+        "max": 138,
+        "push": 385,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4259,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 11
+      },
+      "sectorCount": 11,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 128,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 86.8731563421829,
+          "targetSpeed": 86.8731563421829,
+          "startSpeed": 86.52846462462097,
+          "endSpeed": 83.71906417620833
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 128,
+          "endDistance": 578,
+          "type": "corner_low_speed",
+          "difficulty": 0.5432275907026067,
+          "maxSpeed": 60.50506388059017,
+          "targetSpeed": 30.503762726870296,
+          "startSpeed": 83.71906417620833,
+          "endSpeed": 60.06812446168263
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 578,
+          "endDistance": 1156,
+          "type": "corner_low_speed",
+          "difficulty": 0.5350909781884848,
+          "maxSpeed": 61.35794539368407,
+          "targetSpeed": 36.36409201224016,
+          "startSpeed": 60.06812446168263,
+          "endSpeed": 74.86556512782747
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1156,
+          "endDistance": 1477,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.76288659793813,
+          "targetSpeed": 79.76288659793813,
+          "startSpeed": 74.86556512782747,
+          "endSpeed": 78.85594141958286
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1477,
+          "endDistance": 1990,
+          "type": "corner_medium_speed",
+          "difficulty": 0.42100760535450316,
+          "maxSpeed": 71.80102429873628,
+          "targetSpeed": 57.39220563847429,
+          "startSpeed": 78.85594141958286,
+          "endSpeed": 59.50097247127261
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1990,
+          "endDistance": 2397,
+          "type": "corner_low_speed",
+          "difficulty": 0.6180225450864791,
+          "maxSpeed": 52.529040161284435,
+          "targetSpeed": 29.996511425082854,
+          "startSpeed": 59.50097247127261,
+          "endSpeed": 43.48880982245526
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2397,
+          "endDistance": 2782,
+          "type": "corner_low_speed",
+          "difficulty": 0.5968278747945563,
+          "maxSpeed": 54.81507713003091,
+          "targetSpeed": 30.608024691358022,
+          "startSpeed": 43.79765444534455,
+          "endSpeed": 69.50104168192836
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2782,
+          "endDistance": 2953,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 76.57748239036582,
+          "targetSpeed": 76.57748239036582,
+          "startSpeed": 69.50104168192836,
+          "endSpeed": 70.50373500753153
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2953,
+          "endDistance": 3317,
+          "type": "corner_low_speed",
+          "difficulty": 0.6325596382506395,
+          "maxSpeed": 50.94861476543011,
+          "targetSpeed": 26.492291157067672,
+          "startSpeed": 70.50373500753153,
+          "endSpeed": 57.81994744409093
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3317,
+          "endDistance": 4066,
+          "type": "corner_medium_speed",
+          "difficulty": 0.42421420337032756,
+          "maxSpeed": 71.47126451998848,
+          "targetSpeed": 49.73023154215815,
+          "startSpeed": 57.81994744409093,
+          "endSpeed": 82.44811825110459
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4066,
+          "endDistance": 4259,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 85.87731017590737,
+          "targetSpeed": 85.87731017590737,
+          "startSpeed": 82.44811825110459,
+          "endSpeed": 85.36819107321293
+        }
+      ]
+    },
+    "baku-gp": {
+      "trackId": "baku-gp",
+      "name": "Baku City Circuit",
+      "totalDistance": 6003,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.499Z",
+      "curveKey": "Baku",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 744,
+      "avgLapTime": 105.93622446236576,
+      "avgSpeedKph": 201.5853954171477,
+      "avgMaxSpeedKph": 331.3306451612903,
+      "lapTypeCounts": {
+        "hotlap": 890,
+        "pit_out": 21,
+        "pit_in": 20,
+        "start": 17,
+        "return": 19,
+        "invalid": 1
+      },
+      "pushStrengthCounts": {
+        "max": 289,
+        "push": 460,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 6003,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 15
+      },
+      "sectorCount": 15,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 60,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 89.72315280104225,
+          "targetSpeed": 89.72315280104225,
+          "startSpeed": 89.16844648694376,
+          "endSpeed": 85.47378726311378
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 60,
+          "endDistance": 452,
+          "type": "corner_low_speed",
+          "difficulty": 0.5348611595941543,
+          "maxSpeed": 64.5195033601303,
+          "targetSpeed": 32.7085577095674,
+          "startSpeed": 85.47378726311378,
+          "endSpeed": 58.32934696627362
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 452,
+          "endDistance": 995,
+          "type": "corner_low_speed",
+          "difficulty": 0.53484894720103,
+          "maxSpeed": 64.52084660073196,
+          "targetSpeed": 28.49501622624015,
+          "startSpeed": 58.32934696627362,
+          "endSpeed": 78.33573463164234
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 995,
+          "endDistance": 1297,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 84.56349206349206,
+          "targetSpeed": 84.56349206349206,
+          "startSpeed": 78.33573463164234,
+          "endSpeed": 79.60765829707593
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1297,
+          "endDistance": 1629,
+          "type": "corner_low_speed",
+          "difficulty": 0.5847245591092696,
+          "maxSpeed": 58.97921288406546,
+          "targetSpeed": 28.211611576660456,
+          "startSpeed": 79.60765829707593,
+          "endSpeed": 40.674270693963834
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1629,
+          "endDistance": 1870,
+          "type": "corner_low_speed",
+          "difficulty": 0.6651079627472729,
+          "maxSpeed": 49.793201949477655,
+          "targetSpeed": 25.79312865497076,
+          "startSpeed": 41.3899236178782,
+          "endSpeed": 56.46054705608385
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 1870,
+          "endDistance": 1900,
+          "type": "corner_high_speed",
+          "difficulty": 0.511307059312236,
+          "maxSpeed": 64.17051854858103,
+          "targetSpeed": 60.0739779096604,
+          "startSpeed": 56.46054705608385,
+          "endSpeed": 56.94012753772546
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 1900,
+          "endDistance": 2293,
+          "type": "corner_low_speed",
+          "difficulty": 0.6429068696104665,
+          "maxSpeed": 52.363739122947095,
+          "targetSpeed": 25.376661100674877,
+          "startSpeed": 56.94012753772546,
+          "endSpeed": 61.67935183211655
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2293,
+          "endDistance": 2353,
+          "type": "corner_high_speed",
+          "difficulty": 0.4727804757674584,
+          "maxSpeed": 68.47061567156543,
+          "targetSpeed": 63.64395500601064,
+          "startSpeed": 61.67935183211655,
+          "endSpeed": 61.30790354693201
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 2353,
+          "endDistance": 2685,
+          "type": "corner_low_speed",
+          "difficulty": 0.6615730979180319,
+          "maxSpeed": 50.20426746030291,
+          "targetSpeed": 21.269012632121683,
+          "startSpeed": 61.30790354693201,
+          "endSpeed": 40.161795509384255
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 2685,
+          "endDistance": 3198,
+          "type": "corner_low_speed",
+          "difficulty": 0.6233998181431748,
+          "maxSpeed": 54.60081511090154,
+          "targetSpeed": 26.61936815652486,
+          "startSpeed": 40.84080691801826,
+          "endSpeed": 73.56274380376396
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 3198,
+          "endDistance": 3529,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.68156239655744,
+          "targetSpeed": 81.68156239655744,
+          "startSpeed": 73.56274380376396,
+          "endSpeed": 77.83523393252074
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 3529,
+          "endDistance": 3922,
+          "type": "corner_low_speed",
+          "difficulty": 0.5678993136899568,
+          "maxSpeed": 60.86139451255137,
+          "targetSpeed": 26.81077560052825,
+          "startSpeed": 77.83523393252074,
+          "endSpeed": 60.28568717691592
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 3922,
+          "endDistance": 4947,
+          "type": "corner_low_speed",
+          "difficulty": 0.4361536402202469,
+          "maxSpeed": 75.17842590247913,
+          "targetSpeed": 32.797491039426525,
+          "startSpeed": 60.28568717691592,
+          "endSpeed": 86.74879386675879
+        },
+        {
+          "id": "s15",
+          "name": "S15",
+          "startDistance": 4947,
+          "endDistance": 6003,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 91.31363191385218,
+          "targetSpeed": 91.31363191385218,
+          "startSpeed": 86.74879386675879,
+          "endSpeed": 90.24804600089473
+        }
+      ]
+    },
+    "austin-gp": {
+      "trackId": "austin-gp",
+      "name": "Circuit of the Americas",
+      "totalDistance": 5513,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.499Z",
+      "curveKey": "Austin",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 857,
+      "avgLapTime": 100.00676546091007,
+      "avgSpeedKph": 195.71490245555117,
+      "avgMaxSpeedKph": 311.7514585764294,
+      "lapTypeCounts": {
+        "hotlap": 985,
+        "pit_out": 21,
+        "pit_in": 21,
+        "start": 20,
+        "return": 19,
+        "invalid": 1
+      },
+      "pushStrengthCounts": {
+        "max": 312,
+        "push": 545,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5513,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 13
+      },
+      "sectorCount": 13,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 443,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.94292739066749,
+          "targetSpeed": 80.94292739066749,
+          "startSpeed": 67.28052379144087,
+          "endSpeed": 77.24253149176104
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 443,
+          "endDistance": 1274,
+          "type": "corner_low_speed",
+          "difficulty": 0.47069627029200123,
+          "maxSpeed": 67.61130993283051,
+          "targetSpeed": 23.11114103599964,
+          "startSpeed": 77.24253149176104,
+          "endSpeed": 70.91740770124235
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1274,
+          "endDistance": 2189,
+          "type": "corner_low_speed",
+          "difficulty": 0.5211411477148797,
+          "maxSpeed": 62.441197108777416,
+          "targetSpeed": 37.622835181942015,
+          "startSpeed": 70.91740770124235,
+          "endSpeed": 69.86743033743457
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 2189,
+          "endDistance": 2216,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 71.74233878548598,
+          "targetSpeed": 71.74233878548598,
+          "startSpeed": 69.86743033743457,
+          "endSpeed": 71.43880028637632
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 2216,
+          "endDistance": 3020,
+          "type": "corner_low_speed",
+          "difficulty": 0.4714156559769318,
+          "maxSpeed": 67.5382464994228,
+          "targetSpeed": 22.543725627146266,
+          "startSpeed": 71.43880028637632,
+          "endSpeed": 78.65380623514172
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 3020,
+          "endDistance": 3574,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 86.35780689964157,
+          "targetSpeed": 86.35780689964157,
+          "startSpeed": 78.65380623514172,
+          "endSpeed": 81.98984422353846
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 3574,
+          "endDistance": 3906,
+          "type": "corner_low_speed",
+          "difficulty": 0.5736121424552989,
+          "maxSpeed": 56.955309800864036,
+          "targetSpeed": 24.218998157677404,
+          "startSpeed": 81.98984422353846,
+          "endSpeed": 39.643665289398044
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3906,
+          "endDistance": 4128,
+          "type": "corner_low_speed",
+          "difficulty": 0.7054609142800691,
+          "maxSpeed": 42.60601921371544,
+          "targetSpeed": 25.75289737888282,
+          "startSpeed": 39.643665289398044,
+          "endSpeed": 42.64136342417202
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 4128,
+          "endDistance": 4156,
+          "type": "corner_high_speed",
+          "difficulty": 0.5763692134136824,
+          "maxSpeed": 53.75327320771034,
+          "targetSpeed": 49.35313119682722,
+          "startSpeed": 42.64136342417202,
+          "endSpeed": 42.534199082053675
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4156,
+          "endDistance": 4599,
+          "type": "corner_low_speed",
+          "difficulty": 0.6021039026925368,
+          "maxSpeed": 53.92618003822488,
+          "targetSpeed": 23.44032865561023,
+          "startSpeed": 42.534199082053675,
+          "endSpeed": 65.48000744820106
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4599,
+          "endDistance": 4876,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 75.1452802359882,
+          "targetSpeed": 75.1452802359882,
+          "startSpeed": 65.48000744820106,
+          "endSpeed": 73.31512991277309
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 4876,
+          "endDistance": 5208,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4643255710746573,
+          "maxSpeed": 66.92490372345871,
+          "targetSpeed": 52.48359118612284,
+          "startSpeed": 73.31512991277309,
+          "endSpeed": 57.95465454022184
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 5208,
+          "endDistance": 5513,
+          "type": "corner_low_speed",
+          "difficulty": 0.6166579878486562,
+          "maxSpeed": 52.36437355159632,
+          "targetSpeed": 26.59205801345745,
+          "startSpeed": 57.95465454022184,
+          "endSpeed": 54.29385490337194
+        }
+      ]
+    },
+    "interlagos-gp": {
+      "trackId": "interlagos-gp",
+      "name": "Interlagos Circuit",
+      "totalDistance": 4309,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.499Z",
+      "curveKey": "Interlagos",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 791,
+      "avgLapTime": 74.4881479140329,
+      "avgSpeedKph": 204.56653507900978,
+      "avgMaxSpeedKph": 318.24146649810365,
+      "lapTypeCounts": {
+        "hotlap": 1139,
+        "pit_out": 37,
+        "pit_in": 37,
+        "start": 19,
+        "return": 17,
+        "invalid": 3
+      },
+      "pushStrengthCounts": {
+        "max": 210,
+        "push": 582,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4309,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 10
+      },
+      "sectorCount": 10,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 152,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.39446013810421,
+          "targetSpeed": 87.39446013810421,
+          "startSpeed": 87.2642891527092,
+          "endSpeed": 84.0709531434367
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 152,
+          "endDistance": 909,
+          "type": "corner_low_speed",
+          "difficulty": 0.48687083705866707,
+          "maxSpeed": 66.7558626285263,
+          "targetSpeed": 29.43172279928654,
+          "startSpeed": 84.0709531434367,
+          "endSpeed": 80.77320527778727
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 909,
+          "endDistance": 1234,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.00416088765604,
+          "targetSpeed": 87.00416088765604,
+          "startSpeed": 80.77320527778727,
+          "endSpeed": 83.93070022381934
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1234,
+          "endDistance": 1927,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4394292829883534,
+          "maxSpeed": 70.32256615930895,
+          "targetSpeed": 42.15150486535415,
+          "startSpeed": 83.93070022381934,
+          "endSpeed": 75.29775739079555
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1927,
+          "endDistance": 1949,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.11369509043928,
+          "targetSpeed": 78.11369509043928,
+          "startSpeed": 75.29775739079555,
+          "endSpeed": 73.22983873586783
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1949,
+          "endDistance": 2598,
+          "type": "corner_low_speed",
+          "difficulty": 0.6212086353232169,
+          "maxSpeed": 52.496679371511526,
+          "targetSpeed": 23.851802824004032,
+          "startSpeed": 73.22983873586783,
+          "endSpeed": 49.36239405531555
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2598,
+          "endDistance": 2988,
+          "type": "corner_low_speed",
+          "difficulty": 0.6356976798800953,
+          "maxSpeed": 50.90977005217144,
+          "targetSpeed": 23.048412115274715,
+          "startSpeed": 46.95005271723479,
+          "endSpeed": 61.740219095060404
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2988,
+          "endDistance": 3010,
+          "type": "corner_high_speed",
+          "difficulty": 0.47632544919231656,
+          "maxSpeed": 65.15435402532509,
+          "targetSpeed": 61.8130081300813,
+          "startSpeed": 61.740219095060404,
+          "endSpeed": 63.381081159810265
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3010,
+          "endDistance": 3898,
+          "type": "corner_low_speed",
+          "difficulty": 0.46204195666987824,
+          "maxSpeed": 69.31097816498557,
+          "targetSpeed": 31.67708509320268,
+          "startSpeed": 63.381081159810265,
+          "endSpeed": 81.87331495609433
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 3898,
+          "endDistance": 4309,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.06559910099733,
+          "targetSpeed": 87.06559910099733,
+          "startSpeed": 81.87331495609433,
+          "endSpeed": 86.83013120682396
+        }
+      ]
+    },
+    "las-vegas-gp": {
+      "trackId": "las-vegas-gp",
+      "name": "Las Vegas Strip Circuit",
+      "totalDistance": 6201,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.500Z",
+      "curveKey": "Las Vegas",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 665,
+      "avgLapTime": 95.9790616541354,
+      "avgSpeedKph": 230.04712705447363,
+      "avgMaxSpeedKph": 341.2421052631579,
+      "lapTypeCounts": {
+        "hotlap": 806,
+        "pit_out": 23,
+        "pit_in": 22,
+        "start": 17,
+        "return": 17,
+        "invalid": 3
+      },
+      "pushStrengthCounts": {
+        "max": 302,
+        "push": 363,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 6201,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 10
+      },
+      "sectorCount": 10,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 62,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 88.68443947303008,
+          "targetSpeed": 88.68443947303008,
+          "startSpeed": 88.35402590302759,
+          "endSpeed": 84.2612968100529
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 62,
+          "endDistance": 935,
+          "type": "corner_low_speed",
+          "difficulty": 0.517093210305064,
+          "maxSpeed": 68.722119378869,
+          "targetSpeed": 30.95113734002623,
+          "startSpeed": 84.2612968100529,
+          "endSpeed": 82.37843917635448
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 935,
+          "endDistance": 1309,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 88.32227426489722,
+          "targetSpeed": 88.32227426489722,
+          "startSpeed": 82.37843917635448,
+          "endSpeed": 85.84668575973326
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1309,
+          "endDistance": 1838,
+          "type": "corner_low_speed",
+          "difficulty": 0.5378383400254175,
+          "maxSpeed": 66.36975277445852,
+          "targetSpeed": 30.151505264073784,
+          "startSpeed": 85.84668575973326,
+          "endSpeed": 67.58889682667404
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1838,
+          "endDistance": 2555,
+          "type": "corner_low_speed",
+          "difficulty": 0.6192510861589462,
+          "maxSpeed": 56.94261679961914,
+          "targetSpeed": 26.357222607222607,
+          "startSpeed": 67.58889682667404,
+          "endSpeed": 76.15834516346023
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2555,
+          "endDistance": 2680,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.68387208898157,
+          "targetSpeed": 80.68387208898157,
+          "startSpeed": 76.15834516346023,
+          "endSpeed": 80.34629112132228
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2680,
+          "endDistance": 3864,
+          "type": "corner_low_speed",
+          "difficulty": 0.4385233061172439,
+          "maxSpeed": 77.46897959859216,
+          "targetSpeed": 27.798405831931426,
+          "startSpeed": 80.34629112132228,
+          "endSpeed": 87.67670011418446
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3864,
+          "endDistance": 4955,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 94.41172375382902,
+          "targetSpeed": 94.41172375382902,
+          "startSpeed": 87.67670011418446,
+          "endSpeed": 89.01376666680446
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 4955,
+          "endDistance": 5921,
+          "type": "corner_low_speed",
+          "difficulty": 0.45874990072442445,
+          "maxSpeed": 75.2404189836524,
+          "targetSpeed": 26.369626578174465,
+          "startSpeed": 89.01376666680446,
+          "endSpeed": 88.7866857789735
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 5921,
+          "endDistance": 6201,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 89.83079029733959,
+          "targetSpeed": 89.83079029733959,
+          "startSpeed": 88.7866857789735,
+          "endSpeed": 88.91740405957704
+        }
+      ]
+    },
+    "qatar-gp": {
+      "trackId": "qatar-gp",
+      "name": "Lusail International Circuit",
+      "totalDistance": 5419,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.500Z",
+      "curveKey": "Lusail",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 510,
+      "avgLapTime": 85.49609411764699,
+      "avgSpeedKph": 226.1360793647068,
+      "avgMaxSpeedKph": 312.86470588235295,
+      "lapTypeCounts": {
+        "hotlap": 949,
+        "pit_out": 41,
+        "pit_in": 40,
+        "start": 20,
+        "return": 16,
+        "invalid": 4
+      },
+      "pushStrengthCounts": {
+        "max": 220,
+        "push": 290,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5419,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 16
+      },
+      "sectorCount": 16,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 545,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 86.5415244596132,
+          "targetSpeed": 86.5415244596132,
+          "startSpeed": 81.20062766273166,
+          "endSpeed": 84.027135177299
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 545,
+          "endDistance": 926,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4954427546781995,
+          "maxSpeed": 63.83290645974943,
+          "targetSpeed": 41.19466666666667,
+          "startSpeed": 84.027135177299,
+          "endSpeed": 58.011242671764236
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 926,
+          "endDistance": 1389,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4896146423143857,
+          "maxSpeed": 64.4407466808193,
+          "targetSpeed": 46.18016759776536,
+          "startSpeed": 58.011242671764236,
+          "endSpeed": 73.77588326028834
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1389,
+          "endDistance": 1552,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 77.90388548057258,
+          "targetSpeed": 77.90388548057258,
+          "startSpeed": 73.77588326028834,
+          "endSpeed": 75.431981785557
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1552,
+          "endDistance": 1988,
+          "type": "corner_medium_speed",
+          "difficulty": 0.47713951636715224,
+          "maxSpeed": 65.73862113643116,
+          "targetSpeed": 53.53178847296494,
+          "startSpeed": 75.431981785557,
+          "endSpeed": 63.01445385327922
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1988,
+          "endDistance": 2015,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 66.17958492164337,
+          "targetSpeed": 66.17958492164337,
+          "startSpeed": 63.01445385327922,
+          "endSpeed": 61.97541820184983
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2015,
+          "endDistance": 2369,
+          "type": "corner_low_speed",
+          "difficulty": 0.6009974460294534,
+          "maxSpeed": 54.159481894813766,
+          "targetSpeed": 26.182485579444155,
+          "startSpeed": 61.97541820184983,
+          "endSpeed": 60.914464174300775
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 2369,
+          "endDistance": 2832,
+          "type": "corner_low_speed",
+          "difficulty": 0.5350273720988687,
+          "maxSpeed": 61.13034690062507,
+          "targetSpeed": 37.845619260362376,
+          "startSpeed": 60.914464174300775,
+          "endSpeed": 67.04108961861526
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 2832,
+          "endDistance": 2859,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 69.62548562548562,
+          "targetSpeed": 69.62548562548562,
+          "startSpeed": 67.04108961861526,
+          "endSpeed": 67.96502812549305
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 2859,
+          "endDistance": 3540,
+          "type": "corner_medium_speed",
+          "difficulty": 0.471699653453471,
+          "maxSpeed": 66.30321833982926,
+          "targetSpeed": 39.357665475582785,
+          "startSpeed": 67.96502812549305,
+          "endSpeed": 76.9763161855465
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 3540,
+          "endDistance": 3785,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.8373015873016,
+          "targetSpeed": 80.8373015873016,
+          "startSpeed": 76.9763161855465,
+          "endSpeed": 79.44050389699754
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 3785,
+          "endDistance": 4384,
+          "type": "corner_high_speed",
+          "difficulty": 0.3526014203031861,
+          "maxSpeed": 77.4396719087495,
+          "targetSpeed": 70.39913700107874,
+          "startSpeed": 79.44050389699754,
+          "endSpeed": 74.1546166866181
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 4384,
+          "endDistance": 4738,
+          "type": "corner_high_speed",
+          "difficulty": 0.3860429173726717,
+          "maxSpeed": 73.97111270789385,
+          "targetSpeed": 66.25986642380084,
+          "startSpeed": 74.1546166866181,
+          "endSpeed": 75.6371712630637
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 4738,
+          "endDistance": 4765,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 76.77115583075336,
+          "targetSpeed": 76.77115583075336,
+          "startSpeed": 75.6371712630637,
+          "endSpeed": 75.91998666697057
+        },
+        {
+          "id": "s15",
+          "name": "S15",
+          "startDistance": 4765,
+          "endDistance": 5310,
+          "type": "corner_medium_speed",
+          "difficulty": 0.46098491079323756,
+          "maxSpeed": 67.41293857600158,
+          "targetSpeed": 44.08074881251746,
+          "startSpeed": 75.91998666697057,
+          "endSpeed": 75.00814188722516
+        },
+        {
+          "id": "s16",
+          "name": "S16",
+          "startDistance": 5310,
+          "endDistance": 5419,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.88235294117648,
+          "targetSpeed": 78.88235294117648,
+          "startSpeed": 75.00814188722516,
+          "endSpeed": 77.72214287767814
+        }
+      ]
+    },
+    "abu-dhabi-gp": {
+      "trackId": "abu-dhabi-gp",
+      "name": "Yas Marina Circuit",
+      "totalDistance": 5281,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.500Z",
+      "curveKey": "Yas Marina Circuit",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 888,
+      "avgLapTime": 89.43391554054058,
+      "avgSpeedKph": 210.1348973451002,
+      "avgMaxSpeedKph": 317.2083333333333,
+      "lapTypeCounts": {
+        "hotlap": 1062,
+        "pit_out": 27,
+        "pit_in": 27,
+        "start": 20,
+        "return": 20,
+        "invalid": 0
+      },
+      "pushStrengthCounts": {
+        "max": 379,
+        "push": 521,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5281,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 12
+      },
+      "sectorCount": 12,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 212,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 76.42191659272405,
+          "targetSpeed": 76.42191659272405,
+          "startSpeed": 68.5719915610385,
+          "endSpeed": 72.84044101205782
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 212,
+          "endDistance": 796,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4778255704057999,
+          "maxSpeed": 66.43924144501452,
+          "targetSpeed": 42.15973887556621,
+          "startSpeed": 72.84044101205782,
+          "endSpeed": 72.39991604503604
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 796,
+          "endDistance": 1194,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 80.56799336650083,
+          "targetSpeed": 80.56799336650083,
+          "startSpeed": 72.39991604503604,
+          "endSpeed": 80.04763977380964
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1194,
+          "endDistance": 1911,
+          "type": "corner_low_speed",
+          "difficulty": 0.4806538513856129,
+          "maxSpeed": 67.52449034821434,
+          "targetSpeed": 26.590806981164675,
+          "startSpeed": 80.04763977380964,
+          "endSpeed": 80.68468036873092
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1911,
+          "endDistance": 2441,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 87.5587713461965,
+          "targetSpeed": 87.5587713461965,
+          "startSpeed": 80.68468036873092,
+          "endSpeed": 83.62954152764759
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2441,
+          "endDistance": 3211,
+          "type": "corner_low_speed",
+          "difficulty": 0.49622710198774844,
+          "maxSpeed": 65.91075295399813,
+          "targetSpeed": 19.261992388963996,
+          "startSpeed": 83.62954152764759,
+          "endSpeed": 81.66638242071288
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 3211,
+          "endDistance": 3476,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 84.80020436700012,
+          "targetSpeed": 84.80020436700012,
+          "startSpeed": 81.66638242071288,
+          "endSpeed": 83.18004555499586
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3476,
+          "endDistance": 4087,
+          "type": "corner_medium_speed",
+          "difficulty": 0.47589861547859436,
+          "maxSpeed": 66.64171951411973,
+          "targetSpeed": 43.630599333446305,
+          "startSpeed": 83.18004555499586,
+          "endSpeed": 73.55809330878525
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 4087,
+          "endDistance": 4193,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 75.0040885040885,
+          "targetSpeed": 75.0040885040885,
+          "startSpeed": 73.55809330878525,
+          "endSpeed": 70.3839522177471
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4193,
+          "endDistance": 4777,
+          "type": "corner_low_speed",
+          "difficulty": 0.6136410675489143,
+          "maxSpeed": 53.421681018857804,
+          "targetSpeed": 28.233791783986714,
+          "startSpeed": 70.3839522177471,
+          "endSpeed": 64.53872306029963
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 4777,
+          "endDistance": 4936,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 68.71288219226363,
+          "targetSpeed": 68.71288219226363,
+          "startSpeed": 64.53872306029963,
+          "endSpeed": 66.56821516567844
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 4936,
+          "endDistance": 5281,
+          "type": "corner_low_speed",
+          "difficulty": 0.5752496278551245,
+          "maxSpeed": 57.57187122945168,
+          "targetSpeed": 33.531575520833336,
+          "startSpeed": 66.56821516567844,
+          "endSpeed": 57.51375234648356
+        }
+      ]
+    },
+    "monaco-gp": {
+      "trackId": "monaco-gp",
+      "name": "Circuit de Monaco",
+      "totalDistance": 3337,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.501Z",
+      "curveKey": "Monte Carlo",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 578,
+      "avgLapTime": 75.7785882352941,
+      "avgSpeedKph": 155.88238464620682,
+      "avgMaxSpeedKph": 282.65743944636677,
+      "lapTypeCounts": {
+        "hotlap": 1310,
+        "pit_out": 40,
+        "pit_in": 40,
+        "start": 16,
+        "return": 17,
+        "invalid": 2
+      },
+      "pushStrengthCounts": {
+        "max": 173,
+        "push": 405,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 3337,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 15
+      },
+      "sectorCount": 15,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 34,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 74.87140948563794,
+          "targetSpeed": 74.87140948563794,
+          "startSpeed": 74.29349042161986,
+          "endSpeed": 71.5446972252923
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 34,
+          "endDistance": 486,
+          "type": "corner_low_speed",
+          "difficulty": 0.4741714293117003,
+          "maxSpeed": 60.82530132858409,
+          "targetSpeed": 31.284537201499898,
+          "startSpeed": 71.5446972252923,
+          "endSpeed": 70.86026174157497
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 486,
+          "endDistance": 587,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 72.87318840579711,
+          "targetSpeed": 72.87318840579711,
+          "startSpeed": 70.86026174157497,
+          "endSpeed": 69.81260781812178
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 587,
+          "endDistance": 989,
+          "type": "corner_low_speed",
+          "difficulty": 0.5410255691243739,
+          "maxSpeed": 54.60122575827845,
+          "targetSpeed": 37.072955760263845,
+          "startSpeed": 69.81260781812178,
+          "endSpeed": 52.057268104235646
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 989,
+          "endDistance": 1006,
+          "type": "corner_high_speed",
+          "difficulty": 0.4675860880697408,
+          "maxSpeed": 59.055057233796965,
+          "targetSpeed": 56.49627263045794,
+          "startSpeed": 52.057268104235646,
+          "endSpeed": 50.09453607951869
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 1006,
+          "endDistance": 1191,
+          "type": "corner_low_speed",
+          "difficulty": 0.7011020348798975,
+          "maxSpeed": 38.97292221948989,
+          "targetSpeed": 21.56698236222634,
+          "startSpeed": 50.09453607951869,
+          "endSpeed": 25.082449661101116
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 1191,
+          "endDistance": 1308,
+          "type": "corner_low_speed",
+          "difficulty": 0.82047719970166,
+          "maxSpeed": 26.50537066817885,
+          "targetSpeed": 13.958972989809995,
+          "startSpeed": 26.374409056568886,
+          "endSpeed": 24.59535090415749
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 1308,
+          "endDistance": 1643,
+          "type": "corner_low_speed",
+          "difficulty": 0.5959177742468598,
+          "maxSpeed": 49.36605694106995,
+          "targetSpeed": 22.627484263384964,
+          "startSpeed": 24.59535090415749,
+          "endSpeed": 67.8787548973343
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 1643,
+          "endDistance": 1945,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 78.09814391050088,
+          "targetSpeed": 78.09814391050088,
+          "startSpeed": 67.8787548973343,
+          "endSpeed": 72.80506559763634
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 1945,
+          "endDistance": 2230,
+          "type": "corner_low_speed",
+          "difficulty": 0.5969599888552954,
+          "maxSpeed": 49.265483109722965,
+          "targetSpeed": 19.106642835865355,
+          "startSpeed": 72.80506559763634,
+          "endSpeed": 54.47549453808713
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 2230,
+          "endDistance": 2515,
+          "type": "corner_medium_speed",
+          "difficulty": 0.49312166828830606,
+          "maxSpeed": 57.8236438460523,
+          "targetSpeed": 44.31939190135912,
+          "startSpeed": 54.47549453808713,
+          "endSpeed": 60.96757723263901
+        },
+        {
+          "id": "s12",
+          "name": "S12",
+          "startDistance": 2515,
+          "endDistance": 2582,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 63.71834150326797,
+          "targetSpeed": 63.71834150326797,
+          "startSpeed": 60.96757723263901,
+          "endSpeed": 60.27143222379121
+        },
+        {
+          "id": "s13",
+          "name": "S13",
+          "startDistance": 2582,
+          "endDistance": 2834,
+          "type": "corner_low_speed",
+          "difficulty": 0.5782006253182069,
+          "maxSpeed": 51.06890721831382,
+          "targetSpeed": 32.60532837670384,
+          "startSpeed": 60.27143222379121,
+          "endSpeed": 42.34528515809105
+        },
+        {
+          "id": "s14",
+          "name": "S14",
+          "startDistance": 2834,
+          "endDistance": 3236,
+          "type": "corner_low_speed",
+          "difficulty": 0.6133683078743459,
+          "maxSpeed": 47.676046521190585,
+          "targetSpeed": 18.432739250632313,
+          "startSpeed": 42.34528515809105,
+          "endSpeed": 68.09755500185754
+        },
+        {
+          "id": "s15",
+          "name": "S15",
+          "startDistance": 3236,
+          "endDistance": 3337,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 73.66782006920415,
+          "targetSpeed": 73.66782006920415,
+          "startSpeed": 68.09755500185754,
+          "endSpeed": 72.59611139427439
+        }
+      ]
+    },
+    "melbourne-gp": {
+      "trackId": "melbourne-gp",
+      "name": "Albert Park Circuit",
+      "totalDistance": 5278,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.501Z",
+      "curveKey": "Melbourne",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 37,
+      "avgLapTime": 86.44516216216215,
+      "avgSpeedKph": 218.3411323046934,
+      "avgMaxSpeedKph": 307.27027027027026,
+      "lapTypeCounts": {
+        "hotlap": 761,
+        "pit_out": 82,
+        "pit_in": 48,
+        "start": 17,
+        "return": 13,
+        "invalid": 7
+      },
+      "pushStrengthCounts": {
+        "max": 20,
+        "push": 17,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 5278,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 11
+      },
+      "sectorCount": 11,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 133,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 83.08404558404558,
+          "targetSpeed": 83.08404558404558,
+          "startSpeed": 82.16446104483174,
+          "endSpeed": 81.43505529719216
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 133,
+          "endDistance": 716,
+          "type": "corner_medium_speed",
+          "difficulty": 0.45023207032433793,
+          "maxSpeed": 67.14349061786328,
+          "targetSpeed": 40.49019607843137,
+          "startSpeed": 81.43505529719216,
+          "endSpeed": 76.31504146770126
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 716,
+          "endDistance": 875,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 79.65579710144927,
+          "targetSpeed": 79.65579710144927,
+          "startSpeed": 76.31504146770126,
+          "endSpeed": 75.23686517694898
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 875,
+          "endDistance": 1485,
+          "type": "corner_low_speed",
+          "difficulty": 0.5745442024687668,
+          "maxSpeed": 55.830242470206194,
+          "targetSpeed": 25.886973180076627,
+          "startSpeed": 75.23686517694898,
+          "endSpeed": 60.38180339790421
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 1485,
+          "endDistance": 2361,
+          "type": "corner_medium_speed",
+          "difficulty": 0.41103308542336736,
+          "maxSpeed": 71.08610905150661,
+          "targetSpeed": 48.78753753753753,
+          "startSpeed": 59.39390630474395,
+          "endSpeed": 79.86070778422575
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2361,
+          "endDistance": 3103,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 84.7986111111111,
+          "targetSpeed": 84.7986111111111,
+          "startSpeed": 79.86070778422575,
+          "endSpeed": 83.37122609765152
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 3103,
+          "endDistance": 3740,
+          "type": "corner_medium_speed",
+          "difficulty": 0.4037810589935784,
+          "maxSpeed": 71.8114940725202,
+          "targetSpeed": 54.26062091503268,
+          "startSpeed": 83.37122609765152,
+          "endSpeed": 78.37114530782752
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3740,
+          "endDistance": 3925,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.04336043360433,
+          "targetSpeed": 81.04336043360433,
+          "startSpeed": 78.37114530782752,
+          "endSpeed": 77.69212966454546
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3925,
+          "endDistance": 4403,
+          "type": "corner_low_speed",
+          "difficulty": 0.5461241179481099,
+          "maxSpeed": 58.763175438900056,
+          "targetSpeed": 28.86920384951881,
+          "startSpeed": 77.69212966454546,
+          "endSpeed": 55.593400200477916
+        },
+        {
+          "id": "s10",
+          "name": "S10",
+          "startDistance": 4403,
+          "endDistance": 5119,
+          "type": "corner_low_speed",
+          "difficulty": 0.5344750045893415,
+          "maxSpeed": 59.955622833121616,
+          "targetSpeed": 23.9656432748538,
+          "startSpeed": 55.593400200477916,
+          "endSpeed": 77.222592841927
+        },
+        {
+          "id": "s11",
+          "name": "S11",
+          "startDistance": 5119,
+          "endDistance": 5278,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 82.01201201201201,
+          "targetSpeed": 82.01201201201201,
+          "startSpeed": 77.222592841927,
+          "endSpeed": 81.24875690450753
+        }
+      ]
+    },
+    "mexico-city-gp": {
+      "trackId": "mexico-city-gp",
+      "name": "Autódromo Hermanos Rodríguez",
+      "totalDistance": 4304,
+      "source": "openf1-calculated",
+      "generatedAt": "2026-03-28T12:07:50.502Z",
+      "curveKey": "Mexico City",
+      "sessionTypes": [
+        "P",
+        "Q",
+        "R"
+      ],
+      "hotlapOnly": true,
+      "seasons": [
+        "2025"
+      ],
+      "lapCount": 829,
+      "avgLapTime": 82.37517008443913,
+      "avgSpeedKph": 185.19415551729935,
+      "avgMaxSpeedKph": 330.69481302774426,
+      "lapTypeCounts": {
+        "hotlap": 1172,
+        "pit_out": 27,
+        "pit_in": 27,
+        "start": 20,
+        "return": 16,
+        "invalid": 4
+      },
+      "pushStrengthCounts": {
+        "max": 304,
+        "push": 525,
+        "build": 0,
+        "cool": 0
+      },
+      "coverage": {
+        "coveredDistance": 4304,
+        "coveredRatio": 1,
+        "hasFullDistance": true,
+        "sectorCount": 9
+      },
+      "sectorCount": 9,
+      "sectors": [
+        {
+          "id": "s1",
+          "name": "S1",
+          "startDistance": 0,
+          "endDistance": 995,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 91.43804298125286,
+          "targetSpeed": 91.43804298125286,
+          "startSpeed": 75.0319119981606,
+          "endSpeed": 87.76133005914566
+        },
+        {
+          "id": "s2",
+          "name": "S2",
+          "startDistance": 995,
+          "endDistance": 1665,
+          "type": "corner_low_speed",
+          "difficulty": 0.5728285263113604,
+          "maxSpeed": 60.39352821551068,
+          "targetSpeed": 26.95147241808378,
+          "startSpeed": 87.76133005914566,
+          "endSpeed": 76.00830000184602
+        },
+        {
+          "id": "s3",
+          "name": "S3",
+          "startDistance": 1665,
+          "endDistance": 1860,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 82.01954732510288,
+          "targetSpeed": 82.01954732510288,
+          "startSpeed": 76.00830000184602,
+          "endSpeed": 78.61448352895101
+        },
+        {
+          "id": "s4",
+          "name": "S4",
+          "startDistance": 1860,
+          "endDistance": 2357,
+          "type": "corner_low_speed",
+          "difficulty": 0.7055777380619471,
+          "maxSpeed": 45.098552687337545,
+          "targetSpeed": 20.399470899470902,
+          "startSpeed": 78.61448352895101,
+          "endSpeed": 46.036304199184876
+        },
+        {
+          "id": "s5",
+          "name": "S5",
+          "startDistance": 2357,
+          "endDistance": 2487,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 65.72954520427265,
+          "targetSpeed": 65.72954520427265,
+          "startSpeed": 46.036304199184876,
+          "endSpeed": 60.73299731060226
+        },
+        {
+          "id": "s6",
+          "name": "S6",
+          "startDistance": 2487,
+          "endDistance": 2812,
+          "type": "corner_medium_speed",
+          "difficulty": 0.562301659006673,
+          "maxSpeed": 60.00075151203539,
+          "targetSpeed": 46.56149816248338,
+          "startSpeed": 60.73299731060226,
+          "endSpeed": 60.80186724782535
+        },
+        {
+          "id": "s7",
+          "name": "S7",
+          "startDistance": 2812,
+          "endDistance": 3331,
+          "type": "corner_medium_speed",
+          "difficulty": 0.5192797073886243,
+          "maxSpeed": 64.80704245358245,
+          "targetSpeed": 44.07303164091244,
+          "startSpeed": 60.175907298697105,
+          "endSpeed": 76.65719005097856
+        },
+        {
+          "id": "s8",
+          "name": "S8",
+          "startDistance": 3331,
+          "endDistance": 3482,
+          "type": "straight",
+          "difficulty": 0.1,
+          "maxSpeed": 81.0175983436853,
+          "targetSpeed": 81.0175983436853,
+          "startSpeed": 76.65719005097856,
+          "endSpeed": 77.29556722633318
+        },
+        {
+          "id": "s9",
+          "name": "S9",
+          "startDistance": 3482,
+          "endDistance": 4304,
+          "type": "corner_low_speed",
+          "difficulty": 0.6478023779418862,
+          "maxSpeed": 51.869763506574216,
+          "targetSpeed": 18.561471119992387,
+          "startSpeed": 77.29556722633318,
+          "endSpeed": 68.39247094664195
+        }
+      ]
+    }
+  }
+}
