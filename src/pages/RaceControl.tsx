@@ -55,6 +55,8 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
     serializeLiveRaceState,
   } = useRaceStore();
   const teamId = useChampionshipStore((state) => state.teamId);
+  const championshipMode = useChampionshipStore((state) => state.mode);
+  const teamStateById = useChampionshipStore((state) => state.teamStateById);
   const playerDriverIds = useMemo(() => DRIVERS.filter(driver => driver.team === 'McLaren').map(driver => driver.id), []);
   const [preRaceSetup, setPreRaceSetup] = useState<Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }>>({});
   const hydratedPreRaceIdRef = useRef<string | null>(null);
@@ -392,13 +394,28 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
         : 90;
   };
 
+  const pitStopSpeedBonus = useMemo(() => {
+      if (onlinePitCrewReadiness) {
+        return onlinePitCrewReadiness.pitStopSpeedBonus;
+      }
+      if (championshipMode === 'local' && teamId) {
+        const pitCrew = teamStateById[teamId]?.crew.find((crew) => crew.department === 'pit_crew');
+        return pitCrew?.speedBonus ?? 0;
+      }
+      return 0;
+  }, [onlinePitCrewReadiness, championshipMode, teamId, teamStateById]);
+
   const estimatePitLoss = (baselineLapTimeSeconds: number) => {
-      const pitDistance = track.pitLane.exitDistance >= track.pitLane.entryDistance
-        ? track.pitLane.exitDistance - track.pitLane.entryDistance
-        : (track.totalDistance - track.pitLane.entryDistance) + track.pitLane.exitDistance;
-      const pitTransitTime = pitDistance > 0 ? pitDistance / track.pitLane.speedLimit : 0;
-      const racingTransitTime = pitDistance > 0 ? pitDistance / Math.max(1, track.totalDistance / baselineLapTimeSeconds) : 0;
-      return track.pitLane.stopTime + Math.max(0, pitTransitTime - racingTransitTime);
+      let stopDuration = 2.4;
+      if (pitStopSpeedBonus > 0) {
+        stopDuration *= Math.max(0.7, 1 - pitStopSpeedBonus / 100);
+      }
+      const fieldSize = Math.max(2, raceState?.vehicles.length ?? DRIVERS.length);
+      const expectedPositionsLost = ((fieldSize - 1) * stopDuration) / Math.max(1, baselineLapTimeSeconds);
+      const cappedPositionsLost = Math.min(3, expectedPositionsLost);
+      const perPassRecoverySeconds = 0.8 + track.overtakingDifficulty * 1.4;
+      const passLossSeconds = cappedPositionsLost * perPassRecoverySeconds;
+      return stopDuration + passLossSeconds;
   };
 
   const formatRaceTime = (seconds: number) => {

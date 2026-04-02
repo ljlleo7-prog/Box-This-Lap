@@ -81,7 +81,9 @@ export const TCC_API = {
     practiceSpeedMultiplier?: 1 | 2 | 5 | 10;
     qualiSpeedMultiplier?: 1 | 2 | 5 | 10;
     raceSpeedMultiplier?: 1 | 2 | 5 | 10;
-    hostLocalDatetime: string; // ISO string
+    raceLocalDatetime: string; // ISO string
+    fp1LocalDatetime: string; // ISO string
+    qualiLocalDatetime: string; // ISO string
     weatherMode: 'realistic' | 'preset';
     realismPreset: 'standard' | 'chaos';
   }) => {
@@ -92,7 +94,9 @@ export const TCC_API = {
       p_practice_speed_multiplier: params.practiceSpeedMultiplier ?? null,
       p_quali_speed_multiplier: params.qualiSpeedMultiplier ?? null,
       p_race_speed_multiplier: params.raceSpeedMultiplier ?? null,
-      p_host_local_datetime: params.hostLocalDatetime,
+      p_host_local_datetime: params.raceLocalDatetime,
+      p_fp1_local_datetime: params.fp1LocalDatetime,
+      p_quali_local_datetime: params.qualiLocalDatetime,
       p_weather_mode: params.weatherMode,
       p_realism_preset: params.realismPreset,
     });
@@ -197,6 +201,25 @@ export const TCC_API = {
       p_session_type: sessionType,
       p_speed_multiplier: speedMultiplier,
     });
+  },
+
+  cancelWeekend: async (weekendId: string) => {
+    const { data, error } = await supabase.rpc('tcc_cancel_weekend', {
+      p_weekend_id: weekendId,
+    });
+    if (error) throw error;
+    if (data?.success === false) throw new Error(data.message || 'Failed to cancel weekend');
+    return data;
+  },
+
+  setWeekendEndOfSeason: async (weekendId: string, isEndOfSeason: boolean) => {
+    const { data, error } = await supabase.rpc('tcc_set_weekend_end_of_season', {
+      p_weekend_id: weekendId,
+      p_is_end_of_season: isEndOfSeason,
+    });
+    if (error) throw error;
+    if (data?.success === false) throw new Error(data.message || 'Failed to update end-of-season flag');
+    return data;
   },
 
   getRaceLive: async (weekendId: string, sessionType: LiveSessionType = 'race') => {

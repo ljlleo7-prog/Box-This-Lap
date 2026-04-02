@@ -27,7 +27,12 @@ export const ChampionshipDetails: React.FC = () => {
   // Create Weekend Form State
   const [showCreateWeekend, setShowCreateWeekend] = useState(false);
   const [selectedTrackId, setSelectedTrackId] = useState(TRACKS[0].id);
-  const [weekendDateTime, setWeekendDateTime] = useState('');
+  const [raceDateTime, setRaceDateTime] = useState('');
+  const [fp1DateTime, setFp1DateTime] = useState('');
+  const [qualiDateTime, setQualiDateTime] = useState('');
+  const [practiceSpeedMultiplier, setPracticeSpeedMultiplier] = useState<1 | 2 | 5 | 10>(1);
+  const [qualiSpeedMultiplier, setQualiSpeedMultiplier] = useState<1 | 2 | 5 | 10>(1);
+  const [raceSpeedMultiplier, setRaceSpeedMultiplier] = useState<1 | 2 | 5 | 10>(1);
   const [creatingWeekend, setCreatingWeekend] = useState(false);
 
   useEffect(() => {
@@ -99,27 +104,92 @@ export const ChampionshipDetails: React.FC = () => {
     }
   };
 
+  const isHalfHourSlot = (value: string) => {
+    if (!value) return false;
+    const date = new Date(value);
+    return date.getSeconds() === 0 && date.getMinutes() % 30 === 0;
+  };
+
+  const derivePracticeTimeline = () => {
+    if (!fp1DateTime) return null;
+    const fp1 = new Date(fp1DateTime);
+    const sessionMinutes = 60 / practiceSpeedMultiplier;
+    const fp2 = new Date(fp1.getTime() + sessionMinutes * 60 * 1000);
+    const fp3 = new Date(fp2.getTime() + sessionMinutes * 60 * 1000);
+    const practiceEnd = new Date(fp3.getTime() + sessionMinutes * 60 * 1000);
+    return { fp1, fp2, fp3, practiceEnd, sessionMinutes };
+  };
+
+  const scheduleValidationMessage = () => {
+    if (!raceDateTime || !fp1DateTime || !qualiDateTime) return 'Set race, FP1, and qualifying times.';
+    if (!isHalfHourSlot(raceDateTime) || !isHalfHourSlot(fp1DateTime) || !isHalfHourSlot(qualiDateTime)) {
+      return 'All session times must be on whole half-hours.';
+    }
+
+    const race = new Date(raceDateTime);
+    const fp1 = new Date(fp1DateTime);
+    const quali = new Date(qualiDateTime);
+    const practiceTimeline = derivePracticeTimeline();
+    if (!practiceTimeline) return 'Practice timeline is missing.';
+
+    if (race.getTime() < Date.now() + 48 * 60 * 60 * 1000) {
+      return 'Race must be scheduled at least 2 days ahead.';
+    }
+
+    const raceDay = new Date(race);
+    raceDay.setHours(0, 0, 0, 0);
+    const requiredDay = new Date(raceDay.getTime() - 24 * 60 * 60 * 1000);
+    const fp1Day = new Date(fp1);
+    fp1Day.setHours(0, 0, 0, 0);
+    const qualiDay = new Date(quali);
+    qualiDay.setHours(0, 0, 0, 0);
+
+    if (fp1Day.getTime() !== requiredDay.getTime() || qualiDay.getTime() !== requiredDay.getTime()) {
+      return 'FP1 and qualifying must be on the day before the race.';
+    }
+
+    if (quali.getTime() < practiceTimeline.practiceEnd.getTime() + 30 * 60 * 1000) {
+      return 'Qualifying must be at least 30 minutes after the practice block ends.';
+    }
+
+    if (weekends.some((weekend) => weekend.is_end_of_season && weekend.status !== 'cancelled')) {
+      return 'Cannot add more races after the end-of-season race unless it is cancelled.';
+    }
+
+    return null;
+  };
+
   const handleCreateWeekend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !weekendDateTime) return;
-    
+    if (!id || !raceDateTime || !fp1DateTime || !qualiDateTime) return;
+
+    const validationMessage = scheduleValidationMessage();
+    if (validationMessage) {
+      alert(validationMessage);
+      return;
+    }
+
     setCreatingWeekend(true);
     try {
-      // Ensure player profile exists before any host actions
       await TCC_API.ensurePlayerProfile();
       await TCC_API.createWeekend({
         championshipId: id,
         trackId: selectedTrackId,
-        practiceSpeedMultiplier: 1,
-        qualiSpeedMultiplier: 1,
-        raceSpeedMultiplier: 1,
-        hostLocalDatetime: new Date(weekendDateTime).toISOString(),
+        practiceSpeedMultiplier,
+        qualiSpeedMultiplier,
+        raceSpeedMultiplier,
+        raceLocalDatetime: new Date(raceDateTime).toISOString(),
+        fp1LocalDatetime: new Date(fp1DateTime).toISOString(),
+        qualiLocalDatetime: new Date(qualiDateTime).toISOString(),
         weatherMode: 'realistic',
         realismPreset: 'standard'
       });
-      
+
       setShowCreateWeekend(false);
-      loadData(); // Reload to show new weekend
+      setRaceDateTime('');
+      setFp1DateTime('');
+      setQualiDateTime('');
+      loadData();
     } catch (err: any) {
       console.error('Failed to create weekend:', err);
       alert(err?.message || err?.error?.message || err?.error || 'Failed to create weekend');
@@ -242,11 +312,11 @@ export const ChampionshipDetails: React.FC = () => {
                 <h4 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
                     <Calendar className="text-f1-red" /> New Event Configuration
                 </h4>
-                <form onSubmit={handleCreateWeekend} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <form onSubmit={handleCreateWeekend} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Circuit Selection</label>
                     <div className="relative">
-                        <select 
+                        <select
                         value={selectedTrackId}
                         onChange={(e) => setSelectedTrackId(e.target.value)}
                         className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none appearance-none"
@@ -261,20 +331,78 @@ export const ChampionshipDetails: React.FC = () => {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Event Start (Local)</label>
-                    <input 
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Race Time (Local)</label>
+                    <input
                       type="datetime-local"
-                      value={weekendDateTime}
-                      onChange={(e) => setWeekendDateTime(e.target.value)}
+                      step="1800"
+                      value={raceDateTime}
+                      onChange={(e) => setRaceDateTime(e.target.value)}
                       className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none"
                       required
                     />
                   </div>
-                  <div className="flex items-end">
-                    <GlassButton 
-                      type="submit" 
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">FP1 Time (Local)</label>
+                    <input
+                      type="datetime-local"
+                      step="1800"
+                      value={fp1DateTime}
+                      onChange={(e) => setFp1DateTime(e.target.value)}
+                      className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Qualifying Time (Local)</label>
+                    <input
+                      type="datetime-local"
+                      step="1800"
+                      value={qualiDateTime}
+                      onChange={(e) => setQualiDateTime(e.target.value)}
+                      className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Practice Speed</label>
+                    <select value={practiceSpeedMultiplier} onChange={(e) => setPracticeSpeedMultiplier(Number(e.target.value) as 1 | 2 | 5 | 10)} className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none">
+                      {[1, 2, 5, 10].map((speed) => <option key={`practice-${speed}`} value={speed}>{speed}x</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Qualifying Speed</label>
+                    <select value={qualiSpeedMultiplier} onChange={(e) => setQualiSpeedMultiplier(Number(e.target.value) as 1 | 2 | 5 | 10)} className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none">
+                      {[1, 2, 5, 10].map((speed) => <option key={`quali-${speed}`} value={speed}>{speed}x</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Race Speed</label>
+                    <select value={raceSpeedMultiplier} onChange={(e) => setRaceSpeedMultiplier(Number(e.target.value) as 1 | 2 | 5 | 10)} className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none">
+                      {[1, 2, 5, 10].map((speed) => <option key={`race-${speed}`} value={speed}>{speed}x</option>)}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-4 space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
+                    <div className="text-xs font-mono uppercase tracking-widest text-gray-400">Derived practice timeline</div>
+                    {derivePracticeTimeline() ? (
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm text-gray-300">
+                        <div>FP1: <span className="text-white">{derivePracticeTimeline()!.fp1.toLocaleString()}</span></div>
+                        <div>FP2: <span className="text-white">{derivePracticeTimeline()!.fp2.toLocaleString()}</span></div>
+                        <div>FP3: <span className="text-white">{derivePracticeTimeline()!.fp3.toLocaleString()}</span></div>
+                        <div>End: <span className="text-white">{derivePracticeTimeline()!.practiceEnd.toLocaleString()}</span></div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">Set FP1 to preview FP2/FP3 timing.</div>
+                    )}
+                    {scheduleValidationMessage() && (
+                      <div className="text-sm text-yellow-400">{scheduleValidationMessage()}</div>
+                    )}
+                  </div>
+                  <div className="xl:col-span-4 flex justify-end">
+                    <GlassButton
+                      type="submit"
                       isLoading={creatingWeekend}
-                      className="w-full"
+                      className="w-full md:w-auto"
+                      disabled={!!scheduleValidationMessage()}
                     >
                       Confirm Schedule
                     </GlassButton>

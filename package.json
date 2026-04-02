@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "postbuild": "cp dist/index.html dist/404.html",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
+    "i18n:validate": "node scripts/validate_i18n_coverage.js",
     "deploy": "npm run build && gh-pages -d dist -b gh-pages"
   },
   "dependencies": {

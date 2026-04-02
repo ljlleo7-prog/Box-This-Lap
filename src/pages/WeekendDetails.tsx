@@ -18,6 +18,7 @@ export const WeekendDetails: React.FC = () => {
   const [sessionSpeeds, setSessionSpeeds] = useState({ practice: 1 as 1 | 2 | 5 | 10, quali: 1 as 1 | 2 | 5 | 10, race: 1 as 1 | 2 | 5 | 10 });
   const [savingSessionSpeed, setSavingSessionSpeed] = useState<'practice' | 'quali' | 'race' | null>(null);
   const [canManageSessionSpeed, setCanManageSessionSpeed] = useState(false);
+  const [updatingWeekendState, setUpdatingWeekendState] = useState(false);
 
   useEffect(() => {
     if (id) loadWeekend();
@@ -96,6 +97,34 @@ export const WeekendDetails: React.FC = () => {
     }
   };
 
+  const cancelWeekend = async () => {
+    if (!id || !confirm('Cancel this weekend? The cancelled notice will remain until the original race time.')) return;
+    setUpdatingWeekendState(true);
+    try {
+      await TCC_API.cancelWeekend(id);
+      await loadWeekend();
+    } catch (err: any) {
+      console.error('Failed to cancel weekend:', err);
+      alert(err?.message || 'Failed to cancel weekend');
+    } finally {
+      setUpdatingWeekendState(false);
+    }
+  };
+
+  const toggleEndOfSeason = async () => {
+    if (!id) return;
+    setUpdatingWeekendState(true);
+    try {
+      await TCC_API.setWeekendEndOfSeason(id, !weekend.is_end_of_season);
+      await loadWeekend();
+    } catch (err: any) {
+      console.error('Failed to update end-of-season flag:', err);
+      alert(err?.message || 'Failed to update end-of-season flag');
+    } finally {
+      setUpdatingWeekendState(false);
+    }
+  };
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
         <div className="text-f1-red animate-pulse font-mono tracking-widest">LOADING TELEMETRY...</div>
@@ -115,8 +144,24 @@ export const WeekendDetails: React.FC = () => {
   );
 
   const track = TRACKS.find(t => t.id === weekend.track_id);
+  const isCancelled = weekend.status === 'cancelled';
+  const showCancelledNotice = isCancelled && weekend.scheduled_race_at_utc
+    ? Date.now() < new Date(weekend.scheduled_race_at_utc).getTime()
+    : false;
+  const scheduleRows = [
+    { label: 'FP1', value: weekend.scheduled_fp1_at_utc || weekend.scheduled_practice_at_utc },
+    { label: 'FP2', value: weekend.scheduled_fp2_at_utc },
+    { label: 'FP3', value: weekend.scheduled_fp3_at_utc },
+    { label: 'Qualifying', value: weekend.scheduled_quali_at_utc },
+    { label: 'Race', value: weekend.scheduled_race_at_utc },
+  ];
+  const currentSessionScheduledAt = (type: 'practice' | 'quali' | 'race') => {
+    if (type === 'practice') return weekend.scheduled_practice_at_utc || weekend.scheduled_fp1_at_utc;
+    if (type === 'quali') return weekend.scheduled_quali_at_utc;
+    return weekend.scheduled_race_at_utc;
+  };
 
-  const SessionCard = ({ 
+  const SessionCard = ({
     title, 
     type, 
     status, 
@@ -132,9 +177,13 @@ export const WeekendDetails: React.FC = () => {
     const isCompleted = status === 'completed';
     // Logic for actionable state
     let isActionable = false;
-    if (type === 'practice' && weekend.status === 'scheduled') isActionable = true;
-    if (type === 'quali' && weekend.status === 'practice_complete') isActionable = true;
-    if (type === 'race' && weekend.status === 'quali_complete') isActionable = true;
+    const scheduledAt = currentSessionScheduledAt(type);
+    const hasStarted = scheduledAt ? Date.now() >= new Date(scheduledAt).getTime() : true;
+    if (!isCancelled && hasStarted) {
+      if (type === 'practice' && weekend.status === 'scheduled') isActionable = true;
+      if (type === 'quali' && weekend.status === 'practice_complete') isActionable = true;
+      if (type === 'race' && weekend.status === 'quali_complete') isActionable = true;
+    }
 
     return (
       <GlassCard 
@@ -170,7 +219,13 @@ export const WeekendDetails: React.FC = () => {
             </div>
             ) : (
                 <div className="text-gray-500 text-sm italic">
-                    {isActionable ? "Session ready for simulation initialization." : "Waiting for previous session completion."}
+                    {isCancelled
+                      ? 'Weekend cancelled. Session unavailable.'
+                      : !hasStarted && scheduledAt
+                        ? `Session unlocks at ${new Date(scheduledAt).toLocaleString()}.`
+                        : isActionable
+                          ? 'Session ready for simulation initialization.'
+                          : 'Waiting for previous session completion.'}
                 </div>
             )}
         </div>
@@ -210,19 +265,62 @@ export const WeekendDetails: React.FC = () => {
         tags={
             <>
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-sm text-gray-300">
-                    <MapPin size={14} className="text-[#00FFFF]" /> 
+                    <MapPin size={14} className="text-[#00FFFF]" />
                     {track?.location ? `${track.location.lat.toFixed(2)}°, ${track.location.long.toFixed(2)}°` : 'Unknown Location'}
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-sm text-gray-300">
-                    <Calendar size={14} className="text-[#00FFFF]" /> 
+                    <Calendar size={14} className="text-[#00FFFF]" />
                     {new Date(weekend.scheduled_race_at_utc || weekend.start_time).toLocaleString()}
                 </div>
+                {weekend.is_end_of_season && (
+                  <div className="px-3 py-1 rounded-full text-sm border font-medium bg-yellow-500/10 border-yellow-500/30 text-yellow-300 uppercase">
+                    End of season
+                  </div>
+                )}
                 <div className="px-3 py-1 rounded-full text-sm border font-medium bg-gray-800 border-gray-700 text-gray-400 uppercase">
                    {weekend.status?.replace('_', ' ')}
                 </div>
             </>
         }
       />
+
+      {showCancelledNotice && (
+        <GlassCard className="border-yellow-500/30 bg-yellow-500/10">
+          <div className="text-sm font-mono uppercase tracking-widest text-yellow-300">Weekend Cancelled</div>
+          <div className="text-sm text-gray-200 mt-2">
+            This weekend remains cancelled until the original race time of {new Date(weekend.scheduled_race_at_utc).toLocaleString()}.
+          </div>
+        </GlassCard>
+      )}
+
+      <GlassCard className="p-5">
+        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+          <div className="text-sm font-mono uppercase tracking-widest text-gray-400">Weekend Schedule</div>
+          {canManageSessionSpeed && (
+            <div className="flex gap-2 flex-wrap">
+              <GlassButton variant="secondary" onClick={toggleEndOfSeason} isLoading={updatingWeekendState}>
+                {weekend.is_end_of_season ? 'Unset End-of-Season' : 'Mark End-of-Season'}
+              </GlassButton>
+              <GlassButton variant="secondary" onClick={cancelWeekend} isLoading={updatingWeekendState} disabled={isCancelled || weekend.status === 'race_complete'}>
+                {isCancelled ? 'Weekend Cancelled' : 'Cancel Weekend'}
+              </GlassButton>
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
+          {scheduleRows.map((row) => (
+            <div key={row.label} className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">{row.label}</div>
+              <div className="text-white">{row.value ? new Date(row.value).toLocaleString() : 'Not set'}</div>
+            </div>
+          ))}
+        </div>
+        {typeof weekend.practice_block_duration_minutes === 'number' && (
+          <div className="mt-3 text-xs text-gray-500">
+            Practice block duration: {(weekend.practice_block_duration_minutes / 60).toFixed(1)} hours.
+          </div>
+        )}
+      </GlassCard>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {(['practice', 'quali', 'race'] as const).map((sessionType) => {

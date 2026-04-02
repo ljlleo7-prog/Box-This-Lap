@@ -5,8 +5,10 @@ import { useNavigate } from 'react-router-dom';
 import { TCC_API } from '../lib/tcc-api';
 import { loadSaveGame } from '../lib/localSaves';
 import { supabase } from '../lib/supabase';
+import { useI18n } from '../i18n/I18nProvider';
 
 export const Dashboard: React.FC = () => {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [onlineChampionship, setOnlineChampionship] = useState<any | null>(null);
   const [onlineTeam, setOnlineTeam] = useState<any | null>(null);
@@ -51,21 +53,25 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   const activeTitle = onlineChampionship?.name ?? localChampionship?.name ?? null;
-  const activeMode = onlineChampionship ? 'Online Championship' : localChampionship ? 'Local Championship' : null;
+  const activeMode = onlineChampionship
+    ? t('dashboard.onlineChampionship')
+    : localChampionship
+      ? t('dashboard.localChampionship')
+      : null;
   const teamStatus = onlineTeam?.name
     ? `${onlineTeam.name}`
     : localChampionship
-      ? localChampionship.teams.find((team) => team.teamId === localChampionship.selectedTeamId)?.teamName ?? 'Team assigned'
+      ? localChampionship.teams.find((team) => team.teamId === localChampionship.selectedTeamId)?.teamName ?? t('dashboard.teamAssigned')
       : null;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" description="Overview of your career and active championships" />
+      <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-          <h3 className="text-lg font-bold text-white mb-2">Active Championship</h3>
+          <h3 className="text-lg font-bold text-white mb-2">{t('dashboard.activeChampionship')}</h3>
           {loading ? (
-            <p className="text-gray-400">Loading championship...</p>
+            <p className="text-gray-400">{t('dashboard.loadingChampionship')}</p>
           ) : activeTitle ? (
             <>
               <p className="text-white font-semibold">{activeTitle}</p>
@@ -73,29 +79,29 @@ export const Dashboard: React.FC = () => {
             </>
           ) : (
             <>
-              <p className="text-gray-400 mb-4">No active championship found.</p>
+              <p className="text-gray-400 mb-4">{t('dashboard.noActiveChampionship')}</p>
               <GlassButton onClick={() => navigate('/championships')} variant="secondary">
-                Open Championships
+                {t('dashboard.openChampionships')}
               </GlassButton>
             </>
           )}
         </div>
         <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-          <h3 className="text-lg font-bold text-white mb-2">Next Race</h3>
+          <h3 className="text-lg font-bold text-white mb-2">{t('dashboard.nextRace')}</h3>
           {onlineChampionship ? (
-            <p className="text-gray-400">Open the championship calendar to schedule the next race.</p>
+            <p className="text-gray-400">{t('dashboard.scheduleOnline')}</p>
           ) : localChampionship ? (
-            <p className="text-gray-400">Continue your local season from Career.</p>
+            <p className="text-gray-400">{t('dashboard.scheduleLocal')}</p>
           ) : (
-            <p className="text-gray-400">Schedule pending.</p>
+            <p className="text-gray-400">{t('dashboard.schedulePending')}</p>
           )}
         </div>
         <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-          <h3 className="text-lg font-bold text-white mb-2">Team Status</h3>
+          <h3 className="text-lg font-bold text-white mb-2">{t('dashboard.teamStatus')}</h3>
           {teamStatus ? (
             <p className="text-gray-400">{teamStatus}</p>
           ) : (
-            <p className="text-gray-400">Not signed to a team.</p>
+            <p className="text-gray-400">{t('dashboard.notSigned')}</p>
           )}
         </div>
       </div>
