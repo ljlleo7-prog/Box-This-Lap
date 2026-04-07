@@ -11,6 +11,8 @@ import type {
 export type WeekendPhase = 'pre_weekend' | 'fp1' | 'fp2' | 'fp3' | 'q1' | 'q2' | 'q3' | 'race' | 'post_race';
 
 export type SessionType = 'fp1' | 'fp2' | 'fp3' | 'q1' | 'q2' | 'q3' | 'race';
+export type WeekendSessionType = 'practice' | 'quali' | 'race';
+export type WeekendSessionStatus = 'pending' | 'ready' | 'running' | 'completed';
 
 export type DevelopmentCategory =
   | 'aero'
@@ -261,10 +263,30 @@ export interface SessionSummary {
     driverId: string;
     position: number;
     timeOrGap?: number | string;
+    bestLapTime?: number | null;
+    lapsCompleted?: number;
   }>;
   notes: string[];
   incidents?: string[];
   weather?: string;
+}
+
+export interface WeekendSessionState {
+  sessionType: SessionType;
+  weekendSessionType: WeekendSessionType;
+  status: WeekendSessionStatus;
+  elapsedTime: number;
+  targetLaps?: number;
+  targetDurationSeconds?: number;
+  summary?: SessionSummary;
+}
+
+export interface WeekendState {
+  trackId: Track['id'];
+  currentPhase: WeekendPhase;
+  activeSession: WeekendSessionState | null;
+  sessions: WeekendSessionState[];
+  grid?: string[];
 }
 
 export interface OfflineWeekend {
@@ -316,6 +338,47 @@ export interface OfflineChampionship {
   constructorStandings: ChampionshipStandingEntry[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OnlineWeekendParcFermeState {
+  isActive: boolean;
+  lockedFromPhase: 'q1' | null;
+  activatedAt?: string | null;
+  referenceMechanicalSetupByDriver?: Record<string, SessionSetupState>;
+  lockedRaceSetupByDriver?: Record<string, SessionSetupState>;
+}
+
+export interface OnlineWeekendInteractiveSessionState {
+  weekend: OfflineWeekend;
+  activeDriverId: string;
+  practiceDevelopment: Record<string, unknown>;
+  aiCompetitors: Array<Record<string, unknown>>;
+  activePlaybackByDriver: Record<string, Record<string, unknown> | null>;
+  pendingRunContextByDriver: Record<string, Record<string, unknown> | null>;
+  garageOpenByDriver: Record<string, boolean>;
+  sessionPaused: boolean;
+  sceneSpeed: number;
+}
+
+export interface OnlineWeekendGaragePlan {
+  setupByPhase?: Partial<Record<SessionType, Record<string, SessionSetupState>>>;
+  selectedTyreSetByPhase?: Partial<Record<SessionType, Record<string, string>>>;
+  lastCommittedSetupByPhase?: Partial<Record<SessionType, Record<string, SessionSetupState>>>;
+  sessionSummaries?: Partial<Record<SessionType, SessionSummary>>;
+  interactiveSessionStateByPhase?: Partial<Record<SessionType, OnlineWeekendInteractiveSessionState>>;
+  parcFerme?: OnlineWeekendParcFermeState;
+}
+
+export interface OnlineWeekendPlanRow {
+  weekend_id: string;
+  team_id: string;
+  preset: OnlineWeekendGaragePlan | null;
+}
+
+export interface OnlineWeekendPlanBundle {
+  practice: OnlineWeekendGaragePlan | null;
+  quali: OnlineWeekendGaragePlan | null;
+  race: OnlineWeekendGaragePlan | null;
 }
 
 export interface SaveGame {

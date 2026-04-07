@@ -5,6 +5,7 @@ import { GlassButton } from '../components/ui/GlassButton';
 import { TCC_API } from '../lib/tcc-api';
 import { supabase } from '../lib/supabase';
 import { useChampionshipStore } from '../store/championshipStore';
+import { useI18n } from '../i18n/I18nProvider';
 
 type UpgradeQueueItem = {
   id: string;
@@ -23,6 +24,7 @@ const FACILITY_CONFIG: Record<string, { label: string; costCash: number; }> = {
 };
 
 export const Facilities: React.FC = () => {
+  const { t } = useI18n();
   const activeChampionshipId = useChampionshipStore((state) => state.championshipId);
   const mode = useChampionshipStore((state) => state.mode);
   const [championshipId, setChampionshipId] = useState<string | null>(null);
@@ -57,21 +59,21 @@ export const Facilities: React.FC = () => {
       setError(null);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setError('Please sign in.');
+        setError(t('facilities.error.signIn'));
         return;
       }
       if (mode === 'local') {
-        setError('Facilities are only available in online championships.');
+        setError(t('facilities.error.onlineOnly'));
         return;
       }
       if (!activeChampionshipId) {
-        setError('Select a championship first.');
+        setError(t('facilities.error.selectChampionship'));
         return;
       }
       setChampionshipId(activeChampionshipId);
       const { data: myTeam } = await TCC_API.getMyTeam(activeChampionshipId);
       if (!myTeam) {
-        setError('You do not own a team yet.');
+        setError(t('facilities.error.noTeam'));
         return;
       }
       setTeamId(myTeam.id);
@@ -97,7 +99,7 @@ export const Facilities: React.FC = () => {
         setIsBetaEconomy(walletRes.data.economy?.mode === 'beta_calendar_budget');
       }
     } catch {
-      setError('Failed to load facilities.');
+      setError(t('facilities.error.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -106,7 +108,7 @@ export const Facilities: React.FC = () => {
   const convertToCash = async () => {
     if (!championshipId) return;
     if (!Number.isFinite(tokenToConvert) || tokenToConvert <= 0) {
-      setError('Enter a valid token amount.');
+      setError(t('facilities.error.validTokenAmount'));
       return;
     }
     setConverting(true);
@@ -115,12 +117,12 @@ export const Facilities: React.FC = () => {
       const { data, error: convertError } = await TCC_API.convertTokensToCash(championshipId, tokenToConvert);
       if (convertError) throw convertError;
       if (!data?.success) {
-        setError(data?.message || 'Conversion failed.');
+        setError(data?.message || t('facilities.error.conversionFailed'));
         return;
       }
       await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Conversion failed.');
+      setError(e instanceof Error ? e.message : t('facilities.error.conversionFailed'));
     } finally {
       setConverting(false);
     }
@@ -130,7 +132,7 @@ export const Facilities: React.FC = () => {
     if (!teamId) return;
     const res = await TCC_API.enqueueFacilityUpgrade(teamId, facility);
     if (res.error || (res.data && !res.data.success)) {
-      setError(res.data?.message || 'Upgrade failed.');
+      setError(res.data?.message || t('facilities.error.upgradeFailed'));
       return;
     }
     await load();
@@ -142,76 +144,76 @@ export const Facilities: React.FC = () => {
     await load();
   };
 
-  if (loading) return <div className="p-6 text-gray-400">Loading...</div>;
+  if (loading) return <div className="p-6 text-zinc-500 dark:text-zinc-400">{t('common.loading')}</div>;
   if (error) return <div className="p-6 text-red-500">{error}</div>;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Facilities" description="Upgrade your team infrastructure" />
+      <PageHeader title={t('facilities.title')} description={t('facilities.description')} />
       <div className="flex items-center justify-between">
-        <div className="text-gray-400">
+        <div className="text-zinc-500 dark:text-zinc-400">
           {isBetaEconomy ? (
             <>
-              Budget:
-              <span className="text-white font-bold ml-2">{cashBalance.toLocaleString()} CASH</span>
+              {t('facilities.budget')}:
+              <span className="text-white font-bold ml-2">{cashBalance.toLocaleString()} {t('common.cashUnit')}</span>
             </>
           ) : (
             <>
-              Wallet:
+              {t('facilities.wallet')}:
               <span className="text-white font-bold ml-2">{tokenBalance} TKN</span>
               <span className="text-gray-500 mx-2">|</span>
-              <span className="text-white font-bold">{cashBalance.toLocaleString()} CASH</span>
+              <span className="font-bold text-zinc-900 dark:text-white">{cashBalance.toLocaleString()} {t('common.cashUnit')}</span>
             </>
           )}
         </div>
-        <GlassButton onClick={completeReady}>Complete Ready Upgrades</GlassButton>
+        <GlassButton onClick={completeReady}>{t('facilities.completeReady')}</GlassButton>
       </div>
       <GlassCard className="p-6">
         {isBetaEconomy ? (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Daily Budget</div>
-              <div className="text-white font-bold">{(dailyBudgetCash ?? 0).toLocaleString()} CASH</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.dailyBudget')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">{(dailyBudgetCash ?? 0).toLocaleString()} {t('common.cashUnit')}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Daily Remaining</div>
-              <div className="text-white font-bold">{(dailyBudgetRemainingCash ?? 0).toLocaleString()} CASH</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.dailyRemaining')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">{(dailyBudgetRemainingCash ?? 0).toLocaleString()} {t('common.cashUnit')}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Weekly Remaining</div>
-              <div className="text-white font-bold">{(weeklyBudgetRemainingCash ?? 0).toLocaleString()} CASH</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.weeklyRemaining')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">{(weeklyBudgetRemainingCash ?? 0).toLocaleString()} {t('common.cashUnit')}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Budget Window</div>
-              <div className="text-white font-bold">{budgetDate ?? '—'}</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.budgetWindow')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">{budgetDate ?? '—'}</div>
               <div className="text-xs text-gray-500 mt-1">{budgetWeek ?? '—'} · {budgetTimezone}</div>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Token Price</div>
-              <div className="text-white font-bold">1 TKN = {Math.round(cashPerToken).toLocaleString()} CASH</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.tokenPrice')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">1 TKN = {Math.round(cashPerToken).toLocaleString()} {t('common.cashUnit')}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Weekly Remaining</div>
-              <div className="text-white font-bold">{Math.floor(weeklyRemaining)} TKN</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.weeklyRemaining')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">{Math.floor(weeklyRemaining)} TKN</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Season Cap Remaining</div>
-              <div className="text-white font-bold">{seasonRemainingCash.toLocaleString()} CASH</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.seasonCapRemaining')}</div>
+              <div className="font-bold text-zinc-900 dark:text-white">{seasonRemainingCash.toLocaleString()} {t('common.cashUnit')}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Convert TKN → CASH</div>
+              <div className="text-xs text-gray-500 mb-1">{t('facilities.convertTokenToCash')}</div>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={1}
                   value={tokenToConvert}
                   onChange={(e) => setTokenToConvert(Number(e.target.value))}
-                  className="w-24 bg-[#1a1a1a] border border-white/10 text-white p-2 rounded-lg focus:border-f1-red outline-none"
+                  className="w-24 rounded-lg border border-zinc-300 bg-white p-2 text-zinc-900 outline-none focus:border-f1-red dark:border-white/10 dark:bg-[#1a1a1a] dark:text-white"
                 />
-                <GlassButton onClick={convertToCash} isLoading={converting}>Convert</GlassButton>
+                <GlassButton onClick={convertToCash} isLoading={converting}>{t('facilities.convert')}</GlassButton>
               </div>
             </div>
           </div>
@@ -221,17 +223,17 @@ export const Facilities: React.FC = () => {
         {Object.entries(FACILITY_CONFIG).map(([key, cfg]) => (
           <GlassCard key={key} className="p-6">
             <h3 className="text-lg font-bold text-white mb-2">{cfg.label}</h3>
-            <p className="text-sm text-gray-400 mb-4">Level {levels?.[key] ?? 1}</p>
+            <p className="text-sm text-gray-400 mb-4">{t('facilities.level')} {levels?.[key] ?? 1}</p>
             <GlassButton onClick={() => enqueue(key)} disabled={cashBalance < cfg.costCash}>
-              Upgrade ({cfg.costCash.toLocaleString()} CASH)
+              {t('facilities.upgrade')} ({cfg.costCash.toLocaleString()} {t('common.cashUnit')})
             </GlassButton>
           </GlassCard>
         ))}
       </div>
-      <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-        <h3 className="text-lg font-bold text-white mb-2">Upgrade Queue</h3>
+      <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <h3 className="text-lg font-bold text-white mb-2">{t('facilities.upgradeQueue')}</h3>
         {queue.length === 0 ? (
-          <p className="text-gray-400">No upgrades queued.</p>
+          <p className="text-zinc-500 dark:text-zinc-400">{t('facilities.noQueuedUpgrades')}</p>
         ) : (
           <div className="space-y-2">
             {queue.map((item) => (

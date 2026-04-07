@@ -14,6 +14,7 @@ export const Championships: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newChampName, setNewChampName] = useState('');
+  const [newChampBackgroundUrl, setNewChampBackgroundUrl] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const navigate = useNavigate();
   const setActiveOnlineContext = useChampionshipStore((state) => state.setActiveOnlineContext);
@@ -50,16 +51,27 @@ export const Championships: React.FC = () => {
       if (result?.error) {
         throw new Error(result.error);
       }
+      const normalizedBackgroundUrl = newChampBackgroundUrl.trim();
       // Result contains the new championship object
       if (result && result.id) {
+        if (normalizedBackgroundUrl) {
+          await TCC_API.setChampionshipBackgroundImage(result.id, normalizedBackgroundUrl);
+          result.hero_background_url = normalizedBackgroundUrl;
+        }
         setChampionships([...championships, result]);
         setActiveOnlineContext({ championshipId: result.id });
         setNewChampName('');
+        setNewChampBackgroundUrl('');
         navigate(`/championships/${result.id}`);
       } else if (result && result.championship) {
+        if (normalizedBackgroundUrl) {
+          await TCC_API.setChampionshipBackgroundImage(result.championship.id, normalizedBackgroundUrl);
+          result.championship.hero_background_url = normalizedBackgroundUrl;
+        }
         setChampionships([...championships, result.championship]);
         setActiveOnlineContext({ championshipId: result.championship.id });
         setNewChampName('');
+        setNewChampBackgroundUrl('');
         navigate(`/championships/${result.championship.id}`);
       } else {
         // Fallback reload if response structure varies
@@ -91,24 +103,34 @@ export const Championships: React.FC = () => {
           </p>
         </div>
         
-        <GlassCard className="!p-2 flex gap-2 w-full md:w-auto">
-          <input
-            type="text"
-            value={newChampName}
-            onChange={(e) => setNewChampName(e.target.value)}
-            placeholder={t('championships.newNamePlaceholder')}
-            className="bg-transparent border-none text-white px-4 py-2 focus:outline-none placeholder-gray-500 min-w-[200px]"
-            disabled={creating}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate(e)}
-          />
-          <GlassButton
-            onClick={(e) => handleCreate(e as any)}
-            disabled={creating || !newChampName.trim()}
-            isLoading={creating}
-            icon={!creating && <Plus size={18} />}
-          >
-            {t('championships.create')}
-          </GlassButton>
+        <GlassCard className="w-full md:w-[32rem]">
+          <div className="flex flex-col gap-3 md:flex-row">
+            <input
+              type="text"
+              value={newChampName}
+              onChange={(e) => setNewChampName(e.target.value)}
+              placeholder={t('championships.newNamePlaceholder')}
+              className="flex-1 rounded border border-white/10 bg-transparent px-4 py-2 text-white focus:outline-none placeholder-gray-500"
+              disabled={creating}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate(e)}
+            />
+            <input
+              type="url"
+              value={newChampBackgroundUrl}
+              onChange={(e) => setNewChampBackgroundUrl(e.target.value)}
+              placeholder="Optional championship background image URL"
+              className="flex-1 rounded border border-white/10 bg-transparent px-4 py-2 text-white focus:outline-none placeholder-gray-500"
+              disabled={creating}
+            />
+            <GlassButton
+              onClick={(e) => handleCreate(e as any)}
+              disabled={creating || !newChampName.trim()}
+              isLoading={creating}
+              icon={!creating && <Plus size={18} />}
+            >
+              {t('championships.create')}
+            </GlassButton>
+          </div>
         </GlassCard>
         {createError && (
           <div className="text-sm text-red-400">{createError}</div>

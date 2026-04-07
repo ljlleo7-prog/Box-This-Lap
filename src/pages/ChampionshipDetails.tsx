@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { TCC_API } from '../lib/tcc-api';
 import { TRACKS } from '../data/tracks';
-import { Calendar, Trophy, Users, Plus, MapPin, Clock, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Calendar, Trophy, Users, Plus, MapPin, Clock, ArrowRight, AlertTriangle, Image } from 'lucide-react';
 import { clsx } from 'clsx';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import { PageHeader } from '../components/ui/PageHeader';
 import { useChampionshipStore } from '../store/championshipStore';
+import type { ChampionshipStandingEntry } from '../types';
 
 type Tab = 'standings' | 'calendar' | 'teams';
 
@@ -16,20 +17,28 @@ export const ChampionshipDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const setActiveOnlineContext = useChampionshipStore((state) => state.setActiveOnlineContext);
+  const setCurrentRound = useChampionshipStore((state) => state.setCurrentRound);
+  const setDriverStandings = useChampionshipStore((state) => state.setDriverStandings);
+  const setConstructorStandings = useChampionshipStore((state) => state.setConstructorStandings);
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
   const [championship, setChampionship] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
   const [weekends, setWeekends] = useState<any[]>([]);
+  const [driverStandings, setDriverStandingsState] = useState<ChampionshipStandingEntry[]>([]);
+  const [constructorStandings, setConstructorStandingsState] = useState<ChampionshipStandingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [myTeam, setMyTeam] = useState<any>(null);
+  const [canManageVisuals, setCanManageVisuals] = useState(false);
+  const [championshipBackgroundDraft, setChampionshipBackgroundDraft] = useState('');
+  const [savingChampionshipBackground, setSavingChampionshipBackground] = useState(false);
 
-  // Create Weekend Form State
   const [showCreateWeekend, setShowCreateWeekend] = useState(false);
   const [selectedTrackId, setSelectedTrackId] = useState(TRACKS[0].id);
   const [raceDateTime, setRaceDateTime] = useState('');
   const [fp1DateTime, setFp1DateTime] = useState('');
   const [qualiDateTime, setQualiDateTime] = useState('');
+  const [weekendBackgroundUrl, setWeekendBackgroundUrl] = useState('');
   const [practiceSpeedMultiplier, setPracticeSpeedMultiplier] = useState<1 | 2 | 5 | 10>(1);
   const [qualiSpeedMultiplier, setQualiSpeedMultiplier] = useState<1 | 2 | 5 | 10>(1);
   const [raceSpeedMultiplier, setRaceSpeedMultiplier] = useState<1 | 2 | 5 | 10>(1);
@@ -41,6 +50,25 @@ export const ChampionshipDetails: React.FC = () => {
       loadData();
     }
   }, [id, setActiveOnlineContext]);
+
+  const derivedCurrentRound = useMemo(() => {
+    const nextWeekend = weekends.find((weekend) => weekend.status !== 'completed' && weekend.status !== 'cancelled');
+    if (nextWeekend?.round_number) return nextWeekend.round_number;
+    if (weekends.length > 0) return weekends[weekends.length - 1].round_number;
+    return 1;
+  }, [weekends]);
+
+  useEffect(() => {
+    setCurrentRound(derivedCurrentRound);
+  }, [derivedCurrentRound, setCurrentRound]);
+
+  useEffect(() => {
+    setDriverStandings(driverStandings);
+  }, [driverStandings, setDriverStandings]);
+
+  useEffect(() => {
+    setConstructorStandings(constructorStandings);
+  }, [constructorStandings, setConstructorStandings]);
 
   const loadData = async () => {
     try {
@@ -76,6 +104,25 @@ export const ChampionshipDetails: React.FC = () => {
 
       if (champError) throw champError;
       setChampionship(champ);
+      setChampionshipBackgroundDraft(champ.hero_background_url || '');
+
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth.user?.id;
+      if (!userId) {
+        setCanManageVisuals(false);
+      } else {
+        const { data: membership } = await supabase
+          .from('tcc_championship_members')
+          .select('role')
+          .eq('championship_id', id)
+          .eq('user_id', userId)
+          .maybeSingle();
+        setCanManageVisuals(
+          champ.created_by === userId ||
+          membership?.role === 'host' ||
+          membership?.role === 'developer'
+        );
+      }
 
       // 2. Get Teams
       const { data: teamsData, error: teamsError } = await supabase
@@ -86,15 +133,16 @@ export const ChampionshipDetails: React.FC = () => {
       if (teamsError) throw teamsError;
       setTeams(teamsData || []);
 
-      // 3. Get Weekends
-      const { data: weekendsData, error: weekendsError } = await supabase
-        .from('tcc_weekends')
-        .select('*')
-        .eq('championship_id', id)
-        .order('round_number', { ascending: true });
+      // 3. Get Weekends + Standings
+      const [weekendsRes, standingsRes] = await Promise.all([
+        TCC_API.getChampionshipWeekends(id!),
+        TCC_API.getChampionshipStandings(id!),
+      ]);
 
-      if (weekendsError) throw weekendsError;
-      setWeekends(weekendsData || []);
+      if (weekendsRes.error) throw weekendsRes.error;
+      setWeekends(weekendsRes.data || []);
+      setDriverStandingsState(standingsRes.driverStandings);
+      setConstructorStandingsState(standingsRes.constructorStandings);
 
     } catch (err: any) {
       console.error('Failed to load championship details:', JSON.stringify(err, null, 2));
@@ -172,7 +220,7 @@ export const ChampionshipDetails: React.FC = () => {
     setCreatingWeekend(true);
     try {
       await TCC_API.ensurePlayerProfile();
-      await TCC_API.createWeekend({
+      const createdWeekend = await TCC_API.createWeekend({
         championshipId: id,
         trackId: selectedTrackId,
         practiceSpeedMultiplier,
@@ -184,17 +232,37 @@ export const ChampionshipDetails: React.FC = () => {
         weatherMode: 'realistic',
         realismPreset: 'standard'
       });
+      const normalizedWeekendBackgroundUrl = weekendBackgroundUrl.trim();
+      if (normalizedWeekendBackgroundUrl && createdWeekend?.id) {
+        await TCC_API.setWeekendBackgroundImage(createdWeekend.id, normalizedWeekendBackgroundUrl);
+      }
 
       setShowCreateWeekend(false);
       setRaceDateTime('');
       setFp1DateTime('');
       setQualiDateTime('');
+      setWeekendBackgroundUrl('');
       loadData();
     } catch (err: any) {
       console.error('Failed to create weekend:', err);
       alert(err?.message || err?.error?.message || err?.error || 'Failed to create weekend');
     } finally {
       setCreatingWeekend(false);
+    }
+  };
+
+  const handleSaveChampionshipBackground = async () => {
+    if (!id) return;
+    setSavingChampionshipBackground(true);
+    try {
+      const normalizedUrl = championshipBackgroundDraft.trim();
+      await TCC_API.setChampionshipBackgroundImage(id, normalizedUrl || null);
+      setChampionship((prev: any) => prev ? { ...prev, hero_background_url: normalizedUrl || null } : prev);
+    } catch (err: any) {
+      console.error('Failed to update championship background image:', err);
+      alert(err?.message || err?.error_description || err?.details || 'Failed to update championship background image');
+    } finally {
+      setSavingChampionshipBackground(false);
     }
   };
 
@@ -216,6 +284,31 @@ export const ChampionshipDetails: React.FC = () => {
       alert('Error leaving championship');
     }
   };
+
+  const standingsEmpty = driverStandings.length === 0 && constructorStandings.length === 0;
+
+  const renderStandingsTable = (title: string, rows: ChampionshipStandingEntry[]) => (
+    <GlassCard className="!p-0 overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/10 bg-white/5">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-gray-300">{title}</h3>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-4 py-8 text-sm text-gray-500">No standings snapshot available yet.</div>
+      ) : (
+        <div className="divide-y divide-white/5">
+          {rows.map((entry, index) => (
+            <div key={`${title}-${entry.entityId}`} className="grid grid-cols-12 gap-3 items-center px-4 py-3 text-sm">
+              <div className="col-span-1 font-mono text-gray-500">P{index + 1}</div>
+              <div className="col-span-5 font-semibold text-white">{entry.name}</div>
+              <div className="col-span-2 text-right text-gray-400">{entry.wins} W</div>
+              <div className="col-span-2 text-right text-gray-400">{entry.podiums} POD</div>
+              <div className="col-span-2 text-right font-mono font-bold text-f1-red">{entry.points}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </GlassCard>
+  );
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -242,7 +335,27 @@ export const ChampionshipDetails: React.FC = () => {
       <PageHeader 
         title={championship.name}
         subtitle="OFFICIAL SERIES"
-        backgroundImage="https://f1chronicle.com/wp-content/uploads/2024/01/SI202412010400-1920x1080.jpg"
+        backgroundImage={championship.hero_background_url || 'https://f1chronicle.com/wp-content/uploads/2024/01/SI202412010400-1920x1080.jpg'}
+        action={canManageVisuals ? (
+          <div className="w-full rounded-xl border border-white/10 bg-black/30 p-3 md:w-[26rem]">
+            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-widest text-gray-400">
+              <Image size={13} />
+              Championship Background
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={championshipBackgroundDraft}
+                onChange={(event) => setChampionshipBackgroundDraft(event.target.value)}
+                placeholder="https://example.com/championship.jpg"
+                className="flex-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-f1-red"
+              />
+              <GlassButton variant="secondary" onClick={handleSaveChampionshipBackground} isLoading={savingChampionshipBackground}>
+                Save
+              </GlassButton>
+            </div>
+          </div>
+        ) : undefined}
         tags={
             <>
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-sm text-gray-300">
@@ -381,6 +494,16 @@ export const ChampionshipDetails: React.FC = () => {
                       {[1, 2, 5, 10].map((speed) => <option key={`race-${speed}`} value={speed}>{speed}x</option>)}
                     </select>
                   </div>
+                  <div className="md:col-span-2 xl:col-span-4 space-y-2">
+                    <label className="text-xs font-mono text-gray-400 uppercase tracking-wider">Weekend Header Background URL (Optional)</label>
+                    <input
+                      type="url"
+                      value={weekendBackgroundUrl}
+                      onChange={(event) => setWeekendBackgroundUrl(event.target.value)}
+                      placeholder="https://example.com/weekend.jpg"
+                      className="w-full bg-[#1a1a1a] border border-white/10 text-white p-3 rounded-xl focus:border-f1-red outline-none"
+                    />
+                  </div>
                   <div className="md:col-span-2 xl:col-span-4 space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
                     <div className="text-xs font-mono uppercase tracking-widest text-gray-400">Derived practice timeline</div>
                     {derivePracticeTimeline() ? (
@@ -500,10 +623,17 @@ export const ChampionshipDetails: React.FC = () => {
         )}
 
         {activeTab === 'standings' && (
-          <div className="text-center py-20 text-gray-500">
-            <Trophy size={48} className="mx-auto mb-4 opacity-20" />
-            <p>Standings will be available after the first race.</p>
-          </div>
+          standingsEmpty ? (
+            <div className="text-center py-20 text-gray-500">
+              <Trophy size={48} className="mx-auto mb-4 opacity-20" />
+              <p>Standings will appear once a championship standings snapshot is recorded.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {renderStandingsTable('Driver Standings', driverStandings)}
+              {renderStandingsTable('Constructor Standings', constructorStandings)}
+            </div>
+          )
         )}
       </div>
     </div>

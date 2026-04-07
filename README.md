@@ -1,15 +1,15 @@
 # Box This Lap
 
-Box This Lap is a Formula-style race weekend simulator and championship manager built with React, TypeScript, and Vite.
-It combines race simulation, pre-race setup strategy, telemetry-focused UI, and Supabase-backed championship flows.
+Box This Lap is a Formula-style online championship manager and race weekend simulator built with React, TypeScript, and Vite.
+It combines Supabase-backed championship flows with a browser-based race simulation engine, strategy tooling, and team-management surfaces.
 
 ## Highlights
 
+- Supabase authentication with protected online championship flows
+- Championship-oriented navigation for dashboard, weekends, team hub, facilities, and R&D
 - Live race control with leaderboard, pace, tyre, weather, and telemetry views
 - Strategy tools for compounds, stint planning, pit windows, and setup tuning
-- Championship-oriented navigation (dashboard, weekends, team hub, facilities, R&D)
-- Supabase authentication and backend API integration for online flows
-- Local/offline entry points for MVP progression and simulator shell routes
+- Browser-based simulation engine used by championship weekend flows
 
 ## Tech Stack
 
@@ -54,15 +54,28 @@ npm run dev
 - `npm run preview` — serve the production build locally
 - `npm run deploy` — build and deploy `dist` to the `gh-pages` branch
 
-## Key Routes
+## Primary Routes
 
 - `/login` — authentication page
 - `/` — protected dashboard
-- `/championships` — championship list and drill-down pages
+- `/championships` — championship list
+- `/championships/:id/select-team` — team selection for a championship
+- `/championships/:id` — championship details and progression
+- `/weekends/:id` — weekend details
 - `/race/:weekendId` — race control for a backend-created weekend
-- `/race-dev?track=<trackId>` — local race control/dev route
-- `/career` — championship/career mode entry
-- `/offline` and `/offline/weekend` — local-first MVP shell routes
+- `/team-hub` — team overview and operations
+- `/research` — car development and R&D
+- `/facilities` — facility management
+- `/settings` — user/application settings
+
+## Legacy and Dev Routes
+
+These routes still exist in the codebase, but they are not the primary product direction:
+
+- `/race-dev` — local race control/dev route
+- `/practice-quali-dev` — development route for session experiments
+- `/career` — local career/championship prototype path
+- `/offline` and `/offline/weekend` — legacy local/offline shell routes
 
 ## Project Structure
 
@@ -74,6 +87,11 @@ npm run dev
 - `src/lib` — integration helpers (Supabase, local saves, API wrappers)
 - `supabase/functions` — edge functions for championship/weekend simulation actions
 - `supabase/migrations` — database schema and policy migrations
+
+## Architecture Docs
+
+- `docs/technical_architecture.md` — current repo-level architecture summary
+- `docs/team_championship_architecture.md` — detailed online championship and data-model architecture
 
 ## Deployment Notes
 

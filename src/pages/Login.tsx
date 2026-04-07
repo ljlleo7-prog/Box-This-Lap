@@ -95,25 +95,25 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#111] p-4 relative overflow-hidden">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-100 p-4 dark:bg-zinc-950">
       {/* Background Elements */}
       <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-f1-red blur-[150px] rounded-full" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-900 blur-[150px] rounded-full" />
       </div>
 
-      <GlassCard className="w-full max-w-md p-8 relative z-10 border-[#333]">
+      <GlassCard className="w-full max-w-md border-zinc-200 bg-white/85 p-8 text-zinc-900 dark:border-[#333] dark:bg-zinc-950/85 dark:text-white">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white tracking-wider mb-2">BOX THIS <span className="text-f1-red">LAP</span></h1>
-          <p className="text-gray-400">{t('login.enterPaddock')}</p>
+          <h1 className="mb-2 text-3xl font-bold tracking-wider text-zinc-900 dark:text-white">BOX THIS <span className="text-f1-red">LAP</span></h1>
+          <p className="text-zinc-500 dark:text-zinc-400">{t('login.enterPaddock')}</p>
         </div>
 
-        <div className="mb-6 flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+        <div className="mb-6 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-white/10 dark:bg-white/5">
           <span className="text-xs uppercase tracking-wide text-gray-400">{t('common.language')}</span>
           <select
             value={locale}
             onChange={(event) => setLocale(event.target.value as Locale)}
-            className="bg-[#222] border border-[#444] text-white rounded px-2 py-1 text-xs"
+            className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 dark:border-[#444] dark:bg-[#222] dark:text-white"
           >
             <option value="en">EN</option>
             <option value="zh-CN">中文</option>
@@ -144,24 +144,24 @@ export const Login: React.FC = () => {
 
             <form onSubmit={handleAuth} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">{t('login.email')}</label>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{t('login.email')}</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#222] border border-[#444] rounded-lg px-4 py-3 text-white focus:outline-none focus:border-f1-red transition-colors"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-zinc-900 transition-colors focus:border-f1-red focus:outline-none dark:border-[#444] dark:bg-[#222] dark:text-white"
                   placeholder={t('login.emailPlaceholder')}
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">{t('login.password')}</label>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{t('login.password')}</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-[#222] border border-[#444] rounded-lg px-4 py-3 text-white focus:outline-none focus:border-f1-red transition-colors"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-zinc-900 transition-colors focus:border-f1-red focus:outline-none dark:border-[#444] dark:bg-[#222] dark:text-white"
                   placeholder="••••••••"
                   required
                 />

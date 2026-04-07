@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadSaveGame, saveSaveGame } from '../lib/localSaves';
+import { loadSaveGame } from '../lib/localSaves';
 import type { CrewState, CrewTrainingPlan, CrewTrainingType, CrewSpecialization, CrewDepartment } from '../types/championship';
 import { getTotalXPForLevel, getCrewTrainingDuration, getCrewTrainingCost, getCrewTrainingXP, getPitStopTimeBonus } from '../lib/crewDevelopment';
+import { useChampionshipStore } from '../store/championshipStore';
 
 const DEPARTMENT_NAMES: Record<CrewDepartment, string> = {
   race_engineering: 'Race Engineering',
@@ -15,6 +16,7 @@ const DEPARTMENT_NAMES: Record<CrewDepartment, string> = {
 
 export const CrewManagement = () => {
   const navigate = useNavigate();
+  const setActiveLocalContext = useChampionshipStore((state) => state.setActiveLocalContext);
   const [crewStates, setCrewStates] = useState<CrewState[]>([]);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [showSpecializationModal, setShowSpecializationModal] = useState(false);
@@ -25,7 +27,7 @@ export const CrewManagement = () => {
   useEffect(() => {
     const saveGame = loadSaveGame();
     if (!saveGame.championship) {
-      navigate('/career');
+      navigate('/championships');
       return;
     }
 
@@ -66,7 +68,7 @@ export const CrewManagement = () => {
     playerTeam.crew[crewIndex].trainingPlan = trainingPlan;
     saveGame.championship.updatedAt = new Date().toISOString();
 
-    saveSaveGame(saveGame);
+    setActiveLocalContext(saveGame.championship);
     setCrewStates([...playerTeam.crew]);
     setShowTrainingModal(false);
   };
@@ -86,7 +88,7 @@ export const CrewManagement = () => {
     playerTeam.crew[crewIndex].specialization = selectedSpecialization;
     saveGame.championship.updatedAt = new Date().toISOString();
 
-    saveSaveGame(saveGame);
+    setActiveLocalContext(saveGame.championship);
     setCrewStates([...playerTeam.crew]);
     setShowSpecializationModal(false);
   };
@@ -94,7 +96,7 @@ export const CrewManagement = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <button onClick={() => navigate('/career')} className="text-blue-600 hover:underline">
+        <button onClick={() => navigate('/championships')} className="text-blue-600 hover:underline">
           ← Back to Career
         </button>
         <h1 className="text-3xl font-bold mt-2">Crew Management</h1>

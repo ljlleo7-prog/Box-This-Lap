@@ -4,6 +4,23 @@ import { createEmptySchedule, getWearyState, processDriverSchedule } from './dri
 import { processPitCrewSchedule } from './crewDevelopment';
 import type { CrewState, DaySchedule, OfflineDriverState } from '../types/championship';
 
+export const resolveStaticDriversForTeam = (teamName: string | null | undefined, onlineDrivers?: Array<{ name?: string | null }> | null) => {
+  const staticTeamDrivers = DRIVERS.filter((driver) => driver.team === teamName).slice(0, 2);
+  if (!onlineDrivers?.length) return staticTeamDrivers;
+
+  const unmatchedDrivers = [...staticTeamDrivers];
+  return onlineDrivers.slice(0, 2).reduce<typeof staticTeamDrivers>((acc, onlineDriver) => {
+    const matchIndex = unmatchedDrivers.findIndex((driver) => driver.name === onlineDriver?.name);
+    const matchedDriver = matchIndex >= 0 ? unmatchedDrivers.splice(matchIndex, 1)[0] : unmatchedDrivers.shift();
+    if (matchedDriver) acc.push(matchedDriver);
+    return acc;
+  }, []);
+};
+
+export const resolveStaticDriverIdsForTeam = (teamName: string | null | undefined, onlineDrivers?: Array<{ name?: string | null }> | null) => (
+  resolveStaticDriversForTeam(teamName, onlineDrivers).map((driver) => driver.id)
+);
+
 export type OnlineTrainingDriverEffects = {
   strength: number;
   fatigue: number;
@@ -97,10 +114,10 @@ export const getOnlineTrainingEffects = async (
   const { data: plans } = await TCC_API.getTeamTrainingPlans(championshipId, teamId, roundNumber);
   const activePlans = plans ?? [];
   const onlineDrivers = (myTeam?.tcc_drivers ?? []).slice(0, 2);
-  const staticTeamDrivers = DRIVERS.filter((driver) => driver.team === teamName);
+  const staticTeamDrivers = resolveStaticDriversForTeam(teamName, onlineDrivers);
 
   const driverOverrides = onlineDrivers.reduce((acc: Record<string, OnlineTrainingDriverEffects>, onlineDriver: any, index: number) => {
-    const matchedStaticDriver = staticTeamDrivers.find((driver) => driver.name === onlineDriver.name) ?? staticTeamDrivers[index];
+    const matchedStaticDriver = staticTeamDrivers[index];
     if (!matchedStaticDriver) return acc;
 
     const schedule = cloneSchedule(

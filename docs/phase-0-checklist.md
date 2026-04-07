@@ -1,5 +1,7 @@
 # Phase 0 Implementation Checklist: Refactor Boundaries and Local Domain Model
 
+> Superseded direction: this checklist belongs to the earlier offline-first planning track. It is preserved for reference only and should not be treated as the active championship roadmap. For the current online/Supabase-focused direction, use `README.md`, `docs/technical_architecture.md`, and `docs/team_championship_architecture.md`.
+
 **Source plan**: `docs/2026-race-weekend-simulator-codebase-execution-plan.md`
 **Goal**: Prepare the current codebase for offline weekend progression, centralized local persistence, and future 2026 systems without overloading `RaceControl` or `raceStore`.
 

@@ -14,12 +14,26 @@ import { GlassButton } from '../components/ui/GlassButton';
 import { GlassCard } from '../components/ui/GlassCard';
 import { CircularTrackMap, type TrackMapVehicle } from '../components/CircularTrackMap';
 import { loadTeamSpecs } from '../lib/localSaves';
-import type { OfflineWeekend, SessionSetupState, SetupTuningParameter, TeamSpecs, Track, TyreCompound, TyreSet, WeekendPhase } from '../types';
+import { useI18n } from '../i18n/I18nProvider';
+import { TCC_API } from '../lib/tcc-api';
+import { resolveStaticDriversForTeam } from '../lib/onlineTrainingEffects';
+import { useChampionshipStore } from '../store/championshipStore';
+import {
+  carrySetupForward,
+  chooseDefaultTyreSetId,
+  getPhaseDriverKey,
+  getSetupForPhase,
+  isPracticePhase,
+  isQualifyingPhase,
+  isTimedSessionPhase,
+  NEUTRAL_SESSION_SETUP,
+  updateSetupForPhase,
+} from '../lib/weekend/setupState';
+import type { OfflineWeekend, OnlineWeekendGaragePlan, SessionSetupState, SessionSummary, SetupTuningParameter, TeamSpecs, Track, TyreCompound, TyreSet, WeekendPhase } from '../types';
 import type { DrivingBiasFeedback, DrivingBiasFeedbackResult, DrivingBiasMetricKey, PracticeFocusAllocation } from '../engine/systems/SetupFeedbackSystem';
 
 const TRACK_OPTIONS: Track[] = TRACKS;
 const DEFAULT_TRACK = TRACK_OPTIONS[0]!;
-const DEFAULT_DRIVER_ID = 'nor';
 const DEFAULT_STINT_LAPS = 15;
 const MIN_RUN_LAPS = 2;
 const MAX_RUN_LAPS = 40;
@@ -36,7 +50,6 @@ const SETUP_CHANGE_BASE_SECONDS = 24;
 const SETUP_CHANGE_SECONDS_PER_POINT = 0.7;
 const PIT_SPEED_FACTOR = 0.38;
 const OUT_LAP_VSC_PORTION = 0.82;
-const PIT_LANE_DISTANCE_RATIO = 0.04;
 const AI_WAIT_SIM_SECONDS = 75;
 const PHASE_FLOW: WeekendPhase[] = ['pre_weekend', 'fp1', 'fp2', 'fp3', 'q1', 'q2', 'q3', 'race', 'post_race'];
 type PracticePhase = 'fp1' | 'fp2' | 'fp3';
@@ -70,16 +83,6 @@ const DRIVING_BIAS_FIELDS: Array<{
   { key: 'traction', label: 'Traction support', format: (value) => value.toFixed(3), domain: [0.92, 1.08], leftLabel: 'Poor traction', rightLabel: 'Strong traction' },
   { key: 'runPlanBalance', label: 'Quali vs long-run bias', format: (value) => `${(value * 100).toFixed(0)}%`, domain: [-1, 1], leftLabel: 'Long-run', rightLabel: 'Quali' },
 ];
-const NEUTRAL_SETUP: SessionSetupState = {
-  frontWingAngle: 50,
-  rearWingAngle: 50,
-  rideHeight: 50,
-  suspensionStiffness: 50,
-  toeOut: 50,
-  camber: 50,
-  gearboxSetting: 50,
-};
-
 interface PracticeRunSummary {
   plannedLaps: number;
   laps: number;
@@ -90,12 +93,14 @@ interface PracticeRunSummary {
   trafficPenaltySeconds: number;
   trafficStatus: 'clear' | 'moderate' | 'traffic';
   cutoffByChequered: boolean;
+  bestLapSeconds: number | null;
 }
 
 interface PracticePhaseState {
   focusMode: PracticeFocusMode;
   plannedLaps: number;
   lapsCompleted: number;
+  bestLapSeconds: number | null;
   lastFeedback: DrivingBiasFeedbackResult | null;
   lastRunSummary: PracticeRunSummary | null;
   needsFreshFeedback: boolean;
@@ -152,6 +157,7 @@ interface SessionPlaybackPlan {
     lapTimeSeconds: number;
     outLapSeconds: number;
     inLapSeconds: number;
+    lapTimes: number[];
   };
   aiRuns: Array<{
     driverId: string;
@@ -161,6 +167,7 @@ interface SessionPlaybackPlan {
     outLapSeconds: number;
     inLapSeconds: number;
     isReleased: boolean;
+    lapTimes: number[];
   }>;
   elapsedSeconds: number;
 }
@@ -176,14 +183,18 @@ interface PendingRunContext {
   plannedLaps: number;
   setupChangeSeconds: number;
   lapTimeSeconds: number;
+  lapTimes: number[];
   selectedTyreSetId: string;
   releaseElapsedSeconds: number;
   trafficPenaltySeconds: number;
   trafficStatus: 'clear' | 'moderate' | 'traffic';
 }
 
-function getPhaseDriverKey(driverId: string, phase: TimedSessionPhase): string {
-  return `${driverId}:${phase}`;
+interface PlaybackTrackState {
+  distanceOnLap: number;
+  isInPit: boolean;
+  completedLaps: number;
+  bestLapSeconds: number | null;
 }
 
 function createPracticePhaseState(): PracticePhaseState {
@@ -191,6 +202,7 @@ function createPracticePhaseState(): PracticePhaseState {
     focusMode: 'balanced',
     plannedLaps: DEFAULT_STINT_LAPS,
     lapsCompleted: 0,
+    bestLapSeconds: null,
     lastFeedback: null,
     lastRunSummary: null,
     needsFreshFeedback: true,
@@ -236,9 +248,9 @@ function createPracticeDevelopmentState(): PracticeDevelopmentState {
   };
 }
 
-function createWeekend(track: Track, driverIds: string[]): OfflineWeekend {
+function createWeekend(track: Track, driverIds: string[], selectedTeamId: string): OfflineWeekend {
   const initialSetups = driverIds.reduce<Record<string, SessionSetupState>>((acc, driverId) => {
-    acc[driverId] = { ...NEUTRAL_SETUP };
+    acc[driverId] = { ...NEUTRAL_SESSION_SETUP };
     return acc;
   }, {});
   const initialTyres = driverIds.reduce<Record<string, TyreSet[]>>((acc, driverId) => {
@@ -251,7 +263,7 @@ function createWeekend(track: Track, driverIds: string[]): OfflineWeekend {
     trackId: track.id,
     currentPhase: 'pre_weekend',
     completedSessions: [],
-    selectedTeamId: 'mclaren',
+    selectedTeamId,
     fp1Setup: initialSetups,
     fp2Setup: initialSetups,
     fp3Setup: initialSetups,
@@ -267,18 +279,6 @@ function createWeekend(track: Track, driverIds: string[]): OfflineWeekend {
   };
 }
 
-function isPracticePhase(phase: WeekendPhase): phase is 'fp1' | 'fp2' | 'fp3' {
-  return ['fp1', 'fp2', 'fp3'].includes(phase);
-}
-
-function isQualifyingPhase(phase: WeekendPhase): phase is QualifyingPhase {
-  return ['q1', 'q2', 'q3'].includes(phase);
-}
-
-function isTimedSessionPhase(phase: WeekendPhase): phase is TimedSessionPhase {
-  return isPracticePhase(phase) || isQualifyingPhase(phase);
-}
-
 function getFocusAllocation(focusMode: PracticeFocusMode): PracticeFocusAllocation {
   if (focusMode === 'setup_feedback') {
     return { setupFeedbackShare: 1, trackPreparationShare: 0 };
@@ -289,12 +289,6 @@ function getFocusAllocation(focusMode: PracticeFocusMode): PracticeFocusAllocati
   }
 
   return { setupFeedbackShare: 0.5, trackPreparationShare: 0.5 };
-}
-
-function getFocusLabel(focusMode: PracticeFocusMode): string {
-  if (focusMode === 'setup_feedback') return 'Setup Feedback';
-  if (focusMode === 'track_preparation') return 'Preparation';
-  return 'Balanced';
 }
 
 function getDirection(currentValue: number, optimalRange: [number, number] | undefined): SetupDirection {
@@ -311,13 +305,6 @@ function getDirectionTone(direction: SetupDirection): string {
   return 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300';
 }
 
-function getDirectionLabel(direction: SetupDirection): string {
-  if (direction === 'awaiting_data') return 'awaiting data';
-  if (direction === 'too_low') return 'too low';
-  if (direction === 'too_high') return 'too high';
-  return 'in range';
-}
-
 function getDrivingBiasValue(effects: ReturnType<typeof buildSetupPhysicsEffects>, key: DrivingBiasMetricKey): number {
   if (key === 'cornerEntryBalance') return effects.entryRotationDelta;
   if (key === 'midCornerBalance') return effects.midRotationDelta;
@@ -327,12 +314,6 @@ function getDrivingBiasValue(effects: ReturnType<typeof buildSetupPhysicsEffects
   if (key === 'highSpeedStability') return effects.highSpeedFactor;
   if (key === 'traction') return effects.accelerationFactor;
   return effects.runPlanBias;
-}
-
-function getRunPlanLabel(value: number): string {
-  if (value > 0.08) return 'Quali-biased';
-  if (value < -0.08) return 'Long-run biased';
-  return 'Balanced';
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -469,15 +450,6 @@ function estimateTrafficImpact(
   return { trafficPenaltySeconds: 0, trafficStatus: 'clear' };
 }
 
-function chooseDefaultTyreSetId(allocation: TyreSet[]): string | null {
-  const available = allocation.filter((set) => !set.returned);
-  const preferred = available.find((set) => set.compound === 'soft')
-    ?? available.find((set) => set.compound === 'medium')
-    ?? available.find((set) => set.compound === 'hard')
-    ?? available[0];
-  return preferred?.id ?? null;
-}
-
 function deterministicNoise(seed: number): number {
   const raw = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return raw - Math.floor(raw);
@@ -564,44 +536,60 @@ function simulateSessionLaps(
 }
 
 function getPlaybackTrackState(
-  trackDistance: number,
+  track: Track,
   lapTimeSeconds: number,
   setupChangeSeconds: number,
   outLapSeconds: number,
   completedLaps: number,
   inLapSeconds: number,
-  progressSeconds: number
-): { distanceOnLap: number; isInPit: boolean } {
-  const pitDistance = trackDistance * PIT_LANE_DISTANCE_RATIO;
+  progressSeconds: number,
+  lapTimes: number[] = []
+): PlaybackTrackState {
+  const { entryDistance, exitDistance } = track.pitLane;
+  const totalDistance = track.totalDistance;
+  const pitDistance = getPitLaneSpawnDistance(track, 0, 1);
   if (progressSeconds <= setupChangeSeconds) {
-    return { distanceOnLap: pitDistance, isInPit: true };
+    return { distanceOnLap: pitDistance, isInPit: true, completedLaps: 0, bestLapSeconds: null };
   }
   let remaining = progressSeconds - setupChangeSeconds;
   if (remaining <= outLapSeconds) {
     const outProgress = remaining / Math.max(outLapSeconds, 0.1);
     return {
-      distanceOnLap: ((outProgress * trackDistance) % trackDistance + trackDistance) % trackDistance,
-      isInPit: false,
+      distanceOnLap: (entryDistance + outProgress * ((exitDistance - entryDistance + totalDistance) % totalDistance)) % totalDistance,
+      isInPit: outProgress < 1,
+      completedLaps: 0,
+      bestLapSeconds: null,
     };
   }
   remaining -= outLapSeconds;
   const hotLapTotal = completedLaps * lapTimeSeconds;
   if (remaining <= hotLapTotal) {
+    const lapsDone = Math.min(completedLaps, Math.floor(remaining / Math.max(lapTimeSeconds, 0.1)));
     const lapProgress = remaining / Math.max(lapTimeSeconds, 0.1);
+    const completedLapTimes = lapTimes.slice(0, lapsDone);
     return {
-      distanceOnLap: ((lapProgress % 1) * trackDistance + trackDistance) % trackDistance,
+      distanceOnLap: ((lapProgress % 1) * totalDistance + totalDistance) % totalDistance,
       isInPit: false,
+      completedLaps: lapsDone,
+      bestLapSeconds: completedLapTimes.length ? Math.min(...completedLapTimes) : null,
     };
   }
   remaining -= hotLapTotal;
   if (remaining <= inLapSeconds) {
     const inProgress = remaining / Math.max(inLapSeconds, 0.1);
     return {
-      distanceOnLap: ((inProgress * trackDistance) % trackDistance + trackDistance) % trackDistance,
+      distanceOnLap: (exitDistance + inProgress * ((entryDistance - exitDistance + totalDistance) % totalDistance)) % totalDistance,
       isInPit: false,
+      completedLaps,
+      bestLapSeconds: lapTimes.length ? Math.min(...lapTimes.slice(0, completedLaps)) : null,
     };
   }
-  return { distanceOnLap: pitDistance, isInPit: true };
+  return {
+    distanceOnLap: pitDistance,
+    isInPit: true,
+    completedLaps,
+    bestLapSeconds: lapTimes.length ? Math.min(...lapTimes.slice(0, completedLaps)) : null,
+  };
 }
 
 function getPitLaneSpawnDistance(track: Track, slotIndex: number, totalSlots: number): number {
@@ -613,59 +601,6 @@ function getPitLaneSpawnDistance(track: Track, slotIndex: number, totalSlots: nu
   const laneProgress = (slotIndex + 1) / (safeSlots + 1);
   const laneDistance = laneLength * laneProgress;
   return (entryDistance + laneDistance) % track.totalDistance;
-}
-
-function getSetupForPhase(weekend: OfflineWeekend, phase: WeekendPhase, driverId: string): SessionSetupState {
-  switch (phase) {
-    case 'fp1':
-      return weekend.fp1Setup[driverId] ?? { ...NEUTRAL_SETUP };
-    case 'fp2':
-      return weekend.fp2Setup[driverId] ?? { ...NEUTRAL_SETUP };
-    case 'fp3':
-      return weekend.fp3Setup[driverId] ?? { ...NEUTRAL_SETUP };
-    case 'q1':
-      return weekend.q1Setup[driverId] ?? { ...NEUTRAL_SETUP };
-    case 'q2':
-      return weekend.q2Setup[driverId] ?? { ...NEUTRAL_SETUP };
-    case 'q3':
-      return weekend.q3Setup[driverId] ?? { ...NEUTRAL_SETUP };
-    case 'race':
-      return weekend.raceSetup[driverId] ?? { ...NEUTRAL_SETUP };
-    default:
-      return { ...NEUTRAL_SETUP };
-  }
-}
-
-function updateSetupForPhase(weekend: OfflineWeekend, phase: WeekendPhase, driverId: string, setup: SessionSetupState): OfflineWeekend {
-  if (phase === 'fp1') return { ...weekend, fp1Setup: { ...weekend.fp1Setup, [driverId]: setup } };
-  if (phase === 'fp2') return { ...weekend, fp2Setup: { ...weekend.fp2Setup, [driverId]: setup } };
-  if (phase === 'fp3') return { ...weekend, fp3Setup: { ...weekend.fp3Setup, [driverId]: setup } };
-  if (phase === 'q1') return { ...weekend, q1Setup: { ...weekend.q1Setup, [driverId]: setup } };
-  if (phase === 'q2') return { ...weekend, q2Setup: { ...weekend.q2Setup, [driverId]: setup } };
-  if (phase === 'q3') return { ...weekend, q3Setup: { ...weekend.q3Setup, [driverId]: setup } };
-  if (phase === 'race') return { ...weekend, raceSetup: { ...weekend.raceSetup, [driverId]: setup } };
-  return weekend;
-}
-
-function carrySetupForward(weekend: OfflineWeekend, driverIds: string[]): OfflineWeekend {
-  const nextPhase = WeekendManager.getNextPhase(weekend.currentPhase);
-  if (!nextPhase) return weekend;
-
-  if (weekend.currentPhase === 'fp1' && nextPhase === 'fp2') {
-    return driverIds.reduce(
-      (nextWeekend, driverId) => updateSetupForPhase(nextWeekend, 'fp2', driverId, { ...getSetupForPhase(nextWeekend, 'fp1', driverId) }),
-      weekend
-    );
-  }
-
-  if (weekend.currentPhase === 'fp2' && nextPhase === 'fp3') {
-    return driverIds.reduce(
-      (nextWeekend, driverId) => updateSetupForPhase(nextWeekend, 'fp3', driverId, { ...getSetupForPhase(nextWeekend, 'fp2', driverId) }),
-      weekend
-    );
-  }
-
-  return weekend;
 }
 
 function createAICompetitors(controlledDriverIds: string[], phaseSetup: SessionSetupState): AICompetitorState[] {
@@ -697,27 +632,200 @@ function formatLapTime(seconds: number | null): string {
   return `${mins}:${sec.toFixed(3).padStart(6, '0')}`;
 }
 
-export const PracticeQualiDev: React.FC = () => {
+function advanceWeekendToPhase(baseWeekend: OfflineWeekend, targetPhase: WeekendPhase, driverIds: string[]): OfflineWeekend {
+  let currentWeekend = baseWeekend;
+  while (currentWeekend.currentPhase !== targetPhase) {
+    const nextWeekend = WeekendManager.transitionToNextPhase(carrySetupForward(currentWeekend, driverIds));
+    if (nextWeekend.currentPhase === currentWeekend.currentPhase) break;
+    currentWeekend = nextWeekend;
+  }
+  return currentWeekend;
+}
+
+function buildTimedSessionSummary(
+  phase: TimedSessionPhase,
+  controlledDrivers: Array<{ id: string; name: string; team: string; skill: { consistency?: number } ; learning: number }>,
+  aiCompetitors: AICompetitorState[],
+  practiceDevelopment: PracticeDevelopmentState,
+): SessionSummary {
+  if (isPracticePhase(phase)) {
+    const playerRows = controlledDrivers.map((driver) => ({
+      driverId: driver.id,
+      position: 0,
+      bestLapTime: practiceDevelopment.phases[phase].bestLapSeconds,
+      lapsCompleted: practiceDevelopment.phases[phase].lapsCompleted,
+    }));
+    const aiRows = aiCompetitors.map((entry) => ({
+      driverId: entry.driverId,
+      position: 0,
+      bestLapTime: null,
+      lapsCompleted: entry.lapsByPhase[phase] ?? 0,
+    }));
+    const classification = [...aiRows, ...playerRows]
+      .sort((a, b) => {
+        if (a.bestLapTime == null && b.bestLapTime == null) return 0;
+        if (a.bestLapTime == null) return 1;
+        if (b.bestLapTime == null) return -1;
+        return a.bestLapTime - b.bestLapTime;
+      })
+      .map((entry, index) => ({
+        driverId: entry.driverId,
+        position: index + 1,
+        bestLapTime: entry.bestLapTime,
+        lapsCompleted: entry.lapsCompleted,
+      }));
+
+    return {
+      sessionType: phase,
+      completed: true,
+      classification,
+      notes: [],
+      weather: 'dry',
+    };
+  }
+
+  const classification = [...aiCompetitors.map((entry) => ({
+    driverId: entry.driverId,
+    driverName: entry.driverName,
+    team: entry.team,
+    bestLapSeconds: entry.bestLapByPhase[phase] ?? null,
+    laps: entry.lapsByPhase[phase] ?? 0,
+  })), ...controlledDrivers.map((driver) => ({
+    driverId: driver.id,
+    driverName: driver.name,
+    team: driver.team,
+    bestLapSeconds: practiceDevelopment.qualifying[phase].bestLapSeconds,
+    laps: practiceDevelopment.qualifying[phase].lapsCompleted,
+  }))]
+    .sort((a, b) => {
+      if (a.bestLapSeconds == null && b.bestLapSeconds == null) return 0;
+      if (a.bestLapSeconds == null) return 1;
+      if (b.bestLapSeconds == null) return -1;
+      return a.bestLapSeconds - b.bestLapSeconds;
+    })
+    .map((entry, index) => ({
+      driverId: entry.driverId,
+      position: index + 1,
+      bestLapTime: entry.bestLapSeconds,
+      lapsCompleted: entry.laps,
+    }));
+
+  return {
+    sessionType: phase,
+    completed: true,
+    classification,
+    notes: [],
+    weather: 'dry',
+  };
+}
+
+interface WeekendTimedSessionControlProps {
+  initialTrackId?: string;
+  initialPhase?: WeekendPhase;
+  weekendId?: string;
+  onBack?: () => void;
+  onOpenRaceSession?: (trackId: string) => void;
+}
+
+const buildInteractiveSessionPreset = (params: {
+  weekend: OfflineWeekend;
+  activeDriverId: string;
+  practiceDevelopment: PracticeDevelopmentState;
+  aiCompetitors: AICompetitorState[];
+  activePlaybackByDriver: Record<string, ActivePlaybackState | null>;
+  pendingRunContextByDriver: Record<string, PendingRunContext | null>;
+  garageOpenByDriver: Record<string, boolean>;
+  sessionPaused: boolean;
+  sceneSpeed: number;
+}): OnlineWeekendGaragePlan['interactiveSessionStateByPhase'] => {
+  const activePhase = params.weekend.currentPhase;
+  if (!isTimedSessionPhase(activePhase)) return undefined;
+
+  return {
+    [activePhase]: {
+      weekend: params.weekend,
+      activeDriverId: params.activeDriverId,
+      practiceDevelopment: params.practiceDevelopment as unknown as Record<string, unknown>,
+      aiCompetitors: params.aiCompetitors as unknown as Array<Record<string, unknown>>,
+      activePlaybackByDriver: params.activePlaybackByDriver as unknown as Record<string, Record<string, unknown> | null>,
+      pendingRunContextByDriver: params.pendingRunContextByDriver as unknown as Record<string, Record<string, unknown> | null>,
+      garageOpenByDriver: params.garageOpenByDriver,
+      sessionPaused: params.sessionPaused,
+      sceneSpeed: params.sceneSpeed,
+    },
+  };
+};
+
+export const WeekendTimedSessionControl: React.FC<WeekendTimedSessionControlProps> = ({
+  initialTrackId = DEFAULT_TRACK.id,
+  initialPhase = 'pre_weekend',
+  weekendId,
+  onBack,
+  onOpenRaceSession,
+}) => {
+  const { t } = useI18n();
   const navigate = useNavigate();
-  const [trackId, setTrackId] = useState<string>(DEFAULT_TRACK.id);
-  const defaultDriver = useMemo(
-    () => DRIVERS.find((driver) => driver.id === DEFAULT_DRIVER_ID) ?? DRIVERS[0],
-    []
-  );
-  const playerTeam = defaultDriver?.team ?? 'McLaren';
+  const championshipMode = useChampionshipStore((state) => state.mode);
+  const championshipId = useChampionshipStore((state) => state.championshipId);
+  const teamId = useChampionshipStore((state) => state.teamId);
+  const teamName = useChampionshipStore((state) => state.teamName);
+  const activeChampionship = useChampionshipStore((state) => state.activeChampionship);
+  const [onlineTeamDrivers, setOnlineTeamDrivers] = useState<Array<{ name?: string | null }>>([]);
+  const [trackId, setTrackId] = useState<string>(initialTrackId);
+  const resolvedPlayerTeam = useMemo(() => {
+    if (championshipMode === 'local') {
+      return activeChampionship?.teams.find((team) => team.teamId === activeChampionship.selectedTeamId)?.teamName ?? teamName ?? null;
+    }
+    return teamName ?? null;
+  }, [activeChampionship, championshipMode, teamName]);
   const controlledDrivers = useMemo(
-    () => DRIVERS.filter((driver) => driver.team === playerTeam).slice(0, 2),
-    [playerTeam]
+    () => resolveStaticDriversForTeam(resolvedPlayerTeam, onlineTeamDrivers),
+    [resolvedPlayerTeam, onlineTeamDrivers]
   );
   const controlledDriverIds = useMemo(
     () => controlledDrivers.map((driver) => driver.id),
     [controlledDrivers]
   );
-  const [activeDriverId, setActiveDriverId] = useState<string>(() => defaultDriver?.id ?? DEFAULT_DRIVER_ID);
+  const fallbackDriver = controlledDrivers[0] ?? DRIVERS[0];
+  const [activeDriverId, setActiveDriverId] = useState<string>(() => fallbackDriver?.id ?? DRIVERS[0]?.id ?? '');
   const selectedDriver = useMemo(
-    () => controlledDrivers.find((driver) => driver.id === activeDriverId) ?? controlledDrivers[0] ?? defaultDriver,
-    [activeDriverId, controlledDrivers, defaultDriver]
+    () => controlledDrivers.find((driver) => driver.id === activeDriverId) ?? controlledDrivers[0] ?? fallbackDriver,
+    [activeDriverId, controlledDrivers, fallbackDriver]
   );
+  const playerTeam = resolvedPlayerTeam ?? fallbackDriver?.team ?? t('practiceDev.defaultTeam');
+  useEffect(() => {
+    let isActive = true;
+
+    if (championshipMode !== 'online' || !championshipId) {
+      setOnlineTeamDrivers([]);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    const loadOnlineTeamDrivers = async () => {
+      try {
+        const { data } = await TCC_API.getMyTeam(championshipId);
+        if (!isActive) return;
+        setOnlineTeamDrivers((data?.tcc_drivers ?? []).slice(0, 2));
+      } catch (error) {
+        console.error('Failed to load online team drivers', error);
+        if (isActive) setOnlineTeamDrivers([]);
+      }
+    };
+
+    void loadOnlineTeamDrivers();
+    return () => {
+      isActive = false;
+    };
+  }, [championshipId, championshipMode]);
+
+  useEffect(() => {
+    if (!controlledDriverIds.length) return;
+    if (controlledDriverIds.includes(activeDriverId)) return;
+    setActiveDriverId(controlledDriverIds[0]);
+  }, [activeDriverId, controlledDriverIds]);
+
   const playerTeamSpecs = useMemo<TeamSpecs | undefined>(() => {
     const baseSpecs = TEAM_TEMPLATES.find((team) => team.name === playerTeam)?.specs;
     const storedSpecs = loadTeamSpecs()[playerTeam];
@@ -733,14 +841,16 @@ export const PracticeQualiDev: React.FC = () => {
     [selectedTrack]
   );
 
-  const [weekend, setWeekend] = useState<OfflineWeekend>(() => createWeekend(selectedTrack, controlledDriverIds));
+  const [weekend, setWeekend] = useState<OfflineWeekend>(() => advanceWeekendToPhase(createWeekend(selectedTrack, controlledDriverIds, teamId ?? 'player-team'), initialPhase, controlledDriverIds));
   const [practiceDevelopment, setPracticeDevelopment] = useState<PracticeDevelopmentState>(createPracticeDevelopmentState);
-  const [aiCompetitors, setAiCompetitors] = useState<AICompetitorState[]>(() => createAICompetitors(controlledDriverIds, { ...NEUTRAL_SETUP }));
+  const [aiCompetitors, setAiCompetitors] = useState<AICompetitorState[]>(() => createAICompetitors(controlledDriverIds, { ...NEUTRAL_SESSION_SETUP }));
   const [activePlaybackByDriver, setActivePlaybackByDriver] = useState<Record<string, ActivePlaybackState | null>>({});
   const [pendingRunContextByDriver, setPendingRunContextByDriver] = useState<Record<string, PendingRunContext | null>>({});
   const [sceneSpeed, setSceneSpeed] = useState(1);
   const [sessionPaused, setSessionPaused] = useState(false);
   const [garageOpenByDriver, setGarageOpenByDriver] = useState<Record<string, boolean>>({});
+  const [isHydratingWeekendState, setIsHydratingWeekendState] = useState(false);
+  const [isCompletingSession, setIsCompletingSession] = useState(false);
   const aiWaitAccumulatorByPhaseRef = useRef<Record<TimedSessionPhase, number>>({
     fp1: 0,
     fp2: 0,
@@ -753,13 +863,13 @@ export const PracticeQualiDev: React.FC = () => {
   const tractionByPhaseRef = useRef(practiceDevelopment.trackTractionByPhase);
 
   useEffect(() => {
-    setWeekend(createWeekend(selectedTrack, controlledDriverIds));
+    setWeekend(advanceWeekendToPhase(createWeekend(selectedTrack, controlledDriverIds, teamId ?? 'player-team'), initialPhase, controlledDriverIds));
     const nextDevelopment = createPracticeDevelopmentState();
     controlledDriverIds.forEach((driverId) => {
-      nextDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(driverId, 'fp1')] = { ...NEUTRAL_SETUP };
+      nextDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(driverId, 'fp1')] = { ...NEUTRAL_SESSION_SETUP };
     });
     setPracticeDevelopment(nextDevelopment);
-    setAiCompetitors(createAICompetitors(controlledDriverIds, { ...NEUTRAL_SETUP }));
+    setAiCompetitors(createAICompetitors(controlledDriverIds, { ...NEUTRAL_SESSION_SETUP }));
     aiWaitAccumulatorByPhaseRef.current = { fp1: 0, fp2: 0, fp3: 0, q1: 0, q2: 0, q3: 0 };
     setActivePlaybackByDriver(controlledDriverIds.reduce<Record<string, ActivePlaybackState | null>>((acc, driverId) => {
       acc[driverId] = null;
@@ -774,7 +884,41 @@ export const PracticeQualiDev: React.FC = () => {
       return acc;
     }, {}));
     setSessionPaused(false);
-  }, [selectedTrack, controlledDriverIds]);
+  }, [selectedTrack, controlledDriverIds, initialPhase]);
+
+  useEffect(() => {
+    if (!weekendId || !teamId || !isTimedSessionPhase(initialPhase)) return;
+
+    let isActive = true;
+    const hydrate = async () => {
+      setIsHydratingWeekendState(true);
+      try {
+        const plan = await TCC_API.getWeekendPlanForSession(weekendId, teamId, initialPhase);
+        if (!isActive) return;
+        const interactiveState = plan?.interactiveSessionStateByPhase?.[initialPhase];
+        if (!interactiveState) return;
+
+        setWeekend(interactiveState.weekend as OfflineWeekend);
+        setActiveDriverId(interactiveState.activeDriverId ?? controlledDriverIds[0] ?? DRIVERS[0]?.id ?? '');
+        setPracticeDevelopment(interactiveState.practiceDevelopment as unknown as PracticeDevelopmentState);
+        setAiCompetitors((interactiveState.aiCompetitors ?? []) as unknown as AICompetitorState[]);
+        setActivePlaybackByDriver((interactiveState.activePlaybackByDriver ?? {}) as unknown as Record<string, ActivePlaybackState | null>);
+        setPendingRunContextByDriver((interactiveState.pendingRunContextByDriver ?? {}) as unknown as Record<string, PendingRunContext | null>);
+        setGarageOpenByDriver(interactiveState.garageOpenByDriver ?? {});
+        setSessionPaused(Boolean(interactiveState.sessionPaused));
+        setSceneSpeed(typeof interactiveState.sceneSpeed === 'number' ? interactiveState.sceneSpeed : 1);
+      } catch (error) {
+        console.error('Failed to hydrate interactive weekend session', error);
+      } finally {
+        if (isActive) setIsHydratingWeekendState(false);
+      }
+    };
+
+    hydrate();
+    return () => {
+      isActive = false;
+    };
+  }, [weekendId, teamId, initialPhase, controlledDriverIds]);
 
   const currentSetup = useMemo(
     () => getSetupForPhase(weekend, weekend.currentPhase, selectedDriver?.id ?? activeDriverId),
@@ -806,15 +950,76 @@ export const PracticeQualiDev: React.FC = () => {
   }, [activeDriverId, currentSetup, selectedDriver, weekend.currentPhase, weekend.tyreAllocations]);
 
   useEffect(() => {
-    if (isTimedSessionPhase(weekend.currentPhase)) {
-      setGarageOpenByDriver((current) => controlledDriverIds.reduce<Record<string, boolean>>((acc, driverId) => {
-        acc[driverId] = current[driverId] ?? true;
-        return acc;
-      }, {}));
-      setSessionPaused(false);
-      aiWaitAccumulatorByPhaseRef.current[weekend.currentPhase] = 0;
-    }
-  }, [weekend.currentPhase, controlledDriverIds]);
+    if (!weekendId || !teamId || !isTimedSessionPhase(weekend.currentPhase) || isHydratingWeekendState) return;
+
+    const activePhase = weekend.currentPhase;
+    const interactiveSessionStateByPhase = buildInteractiveSessionPreset({
+      weekend,
+      activeDriverId,
+      practiceDevelopment,
+      aiCompetitors,
+      activePlaybackByDriver,
+      pendingRunContextByDriver,
+      garageOpenByDriver,
+      sessionPaused,
+      sceneSpeed,
+    });
+
+    const setupByPhase: OnlineWeekendGaragePlan['setupByPhase'] = {
+      [activePhase]: Object.fromEntries(
+        controlledDriverIds.map((driverId) => [driverId, getSetupForPhase(weekend, activePhase, driverId)])
+      ),
+    };
+
+    const selectedTyreSetByPhase: OnlineWeekendGaragePlan['selectedTyreSetByPhase'] = {
+      [activePhase]: Object.fromEntries(
+        controlledDriverIds
+          .map((driverId) => {
+            const key = getPhaseDriverKey(driverId, activePhase);
+            const value = practiceDevelopment.selectedTyreSetByPhase[key];
+            return value ? [driverId, value] : null;
+          })
+          .filter((entry): entry is [string, string] => entry !== null)
+      ),
+    };
+
+    const lastCommittedSetupByPhase: OnlineWeekendGaragePlan['lastCommittedSetupByPhase'] = {
+      [activePhase]: Object.fromEntries(
+        controlledDriverIds
+          .map((driverId) => {
+            const key = getPhaseDriverKey(driverId, activePhase);
+            const value = practiceDevelopment.lastCommittedSetupByPhase[key];
+            return value ? [driverId, value] : null;
+          })
+          .filter((entry): entry is [string, SessionSetupState] => entry !== null)
+      ),
+    };
+
+    void TCC_API.saveWeekendPlanForSession(weekendId, teamId, activePhase, {
+      setupByPhase,
+      selectedTyreSetByPhase,
+      lastCommittedSetupByPhase,
+      sessionSummaries: weekend.sessionSummaries,
+      interactiveSessionStateByPhase,
+    }).catch((error) => {
+      console.error('Failed to persist interactive weekend session', error);
+    });
+  }, [
+    weekendId,
+    teamId,
+    weekend,
+    activeDriverId,
+    practiceDevelopment,
+    aiCompetitors,
+    activePlaybackByDriver,
+    pendingRunContextByDriver,
+    garageOpenByDriver,
+    sessionPaused,
+    sceneSpeed,
+    controlledDriverIds,
+    isHydratingWeekendState,
+  ]);
+
   useEffect(() => {
     trackPreparationRef.current = practiceDevelopment.trackPreparation;
     tractionByPhaseRef.current = practiceDevelopment.trackTractionByPhase;
@@ -857,10 +1062,48 @@ export const PracticeQualiDev: React.FC = () => {
   const selectedTyreWear = selectedTyreSet?.wear ?? 0;
   const weatherLabel = useMemo(() => {
     const rainChance = selectedTrack.weatherChance.rainChance;
-    if (rainChance < 0.2) return `Dry · ${Math.round(selectedTrack.baseTemperature)}°C`;
-    if (rainChance < 0.45) return `Cloudy · ${Math.round(selectedTrack.baseTemperature)}°C`;
-    return `Rain threat ${Math.round(rainChance * 100)}% · ${Math.round(selectedTrack.baseTemperature)}°C`;
-  }, [selectedTrack]);
+    if (rainChance < 0.2) return `${t('practiceDev.weather.dry')} · ${Math.round(selectedTrack.baseTemperature)}°C`;
+    if (rainChance < 0.45) return `${t('practiceDev.weather.cloudy')} · ${Math.round(selectedTrack.baseTemperature)}°C`;
+    return `${t('practiceDev.weather.rainThreat')} ${Math.round(rainChance * 100)}% · ${Math.round(selectedTrack.baseTemperature)}°C`;
+  }, [selectedTrack, t]);
+  const formatMessage = useCallback((key: string, vars: Record<string, string | number>) => {
+    let message = t(key);
+    Object.entries(vars).forEach(([name, value]) => {
+      message = message.split(`{${name}}`).join(String(value));
+    });
+    return message;
+  }, [t]);
+  const getFocusModeLabel = useCallback((focusMode: PracticeFocusMode): string => {
+    if (focusMode === 'setup_feedback') return t('practiceDev.focus.setupFeedback');
+    if (focusMode === 'track_preparation') return t('practiceDev.focus.trackPreparation');
+    return t('practiceDev.focus.balanced');
+  }, [t]);
+  const getDirectionDisplayLabel = useCallback((direction: SetupDirection): string => {
+    if (direction === 'awaiting_data') return t('practiceDev.direction.awaitingData');
+    if (direction === 'too_low') return t('practiceDev.direction.tooLow');
+    if (direction === 'too_high') return t('practiceDev.direction.tooHigh');
+    return t('practiceDev.direction.inRange');
+  }, [t]);
+  const getRunPlanDisplayLabel = useCallback((value: number): string => {
+    if (value > 0.08) return t('practiceDev.runPlan.qualiBiased');
+    if (value < -0.08) return t('practiceDev.runPlan.longRunBiased');
+    return t('common.balanced');
+  }, [t]);
+  const getPhaseLabel = useCallback((phase: WeekendPhase): string => {
+    return t(`practiceDev.phase.${phase}`);
+  }, [t]);
+  const getTuningFieldLabel = useCallback((fieldKey: SetupTuningParameter): string => {
+    return t(`practiceDev.tuning.${fieldKey}`);
+  }, [t]);
+  const getBiasLabel = useCallback((metricKey: DrivingBiasMetricKey): string => {
+    return t(`practiceDev.bias.${metricKey}.label`);
+  }, [t]);
+  const getBiasLeftLabel = useCallback((metricKey: DrivingBiasMetricKey): string => {
+    return t(`practiceDev.bias.${metricKey}.left`);
+  }, [t]);
+  const getBiasRightLabel = useCallback((metricKey: DrivingBiasMetricKey): string => {
+    return t(`practiceDev.bias.${metricKey}.right`);
+  }, [t]);
   const estimatedLapTime = isTimedSession && selectedDriver
     ? estimateLapTimeSeconds(selectedTrack, currentEffects, selectedDriver, practiceDevelopment.trackPreparation, timedSessionPhase, currentTrackTraction)
       + getTyreLapTimeAdjustment(selectedTyreCompound, selectedTyreWear)
@@ -880,30 +1123,133 @@ export const PracticeQualiDev: React.FC = () => {
           }).length,
     [currentEffects, displayKnowledge]
   );
+  const playbackSimSeconds = useMemo(() => {
+    if (!activePlayback || !pendingRunContext) return 0;
+    if (!isTimedSessionPhase(weekend.currentPhase)) return 0;
+    if (pendingRunContext.phase !== weekend.currentPhase) return 0;
+    const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[pendingRunContext.phase] ?? pendingRunContext.releaseElapsedSeconds;
+    return clamp(phaseElapsed - pendingRunContext.releaseElapsedSeconds, 0, activePlayback.plan.elapsedSeconds);
+  }, [activePlayback, pendingRunContext, practiceDevelopment.sessionElapsedSeconds, weekend.currentPhase]);
+  const practiceLeaderboard = useMemo(() => {
+    if (!isPracticePhase(weekend.currentPhase)) return [];
+    const phase = weekend.currentPhase;
+    const playerPlayback = activePlayback && activePlayback.plan.phase === phase
+      ? getPlaybackTrackState(
+          selectedTrack,
+          activePlayback.plan.player.lapTimeSeconds,
+          activePlayback.plan.player.setupChangeSeconds,
+          activePlayback.plan.player.outLapSeconds,
+          activePlayback.plan.player.completedLaps,
+          activePlayback.plan.player.inLapSeconds,
+          playbackSimSeconds,
+          activePlayback.plan.player.lapTimes,
+        )
+      : null;
+    const playerRows = controlledDrivers.map((driver) => ({
+      driverId: driver.id,
+      bestLapSeconds: driver.id === activeDriverRuntimeId && playerPlayback?.bestLapSeconds !== null
+        ? (practiceDevelopment.phases[phase].bestLapSeconds === null
+            ? playerPlayback.bestLapSeconds
+            : Math.min(practiceDevelopment.phases[phase].bestLapSeconds, playerPlayback.bestLapSeconds))
+        : practiceDevelopment.phases[phase].bestLapSeconds,
+      laps: practiceDevelopment.phases[phase].lapsCompleted + (driver.id === activeDriverRuntimeId ? (playerPlayback?.completedLaps ?? 0) : 0),
+      tyreCompound: weekend.tyreAllocations[driver.id]?.find(
+        (set) => set.id === practiceDevelopment.selectedTyreSetByPhase[getPhaseDriverKey(driver.id, phase)]
+      )?.compound ?? null,
+      isPlayer: true,
+    }));
+    const aiRows = aiCompetitors.map((entry) => {
+      const activeRun = activePlayback?.plan.phase === phase
+        ? activePlayback.plan.aiRuns.find((run) => run.driverId === entry.driverId)
+        : null;
+      const playbackState = activeRun
+        ? getPlaybackTrackState(
+            selectedTrack,
+            Math.max(activeRun.lapTimeSeconds, 1),
+            activeRun.setupChangeSeconds,
+            activeRun.outLapSeconds,
+            activeRun.completedLaps,
+            activeRun.inLapSeconds,
+            playbackSimSeconds,
+            activeRun.lapTimes,
+          )
+        : null;
+      return {
+        driverId: entry.driverId,
+        bestLapSeconds: playbackState?.bestLapSeconds ?? null,
+        laps: (entry.lapsByPhase[phase] ?? 0) + (playbackState?.completedLaps ?? 0),
+        tyreCompound: entry.tyreByPhase[phase] ?? null,
+        isPlayer: false,
+      };
+    });
+    return [...aiRows, ...playerRows]
+      .sort((a, b) => {
+        if (a.bestLapSeconds === null && b.bestLapSeconds === null) return 0;
+        if (a.bestLapSeconds === null) return 1;
+        if (b.bestLapSeconds === null) return -1;
+        return a.bestLapSeconds - b.bestLapSeconds;
+      })
+      .map((entry, index) => ({ ...entry, position: index + 1 }));
+  }, [activeDriverRuntimeId, activePlayback, aiCompetitors, controlledDrivers, isPracticePhase, playbackSimSeconds, practiceDevelopment.phases, practiceDevelopment.selectedTyreSetByPhase, selectedTrack, weekend.currentPhase, weekend.tyreAllocations]);
   const qualifyingLeaderboard = useMemo(() => {
     if (!isQualifyingSession) return [];
     const phase = weekend.currentPhase as QualifyingPhase;
+    const playerPlayback = activePlayback && activePlayback.plan.phase === phase
+      ? getPlaybackTrackState(
+          selectedTrack,
+          activePlayback.plan.player.lapTimeSeconds,
+          activePlayback.plan.player.setupChangeSeconds,
+          activePlayback.plan.player.outLapSeconds,
+          activePlayback.plan.player.completedLaps,
+          activePlayback.plan.player.inLapSeconds,
+          playbackSimSeconds,
+          activePlayback.plan.player.lapTimes,
+        )
+      : null;
     const playerRows = controlledDrivers.map((driver) => ({
       driverId: driver.id,
       driverName: driver.name,
       team: driver.team,
-      bestLapSeconds: practiceDevelopment.qualifying[phase].bestLapSeconds,
-      laps: practiceDevelopment.qualifying[phase].lapsCompleted,
+      bestLapSeconds: driver.id === activeDriverRuntimeId && playerPlayback?.bestLapSeconds !== null
+        ? (practiceDevelopment.qualifying[phase].bestLapSeconds === null
+            ? playerPlayback.bestLapSeconds
+            : Math.min(practiceDevelopment.qualifying[phase].bestLapSeconds, playerPlayback.bestLapSeconds))
+        : practiceDevelopment.qualifying[phase].bestLapSeconds,
+      laps: practiceDevelopment.qualifying[phase].lapsCompleted + (driver.id === activeDriverRuntimeId ? (playerPlayback?.completedLaps ?? 0) : 0),
       tyreCompound: weekend.tyreAllocations[driver.id]?.find(
         (set) => set.id === practiceDevelopment.selectedTyreSetByPhase[getPhaseDriverKey(driver.id, phase)]
       )?.compound ?? null,
       isPlayer: true,
     }));
     const aiRows = aiCompetitors
-      .map((entry) => ({
-        driverId: entry.driverId,
-        driverName: entry.driverName,
-        team: entry.team,
-        bestLapSeconds: entry.bestLapByPhase[phase] ?? null,
-        laps: entry.lapsByPhase[phase] ?? 0,
-        tyreCompound: entry.tyreByPhase[phase] ?? null,
-        isPlayer: false,
-      }));
+      .map((entry) => {
+        const activeRun = activePlayback?.plan.phase === phase
+          ? activePlayback.plan.aiRuns.find((run) => run.driverId === entry.driverId)
+          : null;
+        const playbackState = activeRun
+          ? getPlaybackTrackState(
+              selectedTrack,
+              Math.max(activeRun.lapTimeSeconds, 1),
+              activeRun.setupChangeSeconds,
+              activeRun.outLapSeconds,
+              activeRun.completedLaps,
+              activeRun.inLapSeconds,
+              playbackSimSeconds,
+              activeRun.lapTimes,
+            )
+          : null;
+        return {
+          driverId: entry.driverId,
+          driverName: entry.driverName,
+          team: entry.team,
+          bestLapSeconds: playbackState?.bestLapSeconds !== null && playbackState?.bestLapSeconds !== undefined
+            ? (entry.bestLapByPhase[phase] == null ? playbackState.bestLapSeconds : Math.min(entry.bestLapByPhase[phase]!, playbackState.bestLapSeconds))
+            : entry.bestLapByPhase[phase] ?? null,
+          laps: (entry.lapsByPhase[phase] ?? 0) + (playbackState?.completedLaps ?? 0),
+          tyreCompound: entry.tyreByPhase[phase] ?? null,
+          isPlayer: false,
+        };
+      });
     return [...aiRows, ...playerRows]
       .sort((a, b) => {
         if (a.bestLapSeconds === null && b.bestLapSeconds === null) return 0;
@@ -915,14 +1261,7 @@ export const PracticeQualiDev: React.FC = () => {
         ...entry,
         position: index + 1,
       }));
-  }, [aiCompetitors, controlledDrivers, isQualifyingSession, practiceDevelopment.qualifying, practiceDevelopment.selectedTyreSetByPhase, weekend.currentPhase, weekend.tyreAllocations]);
-  const playbackSimSeconds = useMemo(() => {
-    if (!activePlayback || !pendingRunContext) return 0;
-    if (!isTimedSessionPhase(weekend.currentPhase)) return 0;
-    if (pendingRunContext.phase !== weekend.currentPhase) return 0;
-    const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[pendingRunContext.phase] ?? pendingRunContext.releaseElapsedSeconds;
-    return clamp(phaseElapsed - pendingRunContext.releaseElapsedSeconds, 0, activePlayback.plan.elapsedSeconds);
-  }, [activePlayback, pendingRunContext, practiceDevelopment.sessionElapsedSeconds, weekend.currentPhase]);
+  }, [activeDriverRuntimeId, activePlayback, aiCompetitors, controlledDrivers, isQualifyingSession, playbackSimSeconds, practiceDevelopment.qualifying, practiceDevelopment.selectedTyreSetByPhase, selectedTrack, weekend.currentPhase, weekend.tyreAllocations]);
   const playbackProgressRatio = activePlayback
     ? clamp(playbackSimSeconds / Math.max(activePlayback.plan.elapsedSeconds, 0.1), 0, 1)
     : 0;
@@ -934,23 +1273,25 @@ export const PracticeQualiDev: React.FC = () => {
     if (activePlayback && activePlayback.plan.phase === activePhase) {
       const runSeconds = playbackSimSeconds;
       const playerTrackState = getPlaybackTrackState(
-        totalDistance,
+        selectedTrack,
         activePlayback.plan.player.lapTimeSeconds,
         activePlayback.plan.player.setupChangeSeconds,
         activePlayback.plan.player.outLapSeconds,
         activePlayback.plan.player.completedLaps,
         activePlayback.plan.player.inLapSeconds,
-        runSeconds
+        runSeconds,
+        activePlayback.plan.player.lapTimes,
       );
       const aiVehicles = activePlayback.plan.aiRuns.map((run) => {
         const trackState = getPlaybackTrackState(
-          totalDistance,
+          selectedTrack,
           Math.max(run.lapTimeSeconds, 1),
           run.setupChangeSeconds,
           run.outLapSeconds,
           run.completedLaps,
           run.inLapSeconds,
-          runSeconds
+          runSeconds,
+          run.lapTimes,
         );
         const pitDistance = getPitLaneSpawnDistance(selectedTrack, aiCompetitors.findIndex((entry) => entry.driverId === run.driverId) + 1, aiCompetitors.length + 1);
         return {
@@ -970,7 +1311,6 @@ export const PracticeQualiDev: React.FC = () => {
         ...aiVehicles,
       ];
     }
-    const phaseElapsed = practiceDevelopment.sessionElapsedSeconds[activePhase];
     const baseline = [
       {
         id: selectedDriver.id,
@@ -978,28 +1318,12 @@ export const PracticeQualiDev: React.FC = () => {
         distanceOnLap: getPitLaneSpawnDistance(selectedTrack, 0, aiCompetitors.length + 1),
         isInPit: true,
       },
-      ...aiCompetitors.map((entry, index) => {
-        const activitySignal = deterministicNoise((index + 1) * 31 + phaseElapsed * 0.014 + (entry.lapsByPhase[activePhase] ?? 0) * 0.2);
-        const isRunning = activitySignal > (activePhase.startsWith('q') ? 0.62 : 0.48);
-        if (!isRunning) {
-          return {
-            id: entry.driverId,
-            driverId: entry.driverId,
-            distanceOnLap: getPitLaneSpawnDistance(selectedTrack, index + 1, aiCompetitors.length + 1),
-            isInPit: true,
-          };
-        }
-        const rollingLapSeconds = activePhase.startsWith('q')
-          ? 86 + ((index * 7) % 14)
-          : 92 + ((index * 11) % 19);
-        const phaseOffset = deterministicNoise((index + 1) * 43) * rollingLapSeconds;
-        return {
-          id: entry.driverId,
-          driverId: entry.driverId,
-          distanceOnLap: (((phaseElapsed + phaseOffset) / rollingLapSeconds) % 1) * totalDistance,
-          isInPit: false,
-        };
-      }),
+      ...aiCompetitors.map((entry, index) => ({
+        id: entry.driverId,
+        driverId: entry.driverId,
+        distanceOnLap: getPitLaneSpawnDistance(selectedTrack, index + 1, aiCompetitors.length + 1),
+        isInPit: true,
+      })),
     ];
     return baseline.map((vehicle) => ({
       ...vehicle,
@@ -1040,13 +1364,13 @@ export const PracticeQualiDev: React.FC = () => {
   };
 
   const handleResetWeekend = () => {
-    setWeekend(createWeekend(selectedTrack, controlledDriverIds));
+    setWeekend(createWeekend(selectedTrack, controlledDriverIds, teamId ?? 'player-team'));
     const nextDevelopment = createPracticeDevelopmentState();
     controlledDriverIds.forEach((driverId) => {
-      nextDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(driverId, 'fp1')] = { ...NEUTRAL_SETUP };
+      nextDevelopment.lastCommittedSetupByPhase[getPhaseDriverKey(driverId, 'fp1')] = { ...NEUTRAL_SESSION_SETUP };
     });
     setPracticeDevelopment(nextDevelopment);
-    setAiCompetitors(createAICompetitors(controlledDriverIds, { ...NEUTRAL_SETUP }));
+    setAiCompetitors(createAICompetitors(controlledDriverIds, { ...NEUTRAL_SESSION_SETUP }));
     aiWaitAccumulatorByPhaseRef.current = { fp1: 0, fp2: 0, fp3: 0, q1: 0, q2: 0, q3: 0 };
     setActivePlaybackByDriver(controlledDriverIds.reduce<Record<string, ActivePlaybackState | null>>((acc, driverId) => {
       acc[driverId] = null;
@@ -1129,6 +1453,7 @@ export const PracticeQualiDev: React.FC = () => {
           outLapSeconds: 0,
           inLapSeconds: 0,
           isReleased: false,
+          lapTimes: [],
         });
         return entry;
       }
@@ -1145,7 +1470,7 @@ export const PracticeQualiDev: React.FC = () => {
                 : activePhase === 'fp3'
                   ? entry.setupByPhase.fp2
                   : undefined)
-        ?? { ...NEUTRAL_SETUP };
+        ?? { ...NEUTRAL_SESSION_SETUP };
       const tunedSetup = buildTunedSetup(fallbackSetup, hiddenIdealSetup, driver.learning, timeUsedSeconds + (index + 1) * 13);
       const effects = buildSetupPhysicsEffects(selectedTrack, tunedSetup);
       const aiTyre: TyreCompound = activePhase.startsWith('q')
@@ -1157,6 +1482,16 @@ export const PracticeQualiDev: React.FC = () => {
         ? Math.max(1, Math.floor(1 + deterministicNoise((index + 1) * 9 + timeUsedSeconds) * (mode === 'wait' ? 2 : 4)))
         : Math.max(2, Math.floor(3 + deterministicNoise((index + 1) * 19 + timeUsedSeconds) * (mode === 'wait' ? 6 : 12)));
       const aiRun = simulateSessionLaps(plannedLaps, lapTime, timeUsedSeconds, setupChangeSeconds);
+      let bestLap = entry.bestLapByPhase[activePhase as QualifyingPhase] ?? null;
+      const lapTimes: number[] = [];
+      if (activePhase.startsWith('q') && aiRun.completedLaps > 0) {
+        for (let lap = 0; lap < aiRun.completedLaps; lap += 1) {
+          const variance = (deterministicNoise((index + 1) * 97 + lap + timeUsedSeconds) - 0.5) * (1.15 - driver.skill.consistency / 120);
+          const simulatedLap = lapTime + variance;
+          lapTimes.push(simulatedLap);
+          bestLap = bestLap === null ? simulatedLap : Math.min(bestLap, simulatedLap);
+        }
+      }
       runs.push({
         driverId: entry.driverId,
         completedLaps: aiRun.completedLaps,
@@ -1165,15 +1500,8 @@ export const PracticeQualiDev: React.FC = () => {
         outLapSeconds: aiRun.outLapSeconds,
         inLapSeconds: aiRun.inLapSeconds,
         isReleased: true,
+        lapTimes,
       });
-      let bestLap = entry.bestLapByPhase[activePhase as QualifyingPhase] ?? null;
-      if (activePhase.startsWith('q') && aiRun.completedLaps > 0) {
-        for (let lap = 0; lap < aiRun.completedLaps; lap += 1) {
-          const variance = (deterministicNoise((index + 1) * 97 + lap + timeUsedSeconds) - 0.5) * (1.15 - driver.skill.consistency / 120);
-          const simulatedLap = lapTime + variance;
-          bestLap = bestLap === null ? simulatedLap : Math.min(bestLap, simulatedLap);
-        }
-      }
       return {
         ...entry,
         setupByPhase: {
@@ -1286,6 +1614,9 @@ export const PracticeQualiDev: React.FC = () => {
 
     const prepDelta = calculateDriverPrepDelta(selectedSet.compound, progressionLaps, activePhase);
 
+    const runLapTimes = context.lapTimes.slice(0, runWindow.completedLaps);
+    const bestLapFromRun = runLapTimes.length ? Math.min(...runLapTimes) : null;
+
     if (isPracticePhase(activePhase)) {
       const phaseState = practiceDevelopment.phases[activePhase];
       const focusAllocation = getFocusAllocation(phaseState.focusMode);
@@ -1325,6 +1656,11 @@ export const PracticeQualiDev: React.FC = () => {
             [activePhase]: {
               ...currentPhaseState,
               lapsCompleted: currentPhaseState.lapsCompleted + runWindow.completedLaps,
+              bestLapSeconds: bestLapFromRun === null
+                ? currentPhaseState.bestLapSeconds
+                : currentPhaseState.bestLapSeconds === null
+                  ? bestLapFromRun
+                  : Math.min(currentPhaseState.bestLapSeconds, bestLapFromRun),
               lastFeedback: nextFeedback,
               lastRunSummary: {
                 plannedLaps: context.plannedLaps,
@@ -1336,6 +1672,7 @@ export const PracticeQualiDev: React.FC = () => {
                 trafficPenaltySeconds: context.trafficPenaltySeconds,
                 trafficStatus: context.trafficStatus,
                 cutoffByChequered: runWindow.cutoffByChequered,
+                bestLapSeconds: bestLapFromRun,
               },
               needsFreshFeedback: stintResult.feedback ? false : currentPhaseState.needsFreshFeedback,
             },
@@ -1345,12 +1682,6 @@ export const PracticeQualiDev: React.FC = () => {
       return;
     }
 
-    const lapTimes: number[] = [];
-    for (let lap = 0; lap < runWindow.completedLaps; lap += 1) {
-      const variance = (deterministicNoise(lap + context.releaseElapsedSeconds * 0.1 + driver.learning) - 0.5) * (1.2 - (driver.skill.consistency / 120));
-      lapTimes.push(context.lapTimeSeconds + variance);
-    }
-    const bestLapFromRun = lapTimes.length ? Math.min(...lapTimes) : null;
     setPracticeDevelopment((current) => {
       const currentPhaseState = current.qualifying[activePhase];
       const bestLapSeconds = bestLapFromRun === null
@@ -1426,6 +1757,10 @@ export const PracticeQualiDev: React.FC = () => {
       traffic.trafficPenaltySeconds
     ) + getTyreLapTimeAdjustment(selectedTyreSet.compound, selectedTyreSet.wear);
     const runWindow = simulateSessionLaps(plannedLaps, lapTimeWithTyre, remainingSeconds, setupChangeSeconds);
+    const lapTimes = Array.from({ length: runWindow.completedLaps }, (_, lap) => {
+      const variance = (deterministicNoise(lap + elapsedSeconds * 0.1 + driverLearning) - 0.5) * (1.2 - ((selectedDriver.skill.consistency ?? 80) / 120));
+      return lapTimeWithTyre + variance;
+    });
     const aiSlice = simulateAiSessionSlice(
       activePhase,
       runWindow.timeUsedSeconds,
@@ -1433,6 +1768,7 @@ export const PracticeQualiDev: React.FC = () => {
       practiceDevelopment.trackTractionByPhase[activePhase] ?? 0,
       'run'
     );
+    setAiCompetitors(aiSlice.nextCompetitors);
     setActivePlaybackByDriver((current) => ({
       ...current,
       [activeDriverRuntimeId]: {
@@ -1445,6 +1781,7 @@ export const PracticeQualiDev: React.FC = () => {
           lapTimeSeconds: lapTimeWithTyre,
           outLapSeconds: runWindow.outLapSeconds,
           inLapSeconds: runWindow.inLapSeconds,
+          lapTimes,
         },
         aiRuns: aiSlice.runs,
         elapsedSeconds: runWindow.timeUsedSeconds,
@@ -1460,6 +1797,7 @@ export const PracticeQualiDev: React.FC = () => {
       plannedLaps,
       setupChangeSeconds,
       lapTimeSeconds: lapTimeWithTyre,
+      lapTimes,
       selectedTyreSetId: selectedTyreSet.id,
       releaseElapsedSeconds: elapsedSeconds,
       trafficPenaltySeconds: traffic.trafficPenaltySeconds,
@@ -1493,12 +1831,44 @@ export const PracticeQualiDev: React.FC = () => {
       commitSessionRun(driverId, context, elapsedSinceRelease);
       setPendingRunContextByDriver((current) => ({ ...current, [driverId]: null }));
       setActivePlaybackByDriver((current) => ({ ...current, [driverId]: null }));
+      setGarageOpenByDriver((current) => ({ ...current, [driverId]: true }));
     });
   }, [activePlaybackByDriver, commitSessionRun, controlledDriverIds, pendingRunContextByDriver, practiceDevelopment.sessionElapsedSeconds]);
 
+  const completeTimedSession = useCallback(async () => {
+    if (!weekendId || !teamId || !isTimedSessionPhase(weekend.currentPhase) || isCompletingSession) return;
+
+    const activePhase = weekend.currentPhase;
+    const summary = buildTimedSessionSummary(
+      activePhase,
+      controlledDrivers,
+      aiCompetitors,
+      practiceDevelopment,
+    );
+
+    setIsCompletingSession(true);
+    try {
+      const result = await TCC_API.completeInteractiveSession(weekendId, teamId, activePhase, summary);
+      setWeekend(result.weekend);
+    } catch (error) {
+      console.error('Failed to complete interactive session', error);
+    } finally {
+      setIsCompletingSession(false);
+    }
+  }, [aiCompetitors, controlledDrivers, isCompletingSession, practiceDevelopment, teamId, weekend, weekendId]);
+
   const handleRaceAction = () => {
     if (weekend.currentPhase === 'race') {
+      if (onOpenRaceSession) {
+        onOpenRaceSession(selectedTrack.id);
+        return;
+      }
       navigate(`/race-dev?track=${selectedTrack.id}`);
+      return;
+    }
+
+    if (isTimedSessionPhase(weekend.currentPhase)) {
+      void completeTimedSession();
       return;
     }
 
@@ -1523,24 +1893,24 @@ export const PracticeQualiDev: React.FC = () => {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full border border-f1-red/30 bg-f1-red/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-f1-red">
-              <RadioTower size={12} /> Session Control
+              <RadioTower size={12} /> {t('practiceDev.sessionControlBadge')}
             </div>
             <div>
               <h1 className="text-3xl md:text-4xl font-orbitron font-black italic tracking-tight text-white">
-                Practice & Qualifying Control
+                {t('practiceDev.title')}
               </h1>
               <p className="mt-2 max-w-3xl text-sm md:text-base text-gray-300">
-                Unified control style with the race sandbox: run plans, live track scene, session board and setup decisions in one flow for {selectedDriver?.name}.
+                {formatMessage('practiceDev.subtitle', { driverName: selectedDriver?.name ?? t('practiceDev.theDriver') })}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
             <GlassButton onClick={() => navigate('/race-dev')} className="inline-flex items-center gap-2">
-              <Flag size={16} /> Open Race Sandbox
+              <Flag size={16} /> {t('practiceDev.openRaceSandbox')}
             </GlassButton>
-            <GlassButton onClick={() => navigate(-1)} variant="ghost" className="inline-flex items-center gap-2">
-              <ChevronLeft size={16} /> Back
+            <GlassButton onClick={() => (onBack ? onBack() : navigate(-1))} variant="ghost" className="inline-flex items-center gap-2">
+              <ChevronLeft size={16} /> {t('practiceDev.back')}
             </GlassButton>
           </div>
         </div>
@@ -1569,8 +1939,8 @@ export const PracticeQualiDev: React.FC = () => {
           <div className="flex items-center gap-3 text-white">
             <Wrench className="text-yellow-400" />
             <div>
-              <h2 className="text-xl font-bold">Weekend flow</h2>
-              <p className="text-sm text-gray-400">Advance phases from one horizontal timeline, then tune setup and bias side-by-side below.</p>
+              <h2 className="text-xl font-bold">{t('practiceDev.weekendFlow')}</h2>
+              <p className="text-sm text-gray-400">{t('practiceDev.weekendFlowHint')}</p>
             </div>
           </div>
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
@@ -1587,27 +1957,29 @@ export const PracticeQualiDev: React.FC = () => {
 
                 return (
                   <div key={phase} className={clsx('rounded-lg border px-3 py-3 text-center text-xs font-medium uppercase tracking-[0.15em]', stateTone)}>
-                    {phase.replace('_', ' ')}
+                    {getPhaseLabel(phase)}
                   </div>
                 );
               })}
             </div>
             <div className="flex flex-wrap gap-3">
-              <GlassButton onClick={handleRaceAction}>
+              <GlassButton onClick={handleRaceAction} disabled={isCompletingSession}>
                 {weekend.currentPhase === 'pre_weekend'
-                  ? 'Start Weekend'
+                  ? t('practiceDev.startWeekend')
                   : weekend.currentPhase === 'race'
-                    ? 'Open Live Race Session'
-                    : 'Advance Phase'}
+                    ? t('practiceDev.openLiveRaceSession')
+                    : isCompletingSession
+                      ? t('common.loading')
+                      : t('practiceDev.advancePhase')}
               </GlassButton>
-              <GlassButton onClick={handleResetWeekend} variant="ghost">Reset to All 50</GlassButton>
+              <GlassButton onClick={handleResetWeekend} variant="ghost">{t('practiceDev.resetToAll50')}</GlassButton>
             </div>
           </div>
 
           <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Completed sessions</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">{t('practiceDev.completedSessions')}</div>
             <div className="mt-2 text-sm text-white">
-              {weekend.completedSessions.length ? weekend.completedSessions.join(' → ') : 'None yet'}
+              {weekend.completedSessions.length ? weekend.completedSessions.map((session) => getPhaseLabel(session)).join(' → ') : t('practiceDev.noneYet')}
             </div>
           </div>
         </GlassCard>
@@ -1615,20 +1987,20 @@ export const PracticeQualiDev: React.FC = () => {
         <GlassCard className="border-white/10">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-xl border border-f1-red/20 bg-f1-red/10 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-f1-red">Feedback Reliability</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-f1-red">{t('practiceDev.feedbackReliability')}</div>
               <div className="mt-2 text-3xl font-black text-white">{practiceDevelopment.feedbackQuality.toFixed(1)}%</div>
-              <div className="mt-1 text-sm text-red-200">{flaggedCount} clear bias flags</div>
+              <div className="mt-1 text-sm text-red-200">{formatMessage('practiceDev.clearBiasFlags', { count: flaggedCount })}</div>
             </div>
             <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-violet-300">Preparation</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-violet-300">{t('practiceDev.preparation')}</div>
               <div className="mt-2 text-3xl font-black text-white">{practiceDevelopment.trackPreparation.toFixed(1)}%</div>
-              <div className="mt-1 text-sm text-violet-200">{practiceDevelopment.totalPracticeLaps} practice laps completed</div>
+              <div className="mt-1 text-sm text-violet-200">{formatMessage('practiceDev.practiceLapsCompleted', { count: practiceDevelopment.totalPracticeLaps })}</div>
             </div>
             <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-sky-300">Quali v Long-Run</div>
-              <div className="mt-2 text-3xl font-black text-white">{getRunPlanLabel(currentEffects.runPlanBias)}</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-sky-300">{t('practiceDev.qualiVsLongRun')}</div>
+              <div className="mt-2 text-3xl font-black text-white">{getRunPlanDisplayLabel(currentEffects.runPlanBias)}</div>
               <div className="mt-1 text-sm text-sky-200">
-                {(currentEffects.runPlanBias * 100).toFixed(0)}% · tyre wear {currentEffects.tyreWearFactor.toFixed(3)}
+                {formatMessage('practiceDev.runPlanTyreWear', { bias: (currentEffects.runPlanBias * 100).toFixed(0), wear: currentEffects.tyreWearFactor.toFixed(3) })}
               </div>
             </div>
           </div>
@@ -1639,7 +2011,7 @@ export const PracticeQualiDev: React.FC = () => {
             <GlassCard className="col-span-12 lg:col-span-5 space-y-6 border-white/10">
             <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Weekend track</label>
+                <label className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">{t('practiceDev.weekendTrack')}</label>
                 <select
                   value={trackId}
                   onChange={(event) => setTrackId(event.target.value)}
@@ -1653,8 +2025,8 @@ export const PracticeQualiDev: React.FC = () => {
                 </select>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Current phase</div>
-                <div className="mt-1 text-xl font-black uppercase text-white">{weekend.currentPhase.replace('_', ' ')}</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">{t('practiceDev.currentPhase')}</div>
+                <div className="mt-1 text-xl font-black uppercase text-white">{getPhaseLabel(weekend.currentPhase)}</div>
               </div>
             </div>
 
@@ -1663,15 +2035,15 @@ export const PracticeQualiDev: React.FC = () => {
                 <div className="flex items-center gap-3 text-white">
                   <SlidersHorizontal className="text-cyan-400" />
                   <div>
-                    <h2 className="text-xl font-bold">Current garage setup</h2>
+                    <h2 className="text-xl font-bold">{t('practiceDev.currentGarageSetup')}</h2>
                     <p className="text-sm text-gray-400">
-                      {canEditSetup ? 'Adjust the current practice session and carry the setup forward as the weekend progresses.' : 'Mechanical setup is locked once qualifying begins.'}
+                      {canEditSetup ? t('practiceDev.currentGarageSetupHint') : t('practiceDev.mechanicalSetupLocked')}
                     </p>
                   </div>
                 </div>
                 {setupLocked && (
                   <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-amber-300">
-                    <Lock size={12} /> Parc Ferme
+                    <Lock size={12} /> {t('practiceDev.parcFerme')}
                   </div>
                 )}
               </div>
@@ -1682,7 +2054,7 @@ export const PracticeQualiDev: React.FC = () => {
                   return (
                     <div key={key} className="rounded-xl border border-white/10 bg-white/5 p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium text-white">{label}</div>
+                        <div className="text-sm font-medium text-white">{getTuningFieldLabel(key) || label}</div>
                         <div className="text-lg font-black text-white">{value}</div>
                       </div>
                       <input
@@ -1711,9 +2083,9 @@ export const PracticeQualiDev: React.FC = () => {
                       {isPracticePhase(weekend.currentPhase) && currentPracticePhaseState ? (
                         <>
                           <div>
-                            <div className="text-xs uppercase tracking-[0.2em] text-cyan-300">Track test programme</div>
+                            <div className="text-xs uppercase tracking-[0.2em] text-cyan-300">{t('practiceDev.trackTestProgramme')}</div>
                             <div className="mt-1 text-sm text-cyan-100">
-                              Choose how {selectedDriver?.name ?? 'the driver'} spends the stint. Setup work improves knowledge of the car&apos;s driving bias targets, while preparation accelerates the longer the car stays out.
+                              {formatMessage('practiceDev.trackTestProgrammeHint', { driverName: selectedDriver?.name ?? t('practiceDev.theDriver') })}
                             </div>
                           </div>
                           <div className="grid gap-3 md:grid-cols-3">
@@ -1731,13 +2103,13 @@ export const PracticeQualiDev: React.FC = () => {
                                       : 'border-white/10 bg-black/20 text-gray-300 hover:border-cyan-300/30 hover:text-white'
                                   )}
                                 >
-                                  <div className="text-sm font-bold uppercase tracking-[0.15em]">{getFocusLabel(focusMode)}</div>
+                                  <div className="text-sm font-bold uppercase tracking-[0.15em]">{getFocusModeLabel(focusMode)}</div>
                                   <div className="mt-1 text-xs text-gray-300">
                                     {focusMode === 'setup_feedback'
-                                      ? 'Maximise engineer feedback quality'
+                                      ? t('practiceDev.maximiseFeedback')
                                       : focusMode === 'track_preparation'
-                                        ? 'Maximise driver circuit preparation'
-                                        : 'Split the stint between both goals'}
+                                        ? t('practiceDev.maximisePreparation')
+                                        : t('practiceDev.splitGoals')}
                                   </div>
                                 </button>
                               );
@@ -1745,7 +2117,7 @@ export const PracticeQualiDev: React.FC = () => {
                           </div>
                           <div className="grid gap-3 md:grid-cols-2">
                             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">Stint length</div>
+                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">{t('practiceDev.stintLength')}</div>
                               <input
                                 type="number"
                                 min={MIN_RUN_LAPS}
@@ -1755,26 +2127,30 @@ export const PracticeQualiDev: React.FC = () => {
                                 onChange={(event) => handlePracticePhaseUpdate('plannedLaps', normalizePlannedLaps(Number(event.target.value)))}
                                 className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white outline-none transition focus:border-cyan-300/40"
                               />
-                              <div className="mt-1 text-xs text-cyan-100">Set any run from {MIN_RUN_LAPS} to {MAX_RUN_LAPS} laps</div>
+                              <div className="mt-1 text-xs text-cyan-100">{formatMessage('practiceDev.stintLengthHint', { min: MIN_RUN_LAPS, max: MAX_RUN_LAPS })}</div>
                             </div>
                             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">Driver learning</div>
+                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">{t('practiceDev.driverLearning')}</div>
                               <div className="mt-2 text-2xl font-black text-white">{driverLearning}</div>
-                              <div className="mt-1 text-xs text-cyan-100">Base gain multiplier for feedback and preparation</div>
+                              <div className="mt-1 text-xs text-cyan-100">{t('practiceDev.driverLearningHint')}</div>
+                              <div className="mt-2 text-[11px] text-cyan-200">Feedback ×{Math.max(0.5, driverLearning / 85).toFixed(2)}</div>
+                              {currentPracticePhaseState && (
+                                <div className="mt-2 text-[11px] text-white/80">Best lap {formatLapTime(currentPracticePhaseState.bestLapSeconds)}</div>
+                              )}
                             </div>
                           </div>
                         </>
                       ) : isQualifyingSession && currentQualifyingPhaseState ? (
                         <>
                           <div>
-                            <div className="text-xs uppercase tracking-[0.2em] text-cyan-300">Qualifying run plan</div>
+                            <div className="text-xs uppercase tracking-[0.2em] text-cyan-300">{t('practiceDev.qualifyingRunPlan')}</div>
                             <div className="mt-1 text-sm text-cyan-100">
-                              Parc ferme is active, so setup changes are blocked and no garage time is spent on mechanical changes. Plan push laps before the session clock expires.
+                              {t('practiceDev.qualifyingRunPlanHint')}
                             </div>
                           </div>
                           <div className="grid gap-3 md:grid-cols-2">
                             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">Planned push laps</div>
+                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">{t('practiceDev.plannedPushLaps')}</div>
                               <input
                                 type="number"
                                 min={MIN_RUN_LAPS}
@@ -1784,18 +2160,18 @@ export const PracticeQualiDev: React.FC = () => {
                                 onChange={(event) => handleQualifyingPhaseUpdate('plannedLaps', normalizePlannedLaps(Number(event.target.value)))}
                                 className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white outline-none transition focus:border-cyan-300/40"
                               />
-                              <div className="mt-1 text-xs text-cyan-100">Set any run from {MIN_RUN_LAPS} to {MAX_RUN_LAPS} laps</div>
+                              <div className="mt-1 text-xs text-cyan-100">{formatMessage('practiceDev.stintLengthHint', { min: MIN_RUN_LAPS, max: MAX_RUN_LAPS })}</div>
                             </div>
                             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">Best lap</div>
+                              <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">{t('practiceDev.bestLap')}</div>
                               <div className="mt-2 text-2xl font-black text-white">{formatLapTime(currentQualifyingPhaseState.bestLapSeconds)}</div>
-                              <div className="mt-1 text-xs text-cyan-100">{currentQualifyingPhaseState.lapsCompleted} laps completed in session</div>
+                              <div className="mt-1 text-xs text-cyan-100">{formatMessage('practiceDev.lapsCompletedInSession', { count: currentQualifyingPhaseState.lapsCompleted })}</div>
                             </div>
                           </div>
                         </>
                       ) : null}
                       <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                        <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">Tyre set grid</div>
+                        <div className="text-xs uppercase tracking-[0.15em] text-cyan-200">{t('practiceDev.tyreSetGrid')}</div>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
                           {availableTyreSets.map((set) => {
                             const active = selectedTyreSet?.id === set.id;
@@ -1820,14 +2196,17 @@ export const PracticeQualiDev: React.FC = () => {
                                   {set.compound}
                                 </div>
                                 <div className="mt-1 text-[11px] text-gray-300">{set.id.split('-').slice(-2).join('-')}</div>
-                                <div className="mt-1 text-[11px] text-gray-400">Wear {set.wear.toFixed(1)}%</div>
+                                <div className="mt-1 text-[11px] text-gray-400">{formatMessage('practiceDev.wearValue', { wear: set.wear.toFixed(1) })}</div>
                               </button>
                             );
                           })}
                         </div>
-                        {!availableTyreSets.length && <div className="mt-2 text-xs text-amber-300">No sets available</div>}
+                        {!availableTyreSets.length && <div className="mt-2 text-xs text-amber-300">{t('practiceDev.noSetsAvailable')}</div>}
                         <div className="mt-2 text-xs text-cyan-100">
-                          Active compound {selectedTyreSet ? selectedTyreSet.compound.toUpperCase() : '—'} · wear {selectedTyreSet ? `${selectedTyreSet.wear.toFixed(1)}%` : '—'}
+                          {formatMessage('practiceDev.activeCompoundWear', {
+                            compound: selectedTyreSet ? selectedTyreSet.compound.toUpperCase() : '—',
+                            wear: selectedTyreSet ? `${selectedTyreSet.wear.toFixed(1)}%` : '—'
+                          })}
                         </div>
                       </div>
                     </div>
@@ -1835,55 +2214,75 @@ export const PracticeQualiDev: React.FC = () => {
                   <div className="rounded-lg border border-white/10 bg-black/20 p-4">
                     <div className="mb-3 grid gap-3 md:grid-cols-2">
                       <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                        <div className="text-xs uppercase tracking-[0.15em] text-gray-400">Session clock</div>
+                        <div className="text-xs uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.sessionClock')}</div>
                         <div className="mt-2 flex items-center gap-2 text-lg font-black text-white">
                           <Clock3 size={16} className="text-cyan-300" />
                           {formatSessionClock(currentPhaseRemainingSeconds)}
                         </div>
                         <div className="mt-1 text-sm text-gray-300">
-                          {formatSessionClock(currentPhaseElapsedSeconds)} elapsed · est. {estimatedLapTime.toFixed(2)}s/lap · traction {currentTrackTraction.toFixed(1)}%
+                          {formatMessage('practiceDev.sessionClockDetails', {
+                            elapsed: formatSessionClock(currentPhaseElapsedSeconds),
+                            estimatedLapTime: estimatedLapTime.toFixed(2),
+                            traction: currentTrackTraction.toFixed(1)
+                          })}
                         </div>
                       </div>
                       <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                        <div className="text-xs uppercase tracking-[0.15em] text-gray-400">Current practice phase</div>
-                        <div className="mt-2 text-lg font-black text-white">{weekend.currentPhase.toUpperCase()}</div>
+                        <div className="text-xs uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.currentPracticePhase')}</div>
+                        <div className="mt-2 text-lg font-black text-white">{getPhaseLabel(weekend.currentPhase)}</div>
                         <div className="mt-1 text-sm text-gray-300">
-                          {isPracticePhase(weekend.currentPhase)
-                            ? `${currentPracticePhaseState?.lapsCompleted ?? 0} laps completed in this session`
-                            : `${currentQualifyingPhaseState?.lapsCompleted ?? 0} laps completed in this session`}
+                          {formatMessage('practiceDev.lapsCompletedInThisSession', {
+                            count: isPracticePhase(weekend.currentPhase)
+                              ? (currentPracticePhaseState?.lapsCompleted ?? 0)
+                              : (currentQualifyingPhaseState?.lapsCompleted ?? 0)
+                          })}
                         </div>
                       </div>
                     </div>
                     <GlassButton onClick={handleRunSessionStint} className="w-full" disabled={currentPhaseRemainingSeconds <= 0 || !selectedTyreSet}>
                       {isPracticePhase(weekend.currentPhase) && currentPracticePhaseState
-                        ? `Run ${currentPracticePhaseState.plannedLaps} Laps on ${getFocusLabel(currentPracticePhaseState.focusMode)}`
-                        : `Run ${currentQualifyingPhaseState?.plannedLaps ?? 0} Push Laps`}
+                        ? formatMessage('practiceDev.runLapsOnFocus', { laps: currentPracticePhaseState.plannedLaps, focus: getFocusModeLabel(currentPracticePhaseState.focusMode) })
+                        : formatMessage('practiceDev.runPushLaps', { laps: currentQualifyingPhaseState?.plannedLaps ?? 0 })}
                     </GlassButton>
                     {!selectedTyreSet && (
-                      <div className="mt-2 text-xs text-amber-300">Select an available tyre set to run the next stint.</div>
+                      <div className="mt-2 text-xs text-amber-300">{t('practiceDev.selectTyreSet')}</div>
                     )}
                     {isPracticePhase(weekend.currentPhase) && currentPracticePhaseState?.lastRunSummary && (
                       <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-gray-200">
-                        <div className="font-bold uppercase tracking-[0.15em] text-white">Last Stint</div>
+                        <div className="font-bold uppercase tracking-[0.15em] text-white">{t('practiceDev.lastStint')}</div>
                         <div className="mt-2">
-                          {currentPracticePhaseState.lastRunSummary.laps}/{currentPracticePhaseState.lastRunSummary.plannedLaps} laps · {getFocusLabel(currentPracticePhaseState.lastRunSummary.focusMode)}
+                          {formatMessage('practiceDev.lastStintLapsAndFocus', {
+                            laps: currentPracticePhaseState.lastRunSummary.laps,
+                            plannedLaps: currentPracticePhaseState.lastRunSummary.plannedLaps,
+                            focus: getFocusModeLabel(currentPracticePhaseState.lastRunSummary.focusMode)
+                          })}
                         </div>
-                        <div className="mt-1">Setup change time {currentPracticePhaseState.lastRunSummary.setupChangeSeconds.toFixed(1)}s</div>
-                        <div className="mt-1">Traffic {currentPracticePhaseState.lastRunSummary.trafficStatus} (+{currentPracticePhaseState.lastRunSummary.trafficPenaltySeconds.toFixed(2)}s/lap)</div>
-                        <div className="mt-1">Feedback quality +{currentPracticePhaseState.lastRunSummary.feedbackQualityGain.toFixed(1)}%</div>
-                        <div className="mt-1">Track preparation +{currentPracticePhaseState.lastRunSummary.trackPreparationGain.toFixed(1)}%</div>
-                        {currentPracticePhaseState.lastRunSummary.cutoffByChequered && <div className="mt-1 text-amber-300">Chequered flag ended this run early</div>}
+                        <div className="mt-1">{formatMessage('practiceDev.setupChangeTime', { seconds: currentPracticePhaseState.lastRunSummary.setupChangeSeconds.toFixed(1) })}</div>
+                        <div className="mt-1">{formatMessage('practiceDev.trafficSummary', {
+                          status: t(`practiceDev.traffic.${currentPracticePhaseState.lastRunSummary.trafficStatus}`),
+                          penalty: currentPracticePhaseState.lastRunSummary.trafficPenaltySeconds.toFixed(2)
+                        })}</div>
+                        <div className="mt-1">{formatMessage('practiceDev.feedbackQualityGain', { gain: currentPracticePhaseState.lastRunSummary.feedbackQualityGain.toFixed(1) })}</div>
+                        <div className="mt-1">{formatMessage('practiceDev.trackPreparationGain', { gain: currentPracticePhaseState.lastRunSummary.trackPreparationGain.toFixed(1) })}</div>
+                        <div className="mt-1">Best lap {formatLapTime(currentPracticePhaseState.lastRunSummary.bestLapSeconds)}</div>
+                        {currentPracticePhaseState.lastRunSummary.cutoffByChequered && <div className="mt-1 text-amber-300">{t('practiceDev.chequeredEndedEarly')}</div>}
                       </div>
                     )}
                     {isQualifyingSession && currentQualifyingPhaseState?.lastRunSummary && (
                       <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-gray-200">
-                        <div className="font-bold uppercase tracking-[0.15em] text-white">Last Run</div>
+                        <div className="font-bold uppercase tracking-[0.15em] text-white">{t('practiceDev.lastRun')}</div>
                         <div className="mt-2">
-                          {currentQualifyingPhaseState.lastRunSummary.laps}/{currentQualifyingPhaseState.lastRunSummary.plannedLaps} laps completed
+                          {formatMessage('practiceDev.lastRunLapsCompleted', {
+                            laps: currentQualifyingPhaseState.lastRunSummary.laps,
+                            plannedLaps: currentQualifyingPhaseState.lastRunSummary.plannedLaps
+                          })}
                         </div>
-                        <div className="mt-1">Traffic {currentQualifyingPhaseState.lastRunSummary.trafficStatus} (+{currentQualifyingPhaseState.lastRunSummary.trafficPenaltySeconds.toFixed(2)}s/lap)</div>
-                        <div className="mt-1">Best lap from run {formatLapTime(currentQualifyingPhaseState.lastRunSummary.bestLapSeconds)}</div>
-                        {currentQualifyingPhaseState.lastRunSummary.cutoffByChequered && <div className="mt-1 text-amber-300">Chequered flag ended this run early</div>}
+                        <div className="mt-1">{formatMessage('practiceDev.trafficSummary', {
+                          status: t(`practiceDev.traffic.${currentQualifyingPhaseState.lastRunSummary.trafficStatus}`),
+                          penalty: currentQualifyingPhaseState.lastRunSummary.trafficPenaltySeconds.toFixed(2)
+                        })}</div>
+                        <div className="mt-1">{formatMessage('practiceDev.bestLapFromRun', { lap: formatLapTime(currentQualifyingPhaseState.lastRunSummary.bestLapSeconds) })}</div>
+                        {currentQualifyingPhaseState.lastRunSummary.cutoffByChequered && <div className="mt-1 text-amber-300">{t('practiceDev.chequeredEndedEarly')}</div>}
                       </div>
                     )}
                   </div>
@@ -1900,17 +2299,17 @@ export const PracticeQualiDev: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <RadioTower className="text-cyan-300" />
                     <div>
-                      <h2 className="text-xl font-bold">Session control</h2>
+                      <h2 className="text-xl font-bold">{t('practiceDev.sessionControl')}</h2>
                       <p className="text-sm text-gray-400">
                         {isQualifyingSession
-                          ? 'Progressive qualifying control with circulating cars and live benchmark board.'
-                          : 'Progressive practice scene with circulating cars, setup cycles and AI tuning.'}
+                          ? t('practiceDev.qualifyingControlHint')
+                          : t('practiceDev.practiceControlHint')}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.15em] text-cyan-100">
-                      Our confidence {practiceDevelopment.feedbackQuality.toFixed(1)}%
+                      {formatMessage('practiceDev.ourConfidence', { confidence: practiceDevelopment.feedbackQuality.toFixed(1) })}
                     </div>
                     {isTimedSession && (
                       <button
@@ -1918,7 +2317,7 @@ export const PracticeQualiDev: React.FC = () => {
                         onClick={handleCallToGarage}
                         className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.15em] text-white"
                       >
-                        {garageOpen ? 'Garage Open' : 'Call to Pit'}
+                        {garageOpen ? t('practiceDev.garageOpen') : t('practiceDev.callToPit')}
                       </button>
                     )}
                     <button
@@ -1927,7 +2326,7 @@ export const PracticeQualiDev: React.FC = () => {
                       className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.15em] text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {sessionPaused ? <Play size={12} /> : <Pause size={12} />}
-                      {sessionPaused ? 'Resume Session' : 'Pause Session'}
+                      {sessionPaused ? t('practiceDev.resumeSession') : t('practiceDev.pauseSession')}
                     </button>
                     {[1, 5, 20].map((speed) => (
                       <button
@@ -1946,29 +2345,29 @@ export const PracticeQualiDev: React.FC = () => {
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">Tyre Wear</div>
+                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.tyreWear')}</div>
                     <div className="mt-1 font-bold" style={{ color: getTyreColor(selectedTyreCompound) }}>
                       {selectedTyreSet ? `${selectedTyreSet.wear.toFixed(1)}% ${selectedTyreSet.compound.toUpperCase()}` : '—'}
                     </div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">Feedback</div>
+                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.feedback')}</div>
                     <div className="mt-1 font-bold text-cyan-100">{practiceDevelopment.feedbackQuality.toFixed(1)}%</div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">Track Prep</div>
+                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.trackPrep')}</div>
                     <div className="mt-1 font-bold text-cyan-100">{practiceDevelopment.trackPreparation.toFixed(1)}%</div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">Traction</div>
+                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.traction')}</div>
                     <div className="mt-1 font-bold text-cyan-100">{currentTrackTraction.toFixed(1)}%</div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">Prep Split</div>
+                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.prepSplit')}</div>
                     <div className="mt-1 font-bold text-cyan-100">Q {practiceDevelopment.qualifyingPrep.toFixed(1)} · R {practiceDevelopment.raceConservePrep.toFixed(1)}</div>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">Weather</div>
+                    <div className="text-[10px] uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.weather')}</div>
                     <div className="mt-1 font-bold text-cyan-100">{weatherLabel}</div>
                   </div>
                 </div>
@@ -1976,10 +2375,10 @@ export const PracticeQualiDev: React.FC = () => {
                   <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
                     <div className="flex items-center justify-between">
                       <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-gray-300">
-                        <MapPin size={12} className="text-cyan-300" /> Live track scene
+                        <MapPin size={12} className="text-cyan-300" /> {t('practiceDev.liveTrackScene')}
                       </div>
                       <div className="text-xs text-gray-400">
-                        {activePlayback ? `${(playbackProgressRatio * 100).toFixed(0)}%` : 'Idle'}
+                        {activePlayback ? `${(playbackProgressRatio * 100).toFixed(0)}%` : t('practiceDev.idle')}
                       </div>
                     </div>
                     <div className="flex items-center justify-center">
@@ -1987,12 +2386,15 @@ export const PracticeQualiDev: React.FC = () => {
                         vehicles={sceneTrackVehicles}
                         trackId={selectedTrack.id}
                         timeScale={sceneSpeed}
-                        title={activePlayback ? `Run replay ${formatSessionClock(playbackSimSeconds)}` : 'Awaiting next run'}
+                        title={activePlayback ? formatMessage('practiceDev.runReplay', { time: formatSessionClock(playbackSimSeconds) }) : t('practiceDev.awaitingNextRun')}
                       />
                     </div>
                     {activePlayback && (
                       <div className="text-xs text-gray-300">
-                        Run time simulated {formatSessionClock(playbackSimSeconds)} / {formatSessionClock(activePlayback.plan.elapsedSeconds)}
+                        {formatMessage('practiceDev.runTimeSimulated', {
+                          current: formatSessionClock(playbackSimSeconds),
+                          total: formatSessionClock(activePlayback.plan.elapsedSeconds)
+                        })}
                       </div>
                     )}
                   </div>
@@ -2019,18 +2421,24 @@ export const PracticeQualiDev: React.FC = () => {
                         </div>
                       ))
                     ) : (
-                      aiCompetitors.slice(0, 8).map((entry) => (
-                        <div key={entry.driverId} className="grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs text-gray-200">
+                      practiceLeaderboard.slice(0, 8).map((entry) => (
+                        <div
+                          key={entry.driverId}
+                          className={clsx(
+                            'grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-2 rounded-lg border px-2 py-2 text-xs',
+                            entry.isPlayer ? 'border-f1-red/40 bg-f1-red/10 text-white' : 'border-white/10 bg-white/5 text-gray-200'
+                          )}
+                        >
                           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DRIVERS.find((driver) => driver.id === entry.driverId)?.color ?? '#fff' }} />
                           <div className="font-black uppercase tracking-[0.14em]">{entry.driverId.toUpperCase()}</div>
-                          <div className="font-bold tabular-nums">—</div>
+                          <div className="font-bold tabular-nums">{formatLapTime(entry.bestLapSeconds)}</div>
                           <div
                             className="text-[11px] uppercase"
-                            style={{ color: getTyreColor(entry.tyreByPhase[weekend.currentPhase] ?? 'medium') }}
+                            style={{ color: entry.tyreCompound ? getTyreColor(entry.tyreCompound) : '#cbd5e1' }}
                           >
-                            {getTyreShortLabel(entry.tyreByPhase[weekend.currentPhase] ?? 'medium')}
+                            {entry.tyreCompound ? getTyreShortLabel(entry.tyreCompound) : '—'}
                           </div>
-                          <div className="text-[11px] text-gray-400">{entry.lapsByPhase[weekend.currentPhase] ?? 0}</div>
+                          <div className="text-[11px] text-gray-400">{entry.laps}</div>
                         </div>
                       ))
                     )}
@@ -2046,44 +2454,47 @@ export const PracticeQualiDev: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <RadioTower className="text-f1-red" />
                   <div>
-                    <h2 className="text-xl font-bold">Engineer feedback</h2>
-                    <p className="text-sm text-gray-400">The garage sees driving-bias changes instantly, including the quali-versus-long-run compromise, but the driver only assesses whether those balance traits sit too low or too high after practice running.</p>
+                    <h2 className="text-xl font-bold">{t('practiceDev.engineerFeedback')}</h2>
+                    <p className="text-sm text-gray-400">{t('practiceDev.engineerFeedbackHint')}</p>
                   </div>
                 </div>
               </div>
 
               <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-4 text-sm leading-relaxed text-gray-300">
                 {!feedbackVisible
-                  ? `Practice is complete. Final understanding sits at ${practiceDevelopment.feedbackQuality.toFixed(1)}% feedback quality with ${practiceDevelopment.trackPreparation.toFixed(1)}% track preparation.`
+                  ? formatMessage('practiceDev.practiceCompleteSummary', {
+                    feedbackQuality: practiceDevelopment.feedbackQuality.toFixed(1),
+                    trackPreparation: practiceDevelopment.trackPreparation.toFixed(1)
+                  })
                   : !currentPracticePhaseState?.lastFeedback
                     ? hasPreservedKnowledge
                       ? currentPracticePhaseState?.needsFreshFeedback
-                        ? 'Using preserved setup knowledge from earlier sessions. Run this phase to refresh the ranges for the current setup.'
-                        : 'Using preserved setup knowledge from earlier sessions. Run this phase to keep refining the ranges.'
+                        ? t('practiceDev.preservedKnowledgeRefresh')
+                        : t('practiceDev.preservedKnowledgeRefine')
                       : currentPracticePhaseState?.needsFreshFeedback
-                        ? 'The current setup has no fresh engineer read yet. Each bias bar starts with the full domain highlighted, then narrows once the driver reports back from practice.'
-                        : 'No setup-focused running has been completed in this phase yet. The bars still show the full possible domain until a feedback run narrows them.'
+                        ? t('practiceDev.noFreshEngineerRead')
+                        : t('practiceDev.noSetupFocusedRunning')
                     : currentPracticePhaseState.needsFreshFeedback
-                      ? 'You have changed the setup since the last run. Previous feedback is still shown as reference, but another stint is needed for a fresh read.'
-                    : 'The highlighted section is the learned acceptable window. The white marker shows where the current setup sits inside that bias domain.'}
+                      ? t('practiceDev.setupChangedNeedFreshRead')
+                    : t('practiceDev.learnedWindowHint')}
               </div>
               <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                      <div className="text-xs uppercase tracking-[0.15em] text-gray-400">Feedback quality</div>
+                      <div className="text-xs uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.feedbackQuality')}</div>
                       <div className="mt-2 text-2xl font-black text-white">{practiceDevelopment.feedbackQuality.toFixed(1)}%</div>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                      <div className="text-xs uppercase tracking-[0.15em] text-gray-400">Knowledge skill</div>
+                      <div className="text-xs uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.knowledgeSkill')}</div>
                       <div className="mt-2 text-2xl font-black text-white">{currentKnowledgeSkill}/20</div>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                      <div className="text-xs uppercase tracking-[0.15em] text-gray-400">Track preparation</div>
+                      <div className="text-xs uppercase tracking-[0.15em] text-gray-400">{t('practiceDev.trackPreparation')}</div>
                       <div className="mt-2 text-2xl font-black text-white">{practiceDevelopment.trackPreparation.toFixed(1)}%</div>
                     </div>
                   </div>
                   <div className="grid gap-3">
-                    {DRIVING_BIAS_FIELDS.map(({ key, label, format, domain, leftLabel, rightLabel }) => {
+                    {DRIVING_BIAS_FIELDS.map(({ key, format, domain }) => {
                       const feedback = displayKnowledge[key];
                       const currentValue = getDrivingBiasValue(currentEffects, key);
                       const visibleRange = feedback?.optimalRange ?? domain;
@@ -2095,13 +2506,16 @@ export const PracticeQualiDev: React.FC = () => {
                         <div key={key} className="rounded-lg border border-white/10 bg-white/5 p-4">
                           <div className="flex items-center justify-between gap-3">
                             <div>
-                              <div className="text-sm text-gray-300">{label}</div>
+                              <div className="text-sm text-gray-300">{getBiasLabel(key)}</div>
                               <div className="mt-1 text-xs text-gray-500">
-                                Left range {format(visibleRange[0])} · right range {format(visibleRange[1])}
+                                {formatMessage('practiceDev.leftRightRange', {
+                                  left: format(visibleRange[0]),
+                                  right: format(visibleRange[1])
+                                })}
                               </div>
                             </div>
                             <div className={clsx('rounded-full border px-2 py-1 text-xs font-bold uppercase tracking-[0.15em]', getDirectionTone(direction))}>
-                              {getDirectionLabel(direction)}
+                              {getDirectionDisplayLabel(direction)}
                             </div>
                           </div>
                           <div className="mt-4">
@@ -2119,12 +2533,12 @@ export const PracticeQualiDev: React.FC = () => {
                               />
                             </div>
                             <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-[0.15em] text-gray-500">
-                              <span>{leftLabel}</span>
-                              <span>{rightLabel}</span>
+                              <span>{getBiasLeftLabel(key)}</span>
+                              <span>{getBiasRightLabel(key)}</span>
                             </div>
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
-                              <span>Current {format(currentValue)}</span>
-                              <span>{feedback ? 'Learned window' : 'Full domain'}</span>
+                              <span>{formatMessage('practiceDev.currentValue', { value: format(currentValue) })}</span>
+                              <span>{feedback ? t('practiceDev.learnedWindow') : t('practiceDev.fullDomain')}</span>
                             </div>
                           </div>
                         </div>
@@ -2145,24 +2559,24 @@ export const PracticeQualiDev: React.FC = () => {
 
             <GlassCard className="space-y-4 border-white/10">
               <div className="text-white">
-                <h2 className="text-xl font-bold">Locked snapshots</h2>
-                <p className="text-sm text-gray-400">Parc ferme checkpoints stay visible while you compare the setup against the learned bias bars.</p>
+                <h2 className="text-xl font-bold">{t('practiceDev.lockedSnapshots')}</h2>
+                <p className="text-sm text-gray-400">{t('practiceDev.lockedSnapshotsHint')}</p>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Q1 locked snapshot</div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-gray-400">{t('practiceDev.q1LockedSnapshot')}</div>
                   <div className="mt-3 space-y-2 text-sm text-gray-200">
-                    <div>Front wing: {weekend.q1Setup[activeDriverRuntimeId]?.frontWingAngle ?? '—'}</div>
-                    <div>Rear wing: {weekend.q1Setup[activeDriverRuntimeId]?.rearWingAngle ?? '—'}</div>
-                    <div>Ride height: {weekend.q1Setup[activeDriverRuntimeId]?.rideHeight ?? '—'}</div>
+                    <div>{t('practiceDev.frontWing')}: {weekend.q1Setup[activeDriverRuntimeId]?.frontWingAngle ?? '—'}</div>
+                    <div>{t('practiceDev.rearWing')}: {weekend.q1Setup[activeDriverRuntimeId]?.rearWingAngle ?? '—'}</div>
+                    <div>{t('practiceDev.rideHeight')}: {weekend.q1Setup[activeDriverRuntimeId]?.rideHeight ?? '—'}</div>
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Race locked snapshot</div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-gray-400">{t('practiceDev.raceLockedSnapshot')}</div>
                   <div className="mt-3 space-y-2 text-sm text-gray-200">
-                    <div>Front wing: {weekend.raceSetup[activeDriverRuntimeId]?.frontWingAngle ?? '—'}</div>
-                    <div>Rear wing: {weekend.raceSetup[activeDriverRuntimeId]?.rearWingAngle ?? '—'}</div>
-                    <div>Ride height: {weekend.raceSetup[activeDriverRuntimeId]?.rideHeight ?? '—'}</div>
+                    <div>{t('practiceDev.frontWing')}: {weekend.raceSetup[activeDriverRuntimeId]?.frontWingAngle ?? '—'}</div>
+                    <div>{t('practiceDev.rearWing')}: {weekend.raceSetup[activeDriverRuntimeId]?.rearWingAngle ?? '—'}</div>
+                    <div>{t('practiceDev.rideHeight')}: {weekend.raceSetup[activeDriverRuntimeId]?.rideHeight ?? '—'}</div>
                   </div>
                 </div>
               </div>
@@ -2175,15 +2589,15 @@ export const PracticeQualiDev: React.FC = () => {
                 <div className="flex items-center gap-3 text-white">
                   <Flag className="text-f1-red" />
                   <div>
-                    <h2 className="text-xl font-bold">Race session</h2>
-                    <p className="text-sm text-gray-400">Launch the actual on-track simulation for this same circuit in the live race environment.</p>
+                    <h2 className="text-xl font-bold">{t('practiceDev.raceSession')}</h2>
+                    <p className="text-sm text-gray-400">{t('practiceDev.raceSessionHint')}</p>
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-4 text-sm leading-relaxed text-gray-300">
-                  The weekend sandbox now hands off to the same live race experience used by dev race, instead of ending with a static race snapshot.
+                  {t('practiceDev.raceSessionDescription')}
                 </div>
                 <GlassButton onClick={handleRaceAction} className="w-full">
-                  Open {selectedTrack.name} Live Race
+                  {formatMessage('practiceDev.openTrackLiveRace', { trackName: selectedTrack.name })}
                 </GlassButton>
               </GlassCard>
             )}
@@ -2193,3 +2607,5 @@ export const PracticeQualiDev: React.FC = () => {
     </div>
   );
 };
+
+export const PracticeQualiDev: React.FC = () => <WeekendTimedSessionControl />;

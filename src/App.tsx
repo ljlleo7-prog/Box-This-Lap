@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { useI18n } from './i18n/I18nProvider';
+import { useTheme } from './hooks/useTheme';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -45,7 +46,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center bg-[#111] text-white">{t('common.loading')}</div>;
+    return <div className="flex h-screen items-center justify-center bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-white">{t('common.loading')}</div>;
   }
 
   if (!session) {
@@ -56,13 +57,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  useTheme();
+
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/race-dev" element={<RaceControl devMode />} />
         <Route path="/practice-quali-dev" element={<PracticeQualiDev />} />
-        <Route path="/career" element={<Championship />} />
+        <Route path="/championships" element={<Championship />} />
         <Route path="/driver-development" element={<DriverDevelopment />} />
         <Route path="/crew-management" element={<CrewManagement />} />
         <Route path="/training-calendar" element={<TrainingCalendar />} />

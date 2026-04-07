@@ -68,40 +68,40 @@ export const Dashboard: React.FC = () => {
     <div className="space-y-6">
       <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-          <h3 className="text-lg font-bold text-white mb-2">{t('dashboard.activeChampionship')}</h3>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-2 text-lg font-bold text-zinc-900 dark:text-white">{t('dashboard.activeChampionship')}</h3>
           {loading ? (
-            <p className="text-gray-400">{t('dashboard.loadingChampionship')}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('dashboard.loadingChampionship')}</p>
           ) : activeTitle ? (
             <>
-              <p className="text-white font-semibold">{activeTitle}</p>
-              <p className="text-gray-400 text-sm">{activeMode}</p>
+              <p className="font-semibold text-zinc-900 dark:text-white">{activeTitle}</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{activeMode}</p>
             </>
           ) : (
             <>
-              <p className="text-gray-400 mb-4">{t('dashboard.noActiveChampionship')}</p>
+              <p className="mb-4 text-zinc-500 dark:text-zinc-400">{t('dashboard.noActiveChampionship')}</p>
               <GlassButton onClick={() => navigate('/championships')} variant="secondary">
                 {t('dashboard.openChampionships')}
               </GlassButton>
             </>
           )}
         </div>
-        <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-          <h3 className="text-lg font-bold text-white mb-2">{t('dashboard.nextRace')}</h3>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-2 text-lg font-bold text-zinc-900 dark:text-white">{t('dashboard.nextRace')}</h3>
           {onlineChampionship ? (
-            <p className="text-gray-400">{t('dashboard.scheduleOnline')}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('dashboard.scheduleOnline')}</p>
           ) : localChampionship ? (
-            <p className="text-gray-400">{t('dashboard.scheduleLocal')}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('dashboard.scheduleLocal')}</p>
           ) : (
-            <p className="text-gray-400">{t('dashboard.schedulePending')}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('dashboard.schedulePending')}</p>
           )}
         </div>
-        <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-          <h3 className="text-lg font-bold text-white mb-2">{t('dashboard.teamStatus')}</h3>
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-2 text-lg font-bold text-zinc-900 dark:text-white">{t('dashboard.teamStatus')}</h3>
           {teamStatus ? (
-            <p className="text-gray-400">{teamStatus}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{teamStatus}</p>
           ) : (
-            <p className="text-gray-400">{t('dashboard.notSigned')}</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('dashboard.notSigned')}</p>
           )}
         </div>
       </div>

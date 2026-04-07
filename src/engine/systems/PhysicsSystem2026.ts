@@ -582,13 +582,14 @@ export class PhysicsSystem2026 implements IPhysicsSystem {
     vehicle.tyreWear += adjustedWearRate * dt;
     if (vehicle.tyreWear > 100) vehicle.tyreWear = 100;
 
-    // Fuel burn
-    // 1.5kg per lap -> 1.5/90 per sec = 0.016 kg/s
-    let burnRate = 0.016;
-    if (vehicle.paceMode === 'aggressive') burnRate *= 1.2;
-    if (vehicle.paceMode === 'conservative') burnRate *= 0.8;
+    const throttleLoad = Math.max(0.35, Math.min(1, speedKph / 320));
+    const accelerationLoad = Math.max(0, Math.min(1, vehicle.acceleration / 12));
+    const deploymentLoad = vehicle.ersMode === 'deploy' ? 0.18 : vehicle.ersMode === 'harvest' ? -0.08 : 0;
+    let burnRate = 0.010 + (throttleLoad * 0.010) + (accelerationLoad * 0.004) + deploymentLoad * 0.004;
+    if (vehicle.paceMode === 'aggressive') burnRate *= 1.15;
+    if (vehicle.paceMode === 'conservative') burnRate *= 0.88;
     if (teamSpecs) {
-        burnRate *= 1 - (teamSpecs.drag_reduction - 85) * 0.001;
+        burnRate *= 1 - (teamSpecs.drag_reduction - 85) * 0.0012;
     }
 
     vehicle.fuelLoad -= burnRate * dt;

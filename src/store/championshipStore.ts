@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ChampionshipStandingEntry, OfflineChampionship, OfflineTeamState } from '../types';
+import { loadSaveGame, saveSaveGame } from '../lib/localSaves';
 
 type ChampionshipContextMode = 'online' | 'local' | null;
 
@@ -8,6 +9,14 @@ const buildContextKey = (
   championshipId: string,
   teamId: string
 ) => `${mode}:${championshipId}:${teamId}`;
+
+const persistLocalChampionship = (championship: OfflineChampionship | null) => {
+  if (!championship) return;
+  const saveGame = loadSaveGame();
+  saveGame.championship = championship;
+  saveGame.lastOpenedAt = new Date().toISOString();
+  saveSaveGame(saveGame);
+};
 
 interface ChampionshipStore {
   mode: ChampionshipContextMode;
@@ -75,6 +84,7 @@ export const useChampionshipStore = create<ChampionshipStore>((set) => ({
 
   setActiveLocalContext: (championship) =>
     set((state) => {
+      persistLocalChampionship(championship);
       const selectedTeam = championship?.teams.find((team) => team.teamId === championship.selectedTeamId) ?? null;
 
       return {

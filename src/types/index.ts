@@ -3,6 +3,7 @@ export interface Driver {
   name: string;
   team: string;
   color: string;
+  avatarUrl?: string;
   basePace: number; // seconds per lap baseline (lower is better)
   learning: number;
   skill: {
@@ -100,6 +101,7 @@ export interface VehicleExecutionState {
   lastSectorId?: string;
   lastSafetyCarStatus?: SafetyCarStatus;
   wasInPit?: boolean;
+  lastPositionConcentrationImpactAt?: number;
   physicalAheadId?: string; // ID of the car physically in front on track
   physicalGap?: number; // Distance in meters to the car physically ahead
   overtakingImmunity?: number; // Seconds remaining where this car ignores 'battling' slowdowns to complete a pass
@@ -230,6 +232,11 @@ export interface VehicleTelemetry {
     nextSampleDistance: number;
 }
 
+export type LiveVehicleTelemetry = Omit<VehicleTelemetry, 'lastLapSpeedTrace' | 'currentLapSpeedTrace'> & {
+  lastLapSpeedTrace?: TelemetryDataPoint[];
+  currentLapSpeedTrace?: TelemetryDataPoint[];
+};
+
 export interface StrategyStint {
     compound: TyreCompound;
     startLap: number;
@@ -272,7 +279,7 @@ export interface VehicleState {
   isInPit: boolean;
   pitStopCount: number;
   boxThisLap: boolean; // Driver intends to pit this lap
-  
+
   // Status
   tyreCompound: TyreCompound;
   tyreWear: number; // 0-100% (0 is new, 100 is dead)
@@ -331,6 +338,10 @@ export interface VehicleState {
   telemetry: VehicleTelemetry;
 }
 
+export type LiveVehicleState = Omit<VehicleState, 'telemetry'> & {
+  telemetry: LiveVehicleTelemetry;
+};
+
 export interface RaceState {
   id: string;
   trackId: string;
@@ -356,6 +367,10 @@ export interface RaceState {
   winnerId: string | null; // ID of the winner
   elapsedTime: number; // Total race time in seconds
 }
+
+export type LiveRaceState = Omit<RaceState, 'vehicles'> & {
+  vehicles: LiveVehicleState[];
+};
 
 export interface StrategyDecision {
   driverId: string;

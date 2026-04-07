@@ -5,9 +5,24 @@ import { DRIVERS } from '../../data/initialData';
 import { formatTime, formatGap } from '../../utils/format';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const getSessionLabel = (sessionType: string) => {
+  if (sessionType.startsWith('fp')) return 'Practice';
+  if (sessionType.startsWith('q')) return 'Quali';
+  return 'Race';
+};
+
 export const LiveLeaderboard: React.FC = () => {
   const raceState = useRaceStore(state => state.raceState);
-  
+  const activeSessionType = useRaceStore(state => state.activeSessionType);
+  const isTimedSession = activeSessionType.startsWith('fp') || activeSessionType.startsWith('q');
+
+  const getTimedSessionSortTime = (vehicle: NonNullable<typeof raceState>['vehicles'][number]) => {
+    if (vehicle.bestLapTime > 0) return vehicle.bestLapTime;
+    if (vehicle.lastLapTime > 0) return vehicle.lastLapTime;
+    if (vehicle.currentLapTime > 0) return vehicle.currentLapTime;
+    return Number.POSITIVE_INFINITY;
+  };
+
   // Track previous positions for change detection
   const prevPositionsRef = React.useRef<Record<string, number>>({});
   const [changes, setChanges] = React.useState<Record<string, { type: 'up' | 'down', time: number }>>({});
@@ -39,17 +54,28 @@ export const LiveLeaderboard: React.FC = () => {
   if (!raceState) return null;
 
   // Create a sorted copy of vehicles for rendering
-  const sortedVehicles = [...raceState.vehicles].sort((a, b) => a.position - b.position);
+  const sortedVehicles = [...raceState.vehicles].sort((a, b) => {
+    if (!isTimedSession) return a.position - b.position;
+
+    const aTime = getTimedSessionSortTime(a);
+    const bTime = getTimedSessionSortTime(b);
+    if (aTime !== bTime) return aTime - bTime;
+    if (b.lapCount !== a.lapCount) return b.lapCount - a.lapCount;
+    return a.position - b.position;
+  });
 
   return (
     <div className="flex flex-col gap-1 overflow-y-auto h-full pr-2">
+      <div className="px-2 pb-1 text-[10px] font-mono uppercase tracking-widest text-gray-500">
+        {getSessionLabel(activeSessionType)} Session
+      </div>
       <div className="grid grid-cols-12 gap-2 items-center px-2 py-1 text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1">
           <div className="col-span-1 text-center">Pos</div>
           <div className="col-span-1 text-center">No</div>
           <div className="col-span-4">Driver</div>
-          <div className="col-span-2 text-right">Gap</div>
+          <div className="col-span-2 text-right">{isTimedSession ? 'Best' : 'Gap'}</div>
           <div className="col-span-2 text-center">Tyre</div>
-          <div className="col-span-2 text-right">Last Lap</div>
+          <div className="col-span-2 text-right">{isTimedSession ? 'Laps' : 'Last Lap'}</div>
       </div>
       
       <AnimatePresence mode='popLayout'>
@@ -86,7 +112,7 @@ export const LiveLeaderboard: React.FC = () => {
                 }}
               >
                 <div className="col-span-1 font-bold text-center text-gray-400 flex items-center justify-center gap-1">
-                    {vehicle.position}
+                    {isTimedSession ? sortedVehicles.findIndex(v => v.id === vehicle.id) + 1 : vehicle.position}
                     {isFlashing && (
                         <motion.span 
                             initial={{ scale: 0 }}
@@ -100,8 +126,18 @@ export const LiveLeaderboard: React.FC = () => {
                 <div className="col-span-1 text-center font-bold font-mono uppercase text-white">{driver.id}</div>
                 <div className="col-span-4 font-medium truncate text-gray-200">{driver.name}</div>
                 <div className={clsx("col-span-2 text-right font-mono", isRetired ? "text-red-400 font-bold" : vehicle.drsOpen ? "text-green-500 font-bold" : "text-white")}>
-                   {isRetired ? 'OUT' : vehicle.position === 1 ? 'Leader' : formatGap(vehicle.gapToAhead)}
-                   {!isRetired && vehicle.drsOpen && <span className="ml-1 text-[8px] bg-green-500 text-black px-1 rounded align-top">DRS</span>}
+                   {isRetired
+                     ? 'OUT'
+                     : isTimedSession
+                       ? vehicle.bestLapTime > 0
+                         ? formatTime(vehicle.bestLapTime)
+                         : vehicle.currentLapTime > 0
+                           ? `${formatTime(vehicle.currentLapTime)}*`
+                           : '-:--.---'
+                       : vehicle.position === 1
+                         ? 'Leader'
+                         : formatGap(vehicle.gapToAhead)}
+                   {!isRetired && !isTimedSession && vehicle.drsOpen && <span className="ml-1 text-[8px] bg-green-500 text-black px-1 rounded align-top">DRS</span>}
                 </div>
                  <div className="col-span-2 text-center flex items-center justify-center gap-1">
                    <span className={clsx(
@@ -116,7 +152,7 @@ export const LiveLeaderboard: React.FC = () => {
                    <span className="text-gray-500 text-[10px]">{Math.floor(vehicle.tyreAgeLaps)}L</span>
                 </div>
                  <div className="col-span-2 text-right font-mono text-gray-400">
-                   {formatTime(vehicle.lastLapTime)}
+                   {isTimedSession ? `${vehicle.lapCount}L` : formatTime(vehicle.lastLapTime)}
                 </div>
               </motion.div>
             );

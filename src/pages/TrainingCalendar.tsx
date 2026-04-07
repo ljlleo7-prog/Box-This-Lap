@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadSaveGame, saveSaveGame } from '../lib/localSaves';
+import { loadSaveGame } from '../lib/localSaves';
 import { DRIVERS } from '../data/initialData';
 import type { OfflineDriverState, CrewState, DaySchedule, DriverActivity, PitCrewActivity } from '../types/championship';
 import { processDriverSchedule, createEmptySchedule } from '../lib/driverDevelopment';
@@ -72,6 +72,7 @@ export const TrainingCalendar = () => {
   const championshipId = useChampionshipStore((state) => state.championshipId);
   const teamId = useChampionshipStore((state) => state.teamId);
   const activeLocalChampionship = useChampionshipStore((state) => state.activeChampionship);
+  const setActiveLocalContext = useChampionshipStore((state) => state.setActiveLocalContext);
   const [activeTab, setActiveTab] = useState<TabType>('driver1');
   const [driver1State, setDriver1State] = useState<OfflineDriverState | null>(null);
   const [driver2State, setDriver2State] = useState<OfflineDriverState | null>(null);
@@ -81,6 +82,9 @@ export const TrainingCalendar = () => {
   const [onlineDrivers, setOnlineDrivers] = useState<OnlineDriverRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const hasHydratedScheduleRef = useRef(false);
+  const lastSavedScheduleSnapshotRef = useRef<string>('');
+  const autosaveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -165,23 +169,31 @@ export const TrainingCalendar = () => {
         return;
       }
 
-      if (mode === 'local' && activeLocalChampionship) {
-        const playerTeam = activeLocalChampionship.teams.find(
-          (t) => t.teamId === activeLocalChampionship.selectedTeamId
+      if (mode === 'local') {
+        const saveGame = loadSaveGame();
+        const localChampionship = saveGame.championship ?? activeLocalChampionship;
+        if (!localChampionship) {
+          setLoading(false);
+          navigate('/championships');
+          return;
+        }
+
+        const playerTeam = localChampionship.teams.find(
+          (t) => t.teamId === localChampionship.selectedTeamId
         );
         if (playerTeam) {
           setDriver1State(playerTeam.drivers[0] || null);
           setDriver2State(playerTeam.drivers[1] || null);
           setPitCrewState(playerTeam.crew.find((c) => c.department === 'pit_crew') || null);
-          setCurrentRound(activeLocalChampionship.currentRound);
-          setSeason(activeLocalChampionship.season);
+          setCurrentRound(localChampionship.currentRound);
+          setSeason(localChampionship.season);
           setLoading(false);
           return;
         }
       }
 
       setLoading(false);
-      navigate('/career');
+      navigate('/championships');
     };
 
     loadData();
@@ -232,17 +244,15 @@ export const TrainingCalendar = () => {
     }
   };
 
-  const handleSave = async () => {
+  const persistSchedules = useCallback(async (showMessage: boolean): Promise<boolean> => {
     if (mode === 'local') {
-      if (!activeLocalChampionship) return;
-
       const saveGame = loadSaveGame();
-      if (!saveGame.championship) return;
+      if (!saveGame.championship) return false;
 
       const playerTeam = saveGame.championship.teams.find(
         (t) => t.teamId === saveGame.championship!.selectedTeamId
       );
-      if (!playerTeam) return;
+      if (!playerTeam) return false;
 
       if (driver1State) playerTeam.drivers[0] = driver1State;
       if (driver2State) playerTeam.drivers[1] = driver2State;
@@ -252,12 +262,12 @@ export const TrainingCalendar = () => {
       }
 
       saveGame.championship.updatedAt = new Date().toISOString();
-      saveSaveGame(saveGame);
-      alert('Schedule saved!');
-      return;
+      setActiveLocalContext(saveGame.championship);
+      if (showMessage) alert('Schedule saved!');
+      return true;
     }
 
-    if (!championshipId || !teamId) return;
+    if (!championshipId || !teamId) return false;
 
     setSaving(true);
     try {
@@ -290,17 +300,74 @@ export const TrainingCalendar = () => {
           updated_at: new Date().toISOString(),
         } : null,
       ].filter(Boolean);
-
       const { error } = await TCC_API.upsertTeamTrainingPlans(payload);
       if (error) throw error;
-      alert('Online training schedule saved!');
+      if (showMessage) alert('Online training schedule saved!');
+      return true;
     } catch (error) {
       console.error('Failed to save online training schedule', error);
-      alert('Failed to save training schedule');
+      if (showMessage) alert('Failed to save training schedule');
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [
+    championshipId,
+    currentRound,
+    driver1State,
+    driver2State,
+    mode,
+    onlineDrivers,
+    pitCrewState,
+    setActiveLocalContext,
+    teamId,
+  ]);
+
+  const handleSave = async () => {
+    await persistSchedules(true);
   };
+
+  const scheduleSnapshot = useMemo(
+    () => JSON.stringify({
+      mode,
+      currentRound,
+      driver1: driver1State?.trainingSchedule ?? null,
+      driver2: driver2State?.trainingSchedule ?? null,
+      pitCrew: pitCrewState?.trainingSchedule ?? null,
+    }),
+    [currentRound, driver1State?.trainingSchedule, driver2State?.trainingSchedule, mode, pitCrewState?.trainingSchedule]
+  );
+
+  useEffect(() => {
+    if (loading) return;
+    if (!driver1State && !driver2State && !pitCrewState) return;
+
+    if (!hasHydratedScheduleRef.current) {
+      hasHydratedScheduleRef.current = true;
+      lastSavedScheduleSnapshotRef.current = scheduleSnapshot;
+      return;
+    }
+
+    if (scheduleSnapshot === lastSavedScheduleSnapshotRef.current) return;
+
+    if (autosaveTimeoutRef.current !== null) {
+      window.clearTimeout(autosaveTimeoutRef.current);
+    }
+
+    autosaveTimeoutRef.current = window.setTimeout(() => {
+      void persistSchedules(false).then((saved) => {
+        if (saved) {
+          lastSavedScheduleSnapshotRef.current = scheduleSnapshot;
+        }
+      });
+    }, 450);
+  }, [driver1State, driver2State, loading, persistSchedules, pitCrewState, scheduleSnapshot]);
+
+  useEffect(() => () => {
+    if (autosaveTimeoutRef.current !== null) {
+      window.clearTimeout(autosaveTimeoutRef.current);
+    }
+  }, []);
 
   const getActivityLabel = (activity: DriverActivity | PitCrewActivity | null): string => {
     if (!activity) return 'Chill';
@@ -312,11 +379,11 @@ export const TrainingCalendar = () => {
   };
 
   const getActivityColor = (activity: DriverActivity | PitCrewActivity | null): string => {
-    if (!activity) return 'bg-purple-500/15 text-purple-200';
-    if (activity === 'simulation' || activity === 'drills') return 'bg-blue-500/15 text-blue-200';
-    if (activity === 'exercise') return 'bg-green-500/15 text-green-200';
-    if (activity === 'chill') return 'bg-purple-500/15 text-purple-200';
-    return 'bg-[#141414] text-gray-500';
+    if (!activity) return 'bg-purple-500/15 text-purple-700 dark:text-purple-200';
+    if (activity === 'simulation' || activity === 'drills') return 'bg-blue-500/15 text-blue-700 dark:text-blue-200';
+    if (activity === 'exercise') return 'bg-green-500/15 text-green-700 dark:text-green-200';
+    if (activity === 'chill') return 'bg-purple-500/15 text-purple-700 dark:text-purple-200';
+    return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400';
   };
 
   const calculatePreview = () => {
@@ -357,7 +424,7 @@ export const TrainingCalendar = () => {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="text-center text-gray-300">Loading...</div>
+        <div className="text-center text-zinc-500 dark:text-zinc-400">Loading...</div>
       </div>
     );
   }
@@ -365,24 +432,24 @@ export const TrainingCalendar = () => {
   if (!state) {
     return (
       <div className="p-6">
-        <div className="text-center text-gray-300">No training data available.</div>
+        <div className="text-center text-zinc-500 dark:text-zinc-400">No training data available.</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto text-gray-100">
+    <div className="mx-auto max-w-7xl p-6 text-zinc-900 dark:text-zinc-100">
       <div className="mb-6">
         <button onClick={() => navigate(mode === 'online' ? '/team-hub' : '/career')} className="text-blue-400 hover:text-blue-300 mb-2">
           ← Back to {mode === 'online' ? 'Team Hub' : 'Career'}
         </button>
-        <h1 className="text-3xl font-bold text-white">Training Calendar</h1>
-        <p className="text-gray-400">
+        <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">Training Calendar</h1>
+        <p className="text-zinc-500 dark:text-zinc-400">
           Round {currentRound} → Round {currentRound + 1} • {roundStartDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
         </p>
       </div>
 
-      <div className="flex gap-2 mb-6 border-b border-white/10">
+      <div className="mb-6 flex gap-2 border-b border-zinc-200 dark:border-white/10">
         <button
           onClick={() => setActiveTab('driver1')}
           className={`px-4 py-2 font-semibold ${

@@ -4,7 +4,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import { Trophy, Calendar, Users, Zap, ArrowRight } from 'lucide-react';
-import { loadSaveGame, saveSaveGame } from '../lib/localSaves';
+import { loadSaveGame } from '../lib/localSaves';
 import { createLocalChampionship, advanceChampionshipRound } from '../lib/championshipHelpers';
 import { TRACKS } from '../data/tracks';
 import type { OfflineChampionship } from '../types';
@@ -24,14 +24,7 @@ export const Championship: React.FC = () => {
   }, [setActiveLocalContext]);
 
   const handleCreateChampionship = () => {
-    // For now, hardcode a simple setup - later this can be a modal
     const newChampionship = createLocalChampionship('McLaren', ['norris', 'piastri'], 2025);
-
-    const saveGame = loadSaveGame();
-    saveGame.championship = newChampionship;
-    saveGame.lastOpenedAt = new Date().toISOString();
-    saveSaveGame(saveGame);
-
     setChampionship(newChampionship);
     setActiveLocalContext(newChampionship);
   };
@@ -40,11 +33,6 @@ export const Championship: React.FC = () => {
     if (!championship) return;
 
     const updatedChampionship = advanceChampionshipRound(championship);
-
-    const saveGame = loadSaveGame();
-    saveGame.championship = updatedChampionship;
-    saveSaveGame(saveGame);
-
     setChampionship(updatedChampionship);
     setActiveLocalContext(updatedChampionship);
   };

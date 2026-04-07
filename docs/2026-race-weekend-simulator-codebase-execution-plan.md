@@ -1,5 +1,7 @@
 # Codebase-Specific Execution Plan: 2026 Race Weekend Simulator MVP
 
+> Superseded direction: this document reflects an earlier offline-first planning phase. It is preserved for historical implementation context, but it is not the current championship strategy. For the active direction, use `README.md`, `docs/technical_architecture.md`, and `docs/team_championship_architecture.md`.
+
 **Source roadmap**: `docs/2026-race-weekend-simulator-mvp-roadmap.md`
 **Source PRD**: `docs/2026-race-weekend-simulator-mvp-prd.md`
 **Date**: 2026-03-20

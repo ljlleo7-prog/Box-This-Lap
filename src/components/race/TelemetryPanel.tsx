@@ -3,6 +3,7 @@ import { RaceState, TrackTelemetryMetadata } from '../../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, Bar, ComposedChart } from 'recharts';
 import { DRIVERS } from '../../data/initialData';
 import { TRACKS } from '../../data/tracks';
+import { useRaceStore } from '../../store/raceStore';
 
 type SpeedSample = { dist: number; speed: number };
 
@@ -132,18 +133,28 @@ const smoothCurveChunked = (points: SpeedSample[], chunkMode: 'p1' | 'p2' | 'p5'
 };
 
 interface TelemetryPanelProps {
-  raceState: RaceState;
+  raceState: RaceState | null;
   defaultDriverIds?: string[];
   telemetryMetadata?: TrackTelemetryMetadata;
 }
 
 export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defaultDriverIds = [], telemetryMetadata }) => {
+  const activeSessionType = useRaceStore(state => state.activeSessionType);
+  const isTimedSession = activeSessionType.startsWith('fp') || activeSessionType.startsWith('q');
   const [activeTab, setActiveTab] = useState<'weather' | 'speed' | 'psychology'>('weather');
   const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>(defaultDriverIds ?? []);
   const [smoothMode, setSmoothMode] = useState<'p1' | 'p2' | 'p5' | 'sector'>('p2');
   const [showOpenF1Raw, setShowOpenF1Raw] = useState(true);
   const [showOpenF1Smooth, setShowOpenF1Smooth] = useState(true);
   const [showGame, setShowGame] = useState(false);
+
+  if (!raceState) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm font-mono uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+        Waiting for session data
+      </div>
+    );
+  }
 
   useEffect(() => {
       if (selectedDriverIds.length === 0 && defaultDriverIds && defaultDriverIds.length > 0) {
@@ -263,16 +274,24 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
       if (acc.length) return acc;
       const vehicle = raceState.vehicles.find(v => v.id === id);
       if (!vehicle) return acc;
-      const lastLap = vehicle.telemetry.lastLapSpeedTrace.map(p => ({
+      const lastLapTrace = vehicle.telemetry.lastLapSpeedTrace ?? [];
+      const currentLapTrace = vehicle.telemetry.currentLapSpeedTrace ?? [];
+      const lastLap = lastLapTrace.map(p => ({
           dist: Math.round(p.distance),
           speed: Math.round(p.speed * 3.6)
       }));
       if (lastLap.length) return lastLap;
-      return vehicle.telemetry.currentLapSpeedTrace.map(p => ({
+      return currentLapTrace.map(p => ({
           dist: Math.round(p.distance),
           speed: Math.round(p.speed * 3.6)
       }));
   }, []);
+  const hasLiveTelemetryTrace = activeDriverIds.some(id => {
+    const vehicle = raceState.vehicles.find(v => v.id === id);
+    if (!vehicle) return false;
+    return (vehicle.telemetry.lastLapSpeedTrace?.length ?? 0) > 0 || (vehicle.telemetry.currentLapSpeedTrace?.length ?? 0) > 0;
+  });
+  const showTelemetryUnavailableHint = !openF1Curve.length && !hasLiveTelemetryTrace;
   const speedChartData = openF1Curve.length ? openF1Curve : gameSpeedChartData;
   const telemetrySourceLabel = telemetryMetadata?.source === 'openf1-calculated'
     ? 'PRECOMPUTED'
@@ -284,25 +303,25 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
     : null;
 
   return (
-    <div className="bg-[#111] rounded-xl border border-[#333] p-4 flex flex-col h-full w-full min-w-0">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-gray-400 text-sm uppercase tracking-widest font-mono">Telemetry</h3>
-        <div className="flex gap-2 bg-[#222] rounded p-1">
-            <button 
+    <div className="flex h-full w-full min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-mono uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Telemetry</h3>
+        <div className="flex gap-2 rounded bg-zinc-100 p-1 dark:bg-zinc-900">
+            <button
                 onClick={() => setActiveTab('weather')}
-                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'weather' ? 'bg-[#444] text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'weather' ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
             >
                 WEATHER
             </button>
-            <button 
+            <button
                 onClick={() => setActiveTab('speed')}
-                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'speed' ? 'bg-[#444] text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'speed' ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
             >
                 SPEED
             </button>
-            <button 
+            <button
                 onClick={() => setActiveTab('psychology')}
-                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'psychology' ? 'bg-[#444] text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                className={`px-3 py-1 text-xs rounded transition-colors ${activeTab === 'psychology' ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
             >
                 PSYCHOLOGY
             </button>
@@ -312,9 +331,9 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
       <div className="flex-1 min-h-[260px] relative w-full min-w-0">
           {activeTab === 'weather' && (
               <div className="h-full flex flex-col">
-                  <div className="mb-2 flex justify-between text-xs text-gray-400 font-mono">
-                      <span>Current: {raceState.weather.toUpperCase()}</span>
-                      <span>Rain: {Math.round(raceState.rainIntensityLevel)}%</span>
+                  <div className="mb-2 flex justify-between font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                      <span>{isTimedSession ? 'Session' : 'Current'}: {raceState.weather.toUpperCase()}</span>
+                      <span>{isTimedSession ? 'Track evolution' : 'Rain'}: {Math.round(raceState.rainIntensityLevel)}%</span>
                   </div>
                   <div className="flex-1 min-h-[220px] w-full min-w-0">
                     <ResponsiveContainer width="100%" height={240} minWidth={0} minHeight={0}>
@@ -349,7 +368,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
                   <div className="mb-2 flex flex-col gap-2">
                       <div className="flex gap-2 items-center">
                           <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar items-center flex-1">
-                              <span className="text-[10px] text-gray-500 font-mono mr-1">SELECT:</span>
+                              <span className="mr-1 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">SELECT:</span>
                               {raceState.vehicles.sort((a,b) => a.position - b.position).map(v => {
                                   const isSelected = activeDriverIds.includes(v.id);
                                   const driver = DRIVERS.find(d => d.id === v.id);
@@ -361,10 +380,10 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
                                         onClick={() => toggleDriver(v.id)}
                                         className={`px-2 py-0.5 text-[10px] rounded border whitespace-nowrap transition-all ${
                                             isSelected
-                                            ? `bg-[#222] text-white border-[${color}] ring-1 ring-[${color}]`
-                                            : 'bg-[#111] text-gray-500 border-[#333] hover:border-[#555]'
+                                            ? 'bg-zinc-200 text-zinc-900 ring-1 dark:bg-zinc-800 dark:text-white'
+                                            : 'border-zinc-300 bg-zinc-50 text-zinc-500 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-500'
                                         }`}
-                                        style={isSelected ? { borderColor: color, boxShadow: `0 0 5px ${color}40` } : {}}
+                                        style={isSelected ? { borderColor: color, boxShadow: `0 0 5px ${color}40`, backgroundColor: 'rgba(24, 24, 27, 0.9)', color: '#ffffff' } : {}}
                                     >
                                         <span style={{color: isSelected ? color : 'inherit'}} className="font-bold mr-1">{v.position}</span>
                                         {v.id.toUpperCase()}
@@ -445,6 +464,11 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
                   </div>
                   
                   <div className="flex-1 min-h-[220px] w-full min-w-0">
+                    {showTelemetryUnavailableHint && (
+                      <div className="mb-3 rounded border border-zinc-700 bg-zinc-900/70 px-3 py-2 text-[10px] font-mono uppercase tracking-wide text-zinc-400">
+                        Live synced telemetry traces are unavailable for remote viewers. Speed chart is limited to local traces or OpenF1 track data.
+                      </div>
+                    )}
                     <ResponsiveContainer width="100%" height={240} minWidth={0} minHeight={0}>
                         <LineChart data={speedChartData}>
                             <CartesianGrid stroke="#333" strokeDasharray="3 3" />
@@ -495,9 +519,11 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
                             {showGame && activeDriverIds.map(id => {
                                 const vehicle = raceState.vehicles.find(v => v.id === id);
                                 if (!vehicle) return null;
-                                const simulatedData: SpeedSample[] = (vehicle.telemetry.currentLapSpeedTrace.length
-                                    ? vehicle.telemetry.currentLapSpeedTrace
-                                    : vehicle.telemetry.lastLapSpeedTrace
+                                const currentLapTrace = vehicle.telemetry.currentLapSpeedTrace ?? [];
+                                const lastLapTrace = vehicle.telemetry.lastLapSpeedTrace ?? [];
+                                const simulatedData: SpeedSample[] = (currentLapTrace.length
+                                    ? currentLapTrace
+                                    : lastLapTrace
                                 ).map(p => ({
                                     dist: Math.round(p.distance),
                                     speed: Math.round(p.speed * 3.6)
@@ -505,16 +531,16 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ raceState, defau
                                 if (simulatedData.length === 0) return null;
                                 const style = getDriverStyle(id);
                                 return (
-                                    <Line 
+                                    <Line
                                         key={id}
                                         data={simulatedData}
-                                        type="monotone" 
-                                        dataKey="speed" 
+                                        type="monotone"
+                                        dataKey="speed"
                                         name={`GAME ${id.toUpperCase()}`}
-                                        stroke={style.stroke} 
+                                        stroke={style.stroke}
                                         strokeDasharray="6 4"
-                                        dot={false} 
-                                        strokeWidth={1.5} 
+                                        dot={false}
+                                        strokeWidth={1.5}
                                         isAnimationActive={false}
                                     />
                                 );

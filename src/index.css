@@ -12,3 +12,25 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background-color: rgb(244 244 245);
+  color: rgb(24 24 27);
+}
+
+html.dark {
+  background-color: rgb(9 9 11);
+  color: rgb(250 250 250);
+}
+
+body,
+#root {
+  background-color: inherit;
+  color: inherit;
+}

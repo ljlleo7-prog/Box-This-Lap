@@ -1,5 +1,7 @@
 # Team Construction Championship - Technical Architecture
 
+> This document is the canonical detailed architecture reference for the repo's online championship direction. The intended product path is Supabase-backed championship management with the simulation engine used as a race-execution subsystem.
+
 ## 1. System Overview
 
 The Team Construction Championship system consists of two main layers:

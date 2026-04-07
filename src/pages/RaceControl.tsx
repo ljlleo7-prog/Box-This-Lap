@@ -1,233 +1,204 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useRaceStore } from '../store/raceStore';
 import { useGameLoop } from '../hooks/useGameLoop';
-import { LiveLeaderboard } from '../components/race/LiveLeaderboard';
-import { TelemetryPanel } from '../components/race/TelemetryPanel';
-import { CircularTrackMap } from '../components/CircularTrackMap';
-import { AlertTriangle, ChevronLeft, Flag, MapPin, Play, Pause, CloudRain, Zap } from 'lucide-react';
-import { TCC_API } from '../lib/tcc-api';
+import { AlertTriangle, ChevronLeft } from 'lucide-react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import { TRACKS } from '../data/tracks';
 import { clsx } from 'clsx';
 import { DRIVERS } from '../data/initialData';
 import { StrategyStint, TyreCompound, PreRaceSetup, PowerUnitPhilosophy, BatteryAllocationMode, ActiveAeroMode } from '../types';
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { TyreModel, TYRE_COMPOUNDS } from '../engine/systems/TyreModel';
+import { TCC_API } from '../lib/tcc-api';
+import { resolveStaticDriverIdsForTeam } from '../lib/onlineTrainingEffects';
 import { useChampionshipStore } from '../store/championshipStore';
-import { supabase } from '../lib/supabase';
+import { useI18n } from '../i18n/I18nProvider';
+import { useRaceWeekendController } from '../hooks/useRaceWeekendController';
+import { useWeekendSetupController } from '../hooks/useWeekendSetupController';
+import { WeekendSessionHeader } from '../components/weekend/WeekendSessionHeader';
+import { RaceWeekendShell } from '../components/weekend/RaceWeekendShell';
+import { WeekendSetupPlannerModal, type WeekendPlannerSetup } from '../components/weekend/WeekendSetupPlannerModal';
+import { WeekendTimedSessionControl } from './PracticeQualiDev';
+import { PostRaceResultsScene } from '../components/race/PostRaceResultsScene';
 
 export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
+  const { t } = useI18n();
   const { weekendId } = useParams<{ weekendId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [loading, setLoading] = useState(!!weekendId);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
-  const [liveSyncError, setLiveSyncError] = useState<string | null>(null);
-  const liveSyncInFlightRef = useRef(false);
-  const hydratedLiveRevisionRef = useRef<number>(0);
+  const { loading, error, liveSyncError, sessionType } = useRaceWeekendController(weekendId, devMode);
+  const { hydratedSetup, saveSetup, parcFermeState, mechanicalLocked } = useWeekendSetupController(weekendId, sessionType);
 
   const {
-    initRace,
-    initRaceFromSnapshot,
-    startRace,
+    startCurrentSession,
+    pauseCurrentSession,
     isPlaying,
     raceState,
+    sessionSummaries,
     onlineDriverReadiness,
     onlinePitCrewReadiness,
-    setTrack,
     selectedTrackId,
     toggleWeatherMode,
-    fetchRealWeather,
-    gameSpeed,
-    setGameSpeed,
-    setAuthoritativeSessionSpeed,
     updateStrategy,
-    applyPreRaceSetup,
+    applySessionSetup,
     isAuthoritative,
     authorityUserId,
+    authorityUsername,
     authorityRole,
-    liveRevision,
-    setLiveAuthority,
-    applyLiveSnapshot,
-    serializeLiveRaceState,
   } = useRaceStore();
   const teamId = useChampionshipStore((state) => state.teamId);
+  const teamName = useChampionshipStore((state) => state.teamName);
+  const championshipId = useChampionshipStore((state) => state.championshipId);
   const championshipMode = useChampionshipStore((state) => state.mode);
+  const activeChampionship = useChampionshipStore((state) => state.activeChampionship);
   const teamStateById = useChampionshipStore((state) => state.teamStateById);
-  const playerDriverIds = useMemo(() => DRIVERS.filter(driver => driver.team === 'McLaren').map(driver => driver.id), []);
-  const [preRaceSetup, setPreRaceSetup] = useState<Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }>>({});
+  const driverStandings = useChampionshipStore((state) => state.driverStandings);
+  const constructorStandings = useChampionshipStore((state) => state.constructorStandings);
+  const resolvedPlayerTeam = useMemo(() => {
+    if (championshipMode === 'local') {
+      return activeChampionship?.teams.find((team) => team.teamId === activeChampionship.selectedTeamId)?.teamName ?? teamName ?? null;
+    }
+    return teamName ?? null;
+  }, [activeChampionship, championshipMode, teamName]);
+  const [onlineTeamDrivers, setOnlineTeamDrivers] = useState<Array<{ name?: string | null }>>([]);
+  const playerDriverIds = useMemo(
+    () => resolveStaticDriverIdsForTeam(resolvedPlayerTeam, onlineTeamDrivers),
+    [resolvedPlayerTeam, onlineTeamDrivers]
+  );
+  const playerTeamLabel = resolvedPlayerTeam ?? 'Player Team';
+  const canControlDrivers = championshipMode === 'local' ? playerDriverIds.length > 0 : Boolean(teamId && playerDriverIds.length > 0);
+  const canControlSession = Boolean(isAuthoritative);
+  const [preRaceSetup, setPreRaceSetup] = useState<Record<string, WeekendPlannerSetup>>({});
+  const [isCompletingRace, setIsCompletingRace] = useState(false);
+  const [isPostRaceSceneOpen, setIsPostRaceSceneOpen] = useState(false);
   const hydratedPreRaceIdRef = useRef<string | null>(null);
-  const [authoritativeSpeed, setAuthoritativeSpeed] = useState<1 | 2 | 5 | 10>(1);
-  
-  // Start game loop
+  const authoritativeSpeed = useRaceStore((state) => state.authoritativeSessionSpeed as 1 | 2 | 5 | 10);
+
   useGameLoop();
-  
-  // Initialize race logic
+
   useEffect(() => {
-    if (devMode) {
-        const requestedTrackId = searchParams.get('track');
-        const initialTrackId = TRACKS.some(track => track.id === requestedTrackId) ? requestedTrackId! : TRACKS[0].id;
-        setError(null);
-        setLoading(true);
-        setTrack(initialTrackId);
-        setPendingTrackId(initialTrackId);
-        return;
+    let isActive = true;
+
+    if (championshipMode !== 'online' || !championshipId) {
+      setOnlineTeamDrivers([]);
+      return () => {
+        isActive = false;
+      };
     }
 
-    if (!weekendId) {
-        setError("No Race ID provided. Access via Championship.");
-        return;
-    }
-
-    const loadWeekend = async () => {
-        try {
-            const { data: weekend, error } = await TCC_API.getWeekend(weekendId);
-            if (error) throw error;
-
-            setTrack(weekend.track_id);
-
-            const sessionSpeed = searchParams.get('session') === 'practice'
-              ? (weekend.practice_speed_multiplier ?? weekend.speed_multiplier ?? 1)
-              : searchParams.get('session') === 'quali'
-                ? (weekend.quali_speed_multiplier ?? weekend.speed_multiplier ?? 1)
-                : (weekend.race_speed_multiplier ?? weekend.speed_multiplier ?? 1);
-            setAuthoritativeSpeed(sessionSpeed);
-            setAuthoritativeSessionSpeed(sessionSpeed);
-
-            const live = await TCC_API.getRaceLive(weekendId);
-            if (live.snapshot?.race_state) {
-              hydratedLiveRevisionRef.current = live.snapshot.revision;
-              await initRaceFromSnapshot(live.snapshot, weekend.track_id);
-              setLiveAuthority({
-                authorityUserId: live.authorityUserId,
-                authorityRole: live.authorityRole,
-                isAuthoritative: live.isRequesterAuthority,
-                revision: live.snapshot.revision,
-                sessionType: live.sessionType,
-                syncedAt: live.snapshot.updated_at,
-              });
-              setLoading(false);
-              return;
-            }
-
-            setLiveAuthority({
-              authorityUserId: live.authorityUserId,
-              authorityRole: live.authorityRole,
-              isAuthoritative: live.isRequesterAuthority,
-              revision: live.snapshot?.revision ?? 0,
-              sessionType: live.sessionType,
-              syncedAt: live.snapshot?.updated_at ?? null,
-            });
-            setPendingTrackId(weekend.track_id);
-        } catch (err) {
-            console.error(err);
-            setError("Failed to load race configuration.");
-            setLoading(false);
-        }
+    const loadOnlineTeamDrivers = async () => {
+      try {
+        const { data } = await TCC_API.getMyTeam(championshipId);
+        if (!isActive) return;
+        setOnlineTeamDrivers((data?.tcc_drivers ?? []).slice(0, 2));
+      } catch (error) {
+        console.error('Failed to load online race team drivers', error);
+        if (isActive) setOnlineTeamDrivers([]);
+      }
     };
 
-    loadWeekend();
-  }, [weekendId, devMode, searchParams, setTrack]);
+    void loadOnlineTeamDrivers();
+    return () => {
+      isActive = false;
+    };
+  }, [championshipId, championshipMode]);
 
   useEffect(() => {
-      if (!pendingTrackId) return;
-      const initialize = async () => {
-        await initRace(pendingTrackId);
-        setLoading(false);
-        setPendingTrackId(null);
-      };
-      initialize();
-  }, [pendingTrackId, initRace]);
+    if (devMode || !weekendId || !teamId || sessionType !== 'race' || raceState?.status !== 'finished' || isCompletingRace || !isPostRaceSceneOpen) {
+      return;
+    }
 
-  useEffect(() => {
-      if (!weekendId || devMode || !raceState || !teamId) return;
+    if (!championshipId || championshipMode !== 'online') return;
 
-      const syncLiveState = async () => {
-        if (liveSyncInFlightRef.current) return;
-        liveSyncInFlightRef.current = true;
-
-        try {
-          const live = await TCC_API.syncRaceLive({
-            weekendId,
-            teamId,
-            isRunning: isPlaying,
-            simTime: isPlaying ? raceState.elapsedTime : undefined,
-            raceState: isPlaying && isAuthoritative ? serializeLiveRaceState() : undefined,
-          });
-
-          setLiveAuthority({
-            authorityUserId: live.authorityUserId,
-            authorityRole: live.authorityRole,
-            isAuthoritative: live.isRequesterAuthority,
-            revision: live.snapshot?.revision ?? liveRevision,
-            sessionType: live.sessionType,
-            syncedAt: live.snapshot?.updated_at ?? new Date().toISOString(),
-          });
-
-          if (live.snapshot && live.snapshot.revision > hydratedLiveRevisionRef.current) {
-            const shouldHydrate = !live.isRequesterAuthority || live.snapshot.authority_user_id !== (await supabase.auth.getUser()).data.user?.id;
-            if (shouldHydrate) {
-              hydratedLiveRevisionRef.current = live.snapshot.revision;
-              applyLiveSnapshot(live.snapshot);
-            }
-          }
-
-          setLiveSyncError(null);
-        } catch (err) {
-          console.error('Failed to sync live race state', err);
-          setLiveSyncError('Live sync disconnected');
-        } finally {
-          liveSyncInFlightRef.current = false;
-        }
-      };
-
-      syncLiveState();
-      const interval = window.setInterval(syncLiveState, 2000);
-      return () => window.clearInterval(interval);
-  }, [weekendId, devMode, raceState, teamId, isPlaying, isAuthoritative, serializeLiveRaceState, setLiveAuthority, liveRevision, applyLiveSnapshot]);
-
-  // Real Weather Auto-Fetch
-  useEffect(() => {
-      if (raceState?.weatherMode === 'real') {
-          fetchRealWeather(); // Initial fetch
-          const interval = setInterval(fetchRealWeather, 60000); // Every minute
-          return () => clearInterval(interval);
+    let cancelled = false;
+    const loadStandingsPreview = async () => {
+      try {
+        const standings = await TCC_API.getChampionshipStandings(championshipId);
+        if (cancelled) return;
+        useChampionshipStore.getState().setDriverStandings(standings.driverStandings);
+        useChampionshipStore.getState().setConstructorStandings(standings.constructorStandings);
+      } catch (error) {
+        console.error('Failed to load championship standings preview', error);
       }
-  }, [raceState?.weatherMode, fetchRealWeather]);
+    };
+
+    void loadStandingsPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [championshipId, championshipMode, devMode, isCompletingRace, isPostRaceSceneOpen, raceState?.status, sessionType, teamId, weekendId]);
+
+  const handleEndWeekendFromScene = async () => {
+    if (!weekendId || sessionType !== 'race') return;
+    const summary = sessionSummaries.race;
+    if (!summary?.completed) return;
+
+    if (devMode || !teamId) {
+      navigate('/championships');
+      return;
+    }
+
+    setIsCompletingRace(true);
+    try {
+      await TCC_API.completeInteractiveSession(weekendId, teamId, 'race', summary);
+      navigate('/championships');
+    } catch (error) {
+      console.error('Failed to complete live race session', error);
+    } finally {
+      setIsCompletingRace(false);
+    }
+  };
 
   useEffect(() => {
-      if (!raceState || raceState.status !== 'pre-race') {
-          hydratedPreRaceIdRef.current = null;
-          return;
-      }
-      if (hydratedPreRaceIdRef.current === raceState.id) return;
+    if (raceState?.status === 'finished' && sessionSummaries.race?.completed) {
+      setIsPostRaceSceneOpen(true);
+    }
+  }, [raceState?.status, sessionSummaries.race?.completed]);
 
-      const nextSetup: Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }> = {};
-      playerDriverIds.forEach(id => {
-          const vehicle = raceState.vehicles.find(v => v.driverId === id);
-          if (!vehicle) return;
-          nextSetup[id] = {
-              tyreCompound: vehicle.tyreCompound,
-              fuelLoad: vehicle.fuelLoad,
-              pitWindowStart: typeof vehicle.pitWindowStart === 'number' ? vehicle.pitWindowStart : undefined,
-              pitWindowEnd: typeof vehicle.pitWindowEnd === 'number' ? vehicle.pitWindowEnd : undefined,
-              powerUnitPhilosophy: vehicle.powerUnitPhilosophy,
-              batteryAllocationMode: vehicle.batteryAllocationMode,
-              activeAeroMode: vehicle.activeAeroMode,
-              stints: vehicle.strategyPlan?.stints?.length
-                ? vehicle.strategyPlan.stints.map(stint => ({ ...stint }))
-                : [{ compound: vehicle.tyreCompound, startLap: 0, endLap: raceState.totalLaps }]
-          };
-      });
-      hydratedPreRaceIdRef.current = raceState.id;
-      setPreRaceSetup(nextSetup);
-  }, [raceState, playerDriverIds]);
+  useEffect(() => {
+    if (raceState?.status !== 'finished') {
+      setIsPostRaceSceneOpen(false);
+    }
+  }, [raceState?.status]);
+
+  useEffect(() => {
+    if (!raceState || raceState.status !== 'pre-race') {
+      hydratedPreRaceIdRef.current = null;
+      return;
+    }
+
+    if (!playerDriverIds.length) return;
+
+    const hasHydratedSetup = Object.keys(hydratedSetup).length > 0;
+    if (hydratedPreRaceIdRef.current === raceState.id && !hasHydratedSetup) {
+      return;
+    }
+
+    const nextSetup: Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }> = {};
+    playerDriverIds.forEach(id => {
+      const vehicle = raceState.vehicles.find(v => v.driverId === id);
+      if (!vehicle) return;
+      nextSetup[id] = {
+        tyreCompound: vehicle.tyreCompound,
+        fuelLoad: vehicle.fuelLoad,
+        pitWindowStart: typeof vehicle.pitWindowStart === 'number' ? vehicle.pitWindowStart : undefined,
+        pitWindowEnd: typeof vehicle.pitWindowEnd === 'number' ? vehicle.pitWindowEnd : undefined,
+        powerUnitPhilosophy: vehicle.powerUnitPhilosophy,
+        batteryAllocationMode: vehicle.batteryAllocationMode,
+        activeAeroMode: vehicle.activeAeroMode,
+        stints: vehicle.strategyPlan?.stints?.length
+          ? vehicle.strategyPlan.stints.map(stint => ({ ...stint }))
+          : [{ compound: vehicle.tyreCompound, startLap: 0, endLap: raceState.totalLaps }]
+      };
+    });
+
+    hydratedPreRaceIdRef.current = raceState.id;
+    setPreRaceSetup(hasHydratedSetup ? { ...nextSetup, ...hydratedSetup } : nextSetup);
+  }, [raceState, playerDriverIds, hydratedSetup]);
 
   const totalLaps = raceState?.totalLaps || 0;
   const track = TRACKS.find(t => t.id === selectedTrackId) || TRACKS[0];
+  const timedSessionInitialPhase = sessionType === 'fp1' ? 'fp1' : 'q1';
   const compoundColor: Record<TyreCompound, string> = {
       soft: '#ef4444',
       medium: '#f59e0b',
@@ -245,21 +216,21 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   };
 
   const getPuLabel = (value: PowerUnitPhilosophy) => {
-    if (value === 'top_speed') return 'Top Speed';
-    if (value === 'corner_focus') return 'Corner Focus';
-    return 'Balanced';
+    if (value === 'top_speed') return t('raceControl.topSpeed');
+    if (value === 'corner_focus') return t('raceControl.cornerFocus');
+    return t('common.balanced');
   };
 
   const getBatteryLabel = (value: BatteryAllocationMode) => {
-    if (value === 'conservative') return 'Conservative';
-    if (value === 'attack') return 'Attack';
-    return 'Balanced';
+    if (value === 'conservative') return t('raceControl.conservative');
+    if (value === 'attack') return t('raceControl.attack');
+    return t('common.balanced');
   };
 
   const getAeroLabel = (value: ActiveAeroMode) => {
-    if (value === 'low_drag') return 'Low Drag';
-    if (value === 'high_downforce') return 'High Downforce';
-    return 'Balanced';
+    if (value === 'low_drag') return t('raceControl.lowDrag');
+    if (value === 'high_downforce') return t('raceControl.highDownforce');
+    return t('common.balanced');
   };
 
   const getDryRuleStatus = (vehicle: { mandatoryDryCompoundsSatisfied: boolean; usedDryCompounds: string[] }, weather: string) => {
@@ -353,14 +324,25 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
     return '#60a5fa';
   };
 
-  const handleSpeedChange = (speed: 1 | 2 | 5 | 10) => {
-    if (!isAuthoritative) return;
-    setAuthoritativeSpeed(speed);
-    setAuthoritativeSessionSpeed(speed);
-    setGameSpeed(speed);
+  const updatePlannerSetup = (driverId: string, updater: (current: WeekendPlannerSetup) => WeekendPlannerSetup) => {
+    setPreRaceSetup(prev => {
+      const current = prev[driverId];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [driverId]: updater(current),
+      };
+    });
+  };
+
+  const isLockedRaceControl = !devMode && sessionType === 'race';
+
+  const handleSpeedChange = (_speed: 1 | 2 | 5 | 10) => {
+    return;
   };
 
   const handleStartRace = () => {
+      if (!canControlSession) return;
       if (Object.keys(preRaceSetup).length > 0) {
           const setups: Record<string, PreRaceSetup> = {};
           Object.entries(preRaceSetup).forEach(([driverId, setup]) => {
@@ -376,9 +358,16 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                   stints
               };
           });
-          applyPreRaceSetup(setups);
+          applySessionSetup(setups);
+          if (weekendId && championshipMode === 'online' && teamId) {
+            void saveSetup(setups as Record<string, PreRaceSetup & { tyreCompound: TyreCompound; fuelLoad: number; stints: StrategyStint[] }>);
+          }
       }
-      startRace();
+      if (isPlaying) {
+        pauseCurrentSession();
+        return;
+      }
+      startCurrentSession();
   };
 
   const estimateBaselineLapTime = () => {
@@ -490,7 +479,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
           const rate = TyreModel.getWearRate(currentCompound, track, 'balanced', wear);
           wear = Math.min(100, wear + rate * lapTimeSeconds);
           const point: Record<string, number | null> = { lap };
-          stints.forEach((s, idx) => {
+          stints.forEach((_, idx) => {
               point[`stint-${idx}`] = idx === stintIndex ? wear : null;
           });
           series.push(point);
@@ -503,14 +492,14 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
           <div className="h-full flex flex-col items-center justify-center p-8 text-center">
               <GlassCard className="max-w-md w-full text-center border-red-500/30">
                   <AlertTriangle className="mx-auto mb-4 text-red-500" size={48} />
-                  <h2 className="text-xl font-bold text-white mb-2">Access Restricted</h2>
+                  <h2 className="text-xl font-bold text-white mb-2">{t('raceControl.accessRestricted')}</h2>
                   <p className="text-gray-400 mb-6">{error}</p>
                   <GlassButton 
                     onClick={() => navigate('/')}
                     variant="secondary"
                     icon={<ChevronLeft size={18} />}
                   >
-                      Return to Paddock
+                      {t('raceControl.returnToPaddock')}
                   </GlassButton>
               </GlassCard>
           </div>
@@ -520,155 +509,79 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
   if (loading) {
       return (
         <div className="h-full flex items-center justify-center">
-             <div className="text-f1-red animate-pulse font-mono tracking-widest text-xl">INITIALIZING RACE SYSTEMS...</div>
+             <div className="text-f1-red animate-pulse font-mono tracking-widest text-xl">{t('raceControl.initializingSystems')}</div>
         </div>
       );
   }
 
+  if (sessionType !== 'race') {
+    return (
+      <WeekendTimedSessionControl
+        weekendId={weekendId}
+        initialTrackId={selectedTrackId}
+        initialPhase={timedSessionInitialPhase}
+        onBack={() => navigate(-1)}
+        onOpenRaceSession={() => navigate(`/race/${weekendId}?session=race`)}
+      />
+    );
+  }
+
   return (
     <div className="p-4 md:p-6 h-full flex flex-col gap-4 md:gap-6 animate-in fade-in duration-500">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#121212]/40 backdrop-blur-md p-4 rounded-xl border border-white/5">
-        <div className="flex items-center gap-4">
-            <button 
-                onClick={() => navigate(-1)}
-                className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors"
-                title="Back"
-            >
-                <ChevronLeft size={24} />
-            </button>
-            <div>
-                <h2 className="text-2xl font-black italic tracking-tighter text-white">RACE CONTROL</h2>
-                <div className="text-xs md:text-sm text-gray-400 font-mono mt-1 flex items-center gap-3">
-                    <span className="text-[#00FFFF]">{raceState ? `LAP ${raceState.currentLap}/${raceState.totalLaps}` : 'PRE-RACE'}</span>
-                    <span>•</span>
-                    <span>{raceState?.trackTemp.toFixed(1)}°C</span>
-                    <span>•</span>
-                    <span className="uppercase">{raceState?.weather}</span>
-                    <span>•</span>
-                    <span className={clsx(
-                        "font-bold",
-                        raceState?.safetyCar === 'red-flag' ? "text-red-500" :
-                        raceState?.safetyCar === 'sc' ? "text-yellow-400" :
-                        raceState?.safetyCar === 'vsc' ? "text-yellow-400" : "text-green-500"
-                    )}>
-                        {raceState?.safetyCar !== 'none' ? raceState?.safetyCar?.toUpperCase() : 'GREEN FLAG'}
-                    </span>
-                </div>
-            </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-            {!devMode && weekendId && (
-              <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-gray-300">
-                <span className={clsx(
-                  'h-2 w-2 rounded-full',
-                  liveSyncError ? 'bg-red-400' : isAuthoritative ? 'bg-emerald-400' : 'bg-amber-400'
-                )} />
-                <span>{liveSyncError ? 'Sync offline' : isAuthoritative ? `${authorityRole ?? 'participant'} authority` : 'Following authority'}</span>
-                <span className="text-gray-500">{authoritativeSpeed}x session</span>
-                {authorityUserId && <span className="text-gray-500">{authorityUserId.slice(0, 8)}</span>}
-              </div>
-            )}
-            {/* Weather Mode Toggle */}
-            <button
-                onClick={toggleWeatherMode}
-                className={clsx(
-                    "px-3 py-1.5 rounded text-xs font-bold uppercase border transition-all flex items-center gap-2",
-                    raceState?.weatherMode === 'real' 
-                    ? 'bg-blue-500/20 border-blue-500 text-blue-400' 
-                    : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                )}
-                title="Toggle Real Weather API"
-            >
-                <CloudRain size={14} />
-                {raceState?.weatherMode === 'real' ? 'LIVE WX' : 'SIM WX'}
-            </button>
-
-            {/* Speed Controls */}
-            <div className="flex bg-black/40 rounded-lg overflow-hidden border border-white/10">
-                {[1, 2, 5, 10].map(speed => (
-                    <button
-                        key={speed}
-                        onClick={() => handleSpeedChange(speed as 1 | 2 | 5 | 10)}
-                        disabled={!isAuthoritative}
-                        className={clsx(
-                            "px-3 py-1.5 text-xs font-mono font-bold transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed",
-                            authoritativeSpeed === speed ? 'text-[#00FFFF] bg-[#00FFFF]/10' : 'text-gray-500'
-                        )}
-                    >
-                        {speed}x
-                    </button>
-                ))}
-            </div>
-
-            <GlassButton 
-              onClick={handleStartRace}
-              disabled={isPlaying}
-              variant={isPlaying ? 'secondary' : 'primary'}
-              className="min-w-[140px]"
-              icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
-            >
-              {isPlaying ? 'RACING' : 'START RACE'}
-            </GlassButton>
-        </div>
-      </header>
+      {raceState && sessionSummaries.race?.completed && (
+        <PostRaceResultsScene
+          open={isPostRaceSceneOpen}
+          trackName={track.name}
+          summary={sessionSummaries.race}
+          vehicles={raceState.vehicles}
+          playerDriverIds={playerDriverIds}
+          playerTeamLabel={playerTeamLabel}
+          isCompleting={isCompletingRace}
+          driverStandings={driverStandings}
+          constructorStandings={constructorStandings}
+          onEndWeekend={handleEndWeekendFromScene}
+        />
+      )}
+      <WeekendSessionHeader
+        raceState={raceState}
+        sessionType={sessionType}
+        weekendId={weekendId}
+        devMode={devMode}
+        liveSyncError={liveSyncError}
+        isAuthoritative={isAuthoritative}
+        authorityRole={authorityRole}
+        authorityUserId={authorityUserId}
+        authorityUsername={authorityUsername}
+        authoritativeSpeed={authoritativeSpeed}
+        isPlaying={isPlaying}
+        onBack={() => navigate(-1)}
+        onToggleWeather={toggleWeatherMode}
+        onSpeedChange={handleSpeedChange}
+        lockWeather={isLockedRaceControl}
+        lockSpeed={isLockedRaceControl}
+        lockStartPause={!canControlSession}
+        onStartPause={handleStartRace}
+      />
 
       {raceState && raceState.safetyCar !== 'none' && (
         <div className={clsx(
             "w-full py-3 px-4 rounded-lg font-black text-center uppercase tracking-[0.2em] animate-pulse border",
             raceState.safetyCar === 'red-flag' ? 'bg-red-500/20 border-red-500 text-red-500' : 'bg-yellow-500/20 border-yellow-500 text-yellow-500'
         )}>
-            {raceState.safetyCar === 'red-flag' ? 'RED FLAG - SESSION SUSPENDED' : 
-             raceState.safetyCar === 'sc' ? 'SAFETY CAR DEPLOYED' : 'VIRTUAL SAFETY CAR'}
+            {raceState.safetyCar === 'red-flag' ? t('raceControl.redFlagSuspended') :
+             raceState.safetyCar === 'sc' ? t('raceControl.safetyCarDeployed') : t('raceControl.virtualSafetyCar')}
         </div>
       )}
       
-      <div className="grid grid-cols-12 gap-4 md:gap-6 flex-1 min-h-0">
-        {/* Left: Leaderboard */}
-        <GlassCard className="col-span-12 md:col-span-3 !p-0 flex flex-col overflow-hidden h-[500px] md:h-auto">
-            <div className="p-4 border-b border-white/10 bg-white/5">
-                <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest font-mono flex items-center gap-2">
-                    <Flag size={14} /> Leaderboard
-                </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                <LiveLeaderboard />
-            </div>
-        </GlassCard>
-        
-        {/* Center: Track Map & Telemetry */}
-        <div className="col-span-12 md:col-span-6 flex flex-col gap-4 md:gap-6 min-h-0">
-            <GlassCard className="h-80 flex flex-col !p-0 relative overflow-hidden">
-                 <div className="absolute top-4 left-4 z-10">
-                    <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest font-mono flex items-center gap-2">
-                        <MapPin size={14} /> Track Map
-                    </h3>
-                    <div className="text-white font-bold text-lg mt-1">
-                        {TRACKS.find(t => t.id === selectedTrackId)?.name || selectedTrackId}
-                    </div>
-                 </div>
-                 <div className="flex-1 flex items-center justify-center">
-                    <CircularTrackMap />
-                </div>
-            </GlassCard>
-             
-             {/* Telemetry Panel */}
-             <GlassCard className="flex-1 min-h-[300px] !p-0 flex flex-col">
-                 <div className="p-4 border-b border-white/10 bg-white/5">
-                    <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest font-mono flex items-center gap-2">
-                        <Zap size={14} /> Live Telemetry
-                    </h3>
-                 </div>
-                 <div className="flex-1 p-4">
-                    {raceState && <TelemetryPanel raceState={raceState} defaultDriverIds={playerDriverIds} telemetryMetadata={track.telemetry} />}
-                 </div>
-             </GlassCard>
-        </div>
-        
-        {/* Right: Strategy & Driver Info */}
-        <GlassCard className="col-span-12 md:col-span-3 !p-0 flex flex-col">
+      <RaceWeekendShell
+        raceState={raceState}
+        trackName={track.name}
+        telemetryMetadata={track.telemetry}
+        playerDriverIds={playerDriverIds}
+        rightPanel={(
+          <>
              <div className="p-4 border-b border-white/10 bg-white/5">
-                <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest font-mono">Strategy & Drivers</h3>
+                <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest font-mono">{t('raceControl.strategyAndDrivers')}</h3>
              </div>
              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {raceState && playerDriverIds.map(id => {
@@ -683,28 +596,28 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <div className="text-sm font-bold" style={{ color: driver.color }}>{driver.name}</div>
-                                    <div className="text-xs text-gray-500">McLaren • P{vehicle.position}</div>
+                                    <div className="text-xs text-gray-500">{playerTeamLabel} • P{vehicle.position}</div>
                                 </div>
                                 <div className="text-xs text-gray-400">
-                                    Gap: {vehicle.gapToLeader.toFixed(1)}s
+                                    {t('raceControl.gap')}: {vehicle.gapToLeader.toFixed(1)}s
                                 </div>
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-3 text-xs">
                                 <div className="bg-[#151515] rounded p-2 border border-white/5">
-                                    <div className="text-gray-400">Fuel</div>
+                                    <div className="text-gray-400">{t('raceControl.fuel')}</div>
                                     <div className="text-white font-bold">{vehicle.fuelLoad.toFixed(1)} kg</div>
                                 </div>
                                 <div className="bg-[#151515] rounded p-2 border border-white/5">
-                                    <div className="text-gray-400">Tyre Wear</div>
+                                    <div className="text-gray-400">{t('raceControl.tyreWear')}</div>
                                     <div className="text-white font-bold">{Math.round(vehicle.tyreWear)}%</div>
                                 </div>
                                 <div className="bg-[#151515] rounded p-2 border border-white/5">
-                                    <div className="text-gray-400">Tyre Temp</div>
+                                    <div className="text-gray-400">{t('raceControl.tyreTemp')}</div>
                                     <div className="text-white font-bold">{vehicle.tyreTemp.toFixed(1)}°C</div>
                                 </div>
                                 <div className="bg-[#151515] rounded p-2 border border-white/5">
-                                    <div className="text-gray-400">Temp Status</div>
+                                    <div className="text-gray-400">{t('raceControl.tempStatus')}</div>
                                     <div className="font-bold" style={{ color: getTempStatus(vehicle.tyreTemp, vehicle.tyreCompound).color }}>
                                       {getTempStatus(vehicle.tyreTemp, vehicle.tyreCompound).label}
                                     </div>
@@ -714,7 +627,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                                     <div className="text-white font-bold">{Math.round(vehicle.ersLevel)}%</div>
                                 </div>
                                 <div className="bg-[#151515] rounded p-2 border border-white/5">
-                                    <div className="text-gray-400">Tyres</div>
+                                    <div className="text-gray-400">{t('raceControl.tyres')}</div>
                                     <div className="text-white font-bold uppercase">{vehicle.tyreCompound}</div>
                                 </div>
                             </div>
@@ -727,11 +640,11 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                                         <div className="mt-1 font-bold text-white">{getPuLabel(vehicle.powerUnitPhilosophy)}</div>
                                     </div>
                                     <div className="rounded border border-white/10 bg-black/30 px-2 py-2">
-                                        <div className="text-gray-500 uppercase tracking-widest">Battery</div>
+                                        <div className="text-gray-500 uppercase tracking-widest">{t('raceControl.battery')}</div>
                                         <div className="mt-1 font-bold text-white">{getBatteryLabel(vehicle.batteryAllocationMode)}</div>
                                     </div>
                                     <div className="rounded border border-white/10 bg-black/30 px-2 py-2">
-                                        <div className="text-gray-500 uppercase tracking-widest">Aero</div>
+                                        <div className="text-gray-500 uppercase tracking-widest">{t('raceControl.aero')}</div>
                                         <div className="mt-1 font-bold text-white">{getAeroLabel(vehicle.activeAeroMode)}</div>
                                     </div>
                                 </div>
@@ -749,7 +662,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                             </div>
 
                             <div className="space-y-2">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">Fuel & Pace</div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">{t('raceControl.fuelAndPace')}</div>
                                 <div className="grid grid-cols-3 gap-2 text-[10px]">
                                     {[
                                         { value: 'conservative', label: 'SAVE' },
@@ -759,8 +672,9 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                                         <button
                                             key={option.value}
                                             onClick={() => updateStrategy(id, 'pace', option.value)}
+                                            disabled={!canControlDrivers}
                                             className={clsx(
-                                                "py-1 rounded border transition-colors font-bold",
+                                                "py-1 rounded border transition-colors font-bold disabled:opacity-50 disabled:cursor-not-allowed",
                                                 vehicle.paceMode === option.value
                                                     ? "bg-f1-red/20 text-f1-red border-f1-red/40"
                                                     : "bg-black/30 text-gray-400 border-white/10 hover:text-white"
@@ -773,7 +687,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                             </div>
 
                             <div className="space-y-2">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">ERS Strategy</div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">{t('raceControl.ersStrategy')}</div>
                                 <div className="grid grid-cols-3 gap-2 text-[10px]">
                                     {[
                                         { value: 'harvest', label: 'HARV' },
@@ -783,8 +697,9 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                                         <button
                                             key={option.value}
                                             onClick={() => updateStrategy(id, 'ers', option.value)}
+                                            disabled={!canControlDrivers}
                                             className={clsx(
-                                                "py-1 rounded border transition-colors font-bold",
+                                                "py-1 rounded border transition-colors font-bold disabled:opacity-50 disabled:cursor-not-allowed",
                                                 vehicle.ersMode === option.value
                                                     ? "bg-f1-red/20 text-f1-red border-f1-red/40"
                                                     : "bg-black/30 text-gray-400 border-white/10 hover:text-white"
@@ -797,7 +712,7 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                             </div>
 
                             <div className="space-y-2">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">Racing Line</div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-widest">{t('raceControl.racingLine')}</div>
                                 <div className="grid grid-cols-3 gap-2 text-[10px]">
                                     {[
                                         { value: 'defend', label: 'DEF' },
@@ -807,8 +722,9 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                                         <button
                                             key={option.value}
                                             onClick={() => updateStrategy(id, 'line', option.value)}
+                                            disabled={!canControlDrivers}
                                             className={clsx(
-                                                "py-1 rounded border transition-colors font-bold",
+                                                "py-1 rounded border transition-colors font-bold disabled:opacity-50 disabled:cursor-not-allowed",
                                                 vehicle.lineMode === option.value
                                                     ? "bg-f1-red/20 text-f1-red border-f1-red/40"
                                                     : "bg-black/30 text-gray-400 border-white/10 hover:text-white"
@@ -821,389 +737,51 @@ export const RaceControl: React.FC<{ devMode?: boolean }> = ({ devMode }) => {
                             </div>
 
                             <div className="flex items-center justify-between text-xs">
-                                <div className="text-gray-400 uppercase tracking-widest text-[10px]">Pitstop</div>
+                                <div className="text-gray-400 uppercase tracking-widest text-[10px]">{t('raceControl.pitstop')}</div>
                                 <button
                                     onClick={() => updateStrategy(id, 'pit', !vehicle.boxThisLap)}
+                                    disabled={!canControlDrivers}
                                     className={clsx(
-                                        "px-3 py-1 rounded border text-[10px] font-bold uppercase tracking-widest",
+                                        "px-3 py-1 rounded border text-[10px] font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed",
                                         vehicle.boxThisLap
                                             ? "bg-f1-red/20 text-f1-red border-f1-red/40"
                                             : "bg-black/30 text-gray-400 border-white/10 hover:text-white"
                                     )}
                                 >
-                                    {vehicle.boxThisLap ? 'Boxing' : 'Box This Lap'}
+                                    {vehicle.boxThisLap ? t('raceControl.boxing') : t('raceControl.boxThisLap')}
                                 </button>
                             </div>
                         </div>
                     );
                 })}
-            </div>
-        </GlassCard>
-      </div>
+             </div>
+          </>
+        )}
+      />
 
-      {raceState?.status === 'pre-race' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#0c0c0c] p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-widest">Pre-Race Setup</div>
-                <div className="text-2xl font-black italic tracking-tight text-white">Strategy Planner</div>
-              </div>
-              <GlassButton
-                onClick={handleStartRace}
-                variant="primary"
-                icon={<Play size={16} />}
-              >
-                Start Race
-              </GlassButton>
-            </div>
-
-            {onlinePitCrewReadiness && (
-              <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-4">
-                <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">Online Pit Crew Readiness</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div className="rounded border border-white/10 bg-black/30 px-3 py-3 text-gray-300">
-                    <span className="block text-gray-500 uppercase tracking-widest mb-1">Pit Stop Error Rate</span>
-                    <div className="font-bold text-white">{onlinePitCrewReadiness.pitStopErrorRate.toFixed(1)}%</div>
-                  </div>
-                  <div className="rounded border border-white/10 bg-black/30 px-3 py-3 text-gray-300">
-                    <span className="block text-gray-500 uppercase tracking-widest mb-1">Pit Stop Speed Bonus</span>
-                    <div className="font-bold text-white">+{onlinePitCrewReadiness.pitStopSpeedBonus.toFixed(1)}%</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {playerDriverIds.map(id => {
-                const setup = preRaceSetup[id];
-                const driver = DRIVERS.find(d => d.id === id);
-                if (!setup || !driver) return null;
-                const normalizedStints = normalizeStints(setup.stints);
-                const wearSeries = buildWearSeries(normalizedStints);
-                const plannedDryRuleStatus = getPlannedDryRuleStatus(normalizedStints);
-                const theoreticalRace = buildTheoreticalRaceTime(normalizedStints);
-                const readiness = onlineDriverReadiness[id];
-                return (
-                  <div key={id} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-bold" style={{ color: driver.color }}>{driver.name}</div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">{driver.team}</div>
-                      </div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-widest">Laps {totalLaps}</div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">PU Philosophy</div>
-                        <select
-                          value={setup.powerUnitPhilosophy ?? 'balanced'}
-                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], powerUnitPhilosophy: event.target.value as PowerUnitPhilosophy } }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        >
-                          <option value="top_speed">Top Speed</option>
-                          <option value="balanced">Balanced</option>
-                          <option value="corner_focus">Corner Focus</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Battery Allocation</div>
-                        <select
-                          value={setup.batteryAllocationMode ?? 'balanced'}
-                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], batteryAllocationMode: event.target.value as BatteryAllocationMode } }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        >
-                          <option value="conservative">Conservative</option>
-                          <option value="balanced">Balanced</option>
-                          <option value="attack">Attack</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Active Aero</div>
-                        <select
-                          value={setup.activeAeroMode ?? 'balanced'}
-                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], activeAeroMode: event.target.value as ActiveAeroMode } }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        >
-                          <option value="low_drag">Low Drag</option>
-                          <option value="balanced">Balanced</option>
-                          <option value="high_downforce">High Downforce</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-[10px]">
-                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
-                        <span className="block text-gray-500 uppercase tracking-widest mb-1">PU effect</span>
-                        {setup.powerUnitPhilosophy === 'top_speed' ? 'Higher terminal speed, weaker corner rotation.' : setup.powerUnitPhilosophy === 'corner_focus' ? 'Stronger cornering, more drag on straights.' : 'Neutral ICE/gear balance.'}
-                      </div>
-                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
-                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Battery effect</span>
-                        {setup.batteryAllocationMode === 'attack' ? 'More deployment and lower regen reserve.' : setup.batteryAllocationMode === 'conservative' ? 'More harvesting, smaller attack bursts.' : 'Balanced deploy and recharge.'}
-                      </div>
-                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
-                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Aero effect</span>
-                        {setup.activeAeroMode === 'low_drag' ? 'Better straight-line speed, less loaded in turns.' : setup.activeAeroMode === 'high_downforce' ? 'More grip in corners, slower at vmax.' : 'Neutral aero platform.'}
-                      </div>
-                    </div>
-
-                    {readiness ? (
-                      <div className="rounded-xl border border-white/10 bg-black/30 p-3 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[10px] text-gray-500 uppercase tracking-widest">Training Readiness</div>
-                          <div className="text-[10px] text-gray-400">Strength {Math.round(readiness.strength)}</div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <div className="flex justify-between text-[10px] mb-1">
-                              <span className="text-gray-400 uppercase tracking-widest">Confidence</span>
-                              <span className="text-gray-300">{Math.round(readiness.morale)}%</span>
-                            </div>
-                            <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-                              <div
-                                className="h-full transition-all duration-300"
-                                style={{
-                                  width: `${readiness.morale}%`,
-                                  backgroundColor: getConfidenceBarColor(readiness.morale)
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-[10px] mb-1">
-                              <span className="text-gray-400 uppercase tracking-widest">Focus</span>
-                              <span className="text-gray-300">{Math.round(readiness.concentration)}%</span>
-                            </div>
-                            <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-                              <div
-                                className="h-full transition-all duration-300"
-                                style={{
-                                  width: `${readiness.concentration}%`,
-                                  backgroundColor: getFocusBarColor(readiness.concentration)
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
-                          <span className="text-gray-400">Fatigue {Math.round(readiness.fatigue)}%</span>
-                          <span className={clsx('font-bold', getWearyColor(readiness.wearyState))}>{readiness.wearyState}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
-                        No online training sync data for this driver.
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Starting Tyres</div>
-                        <select
-                          value={setup.tyreCompound}
-                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], tyreCompound: event.target.value as TyreCompound } }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        >
-                          <option value="soft">Soft</option>
-                          <option value="medium">Medium</option>
-                          <option value="hard">Hard</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Fuel (L)</div>
-                        <input
-                          type="number"
-                          min={0}
-                          max={150}
-                          step={0.1}
-                          value={setup.fuelLoad}
-                          onChange={(event) => setPreRaceSetup(prev => ({ ...prev, [id]: { ...prev[id], fuelLoad: Number(event.target.value) } }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Pit Window Start</div>
-                        <input
-                          type="number"
-                          min={1}
-                          max={totalLaps}
-                          step={1}
-                          value={setup.pitWindowStart ?? ''}
-                          onChange={(event) => setPreRaceSetup(prev => ({
-                            ...prev,
-                            [id]: {
-                              ...prev[id],
-                              pitWindowStart: event.target.value === '' ? undefined : Number(event.target.value)
-                            }
-                          }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Pit Window End</div>
-                        <input
-                          type="number"
-                          min={1}
-                          max={totalLaps}
-                          step={1}
-                          value={setup.pitWindowEnd ?? ''}
-                          onChange={(event) => setPreRaceSetup(prev => ({
-                            ...prev,
-                            [id]: {
-                              ...prev[id],
-                              pitWindowEnd: event.target.value === '' ? undefined : Number(event.target.value)
-                            }
-                          }))}
-                          className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                        />
-                      </div>
-                    </div>
-
-                    <div className={clsx(
-                      'rounded border px-3 py-2 text-[10px] font-bold uppercase tracking-widest',
-                      plannedDryRuleStatus.tone
-                    )}>
-                      {plannedDryRuleStatus.label}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-[10px]">
-                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
-                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Theoretical time</span>
-                        <div className="font-bold text-white text-xs">{formatRaceTime(theoreticalRace.totalSeconds)}</div>
-                        <div className="mt-1 text-[9px] text-gray-500">Grip-based stint estimate</div>
-                      </div>
-                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
-                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Pit loss</span>
-                        <div className="font-bold text-white text-xs">+{theoreticalRace.pitLossSeconds.toFixed(1)}s</div>
-                        <div className="mt-1 text-[9px] text-gray-500">× {theoreticalRace.pitStops} stop{theoreticalRace.pitStops === 1 ? '' : 's'}</div>
-                      </div>
-                      <div className="rounded border border-white/10 bg-black/30 px-2 py-2 text-gray-300">
-                        <span className="block text-gray-500 uppercase tracking-widest mb-1">Baseline lap</span>
-                        <div className="font-bold text-white text-xs">{theoreticalRace.baselineLapTimeSeconds.toFixed(2)}s</div>
-                        <div className="mt-1 text-[9px] text-gray-500">Before grip loss</div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest">Stints</div>
-                        <button
-                          onClick={() => setPreRaceSetup(prev => {
-                            const current = prev[id].stints;
-                            if (current.length >= 4) return prev;
-                            const lastEnd = current[current.length - 1]?.endLap || Math.max(1, Math.floor(totalLaps / 2));
-                            const nextEnd = Math.min(totalLaps, lastEnd + Math.max(1, Math.floor(totalLaps / 6)));
-                            const fallbackCompound = current[current.length - 1]?.compound ?? prev[id].tyreCompound;
-                            const nextStints: StrategyStint[] = [
-                              ...current,
-                              { compound: fallbackCompound, startLap: lastEnd, endLap: nextEnd }
-                            ];
-                            return { ...prev, [id]: { ...prev[id], stints: normalizeStints(nextStints) } };
-                          })}
-                          className="px-2 py-1 rounded border text-[10px] font-bold uppercase tracking-widest bg-black/40 text-gray-400 border-white/10 hover:text-white"
-                        >
-                          Add Stint
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {setup.stints.map((stint, index) => (
-                          <div key={`${id}-stint-${index}`} className="space-y-1">
-                            <div className="grid grid-cols-12 gap-2 items-center text-xs">
-                              <div className="col-span-4">
-                                <select
-                                  value={stint.compound}
-                                  onChange={(event) => setPreRaceSetup(prev => {
-                                    const next = [...prev[id].stints];
-                                    next[index] = { ...next[index], compound: event.target.value as TyreCompound };
-                                    return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
-                                  })}
-                                  className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                                >
-                                  <option value="soft">Soft</option>
-                                  <option value="medium">Medium</option>
-                                  <option value="hard">Hard</option>
-                                </select>
-                              </div>
-                              <div className="col-span-3">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={totalLaps}
-                                  step={1}
-                                  value={stint.endLap}
-                                  onChange={(event) => setPreRaceSetup(prev => {
-                                    const value = event.target.valueAsNumber;
-                                    if (Number.isNaN(value)) return prev;
-                                    const next = [...prev[id].stints];
-                                    next[index] = { ...next[index], endLap: value };
-                                    return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
-                                  })}
-                                  className="w-full bg-[#111] border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-f1-red"
-                                />
-                              </div>
-                              <div className="col-span-3 text-[10px] text-gray-400 uppercase tracking-widest">
-                                {formatRaceTime(theoreticalRace.stintTimes[index] ?? 0)}
-                              </div>
-                              <div className="col-span-2 flex justify-end">
-                                <button
-                                  onClick={() => setPreRaceSetup(prev => {
-                                    const next = prev[id].stints.filter((_, i) => i !== index);
-                                    return { ...prev, [id]: { ...prev[id], stints: normalizeStints(next) } };
-                                  })}
-                                  className="px-2 py-1 rounded border text-[10px] font-bold uppercase tracking-widest bg-black/40 text-gray-400 border-white/10 hover:text-white"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                            {getStintWarning(normalizeStints(setup.stints), index) && (
-                              <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-200">
-                                {getStintWarning(normalizeStints(setup.stints), index)}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-[10px] text-gray-500 uppercase tracking-widest">Tyre Degradation</div>
-                      <div className="h-32 bg-[#111] border border-white/10 rounded-lg p-2">
-                        {wearSeries.length > 0 && (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={wearSeries}>
-                              <XAxis dataKey="lap" tick={{ fill: '#6b7280', fontSize: 10 }} />
-                              <YAxis domain={[0, 100]} tick={{ fill: '#6b7280', fontSize: 10 }} />
-                              <Tooltip
-                                contentStyle={{ backgroundColor: '#111', border: '1px solid #333', color: '#fff' }}
-                                formatter={(value: number | string) => [`${Number(value).toFixed(1)}%`, 'Wear']}
-                              />
-                              {setup.stints.map((stint, index) => (
-                                <Line
-                                  key={`line-${index}`}
-                                  type="monotone"
-                                  dataKey={`stint-${index}`}
-                                  stroke={compoundColor[stint.compound]}
-                                  strokeWidth={2}
-                                  dot={false}
-                                />
-                              ))}
-                            </LineChart>
-                          </ResponsiveContainer>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      <WeekendSetupPlannerModal
+        open={raceState?.status === 'pre-race'}
+        playerDriverIds={playerDriverIds}
+        totalLaps={totalLaps}
+        preRaceSetup={preRaceSetup}
+        onlineDriverReadiness={onlineDriverReadiness}
+        onlinePitCrewReadiness={onlinePitCrewReadiness}
+        compoundColor={compoundColor}
+        mechanicalLocked={mechanicalLocked}
+        canStartRace={canControlSession}
+        parcFermeMessage={parcFermeState?.isActive ? 'Stored parc fermé setup loaded for this session.' : null}
+        onUpdateSetup={updatePlannerSetup}
+        onStartRace={handleStartRace}
+        normalizeStints={normalizeStints}
+        buildWearSeries={buildWearSeries}
+        buildTheoreticalRaceTime={buildTheoreticalRaceTime}
+        getPlannedDryRuleStatus={getPlannedDryRuleStatus}
+        getStintWarning={getStintWarning}
+        getConfidenceBarColor={getConfidenceBarColor}
+        getFocusBarColor={getFocusBarColor}
+        getWearyColor={getWearyColor}
+        formatRaceTime={formatRaceTime}
+      />
     </div>
   );
 };

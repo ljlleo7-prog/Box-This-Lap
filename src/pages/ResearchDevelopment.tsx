@@ -21,68 +21,176 @@ import {
   saveResearchStateScoped,
   deriveAndSaveResearchTeamSpecsScoped,
   loadSaveGame,
-  saveSaveGame,
 } from '../lib/localSaves';
 import { useChampionshipStore } from '../store/championshipStore';
+import { TRACKS } from '../data/tracks';
 
 type TrackCharacteristic = {
+  trackId?: string;
   trackName: string;
   round: number;
   keyStats: Array<{ stat: keyof TeamSpecs; label: string; importance: 1 | 2 | 3 | 4 | 5 }>;
 };
 
-const MOCK_CALENDAR: TrackCharacteristic[] = [
-  {
-    trackName: 'Monza',
-    round: 14,
-    keyStats: [
-      { stat: 'drag_reduction', label: 'Drag Reduction', importance: 5 },
-      { stat: 'drs_efficiency', label: 'DRS Efficiency', importance: 5 },
-      { stat: 'acceleration', label: 'Acceleration', importance: 4 },
-      { stat: 'cornering_high', label: 'High Speed Corners', importance: 3 },
-    ],
-  },
-  {
-    trackName: 'Silverstone',
-    round: 15,
-    keyStats: [
-      { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
-      { stat: 'lifespan', label: 'Tire Degradation', importance: 5 },
-      { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 4 },
-      { stat: 'cooling', label: 'Cooling', importance: 3 },
-    ],
-  },
-  {
-    trackName: 'Monaco',
-    round: 16,
-    keyStats: [
-      { stat: 'cornering_low', label: 'Low Speed Corners', importance: 5 },
-      { stat: 'braking', label: 'Braking', importance: 5 },
-      { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 4 },
-      { stat: 'cooling', label: 'Cooling', importance: 3 },
-    ],
-  },
-  {
-    trackName: 'Spa',
-    round: 17,
-    keyStats: [
-      { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
-      { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
-      { stat: 'lifespan', label: 'Reliability', importance: 4 },
-      { stat: 'acceleration', label: 'Acceleration', importance: 3 },
-    ],
-  },
-  {
-    trackName: 'Singapore',
-    round: 18,
-    keyStats: [
-      { stat: 'cornering_low', label: 'Low Speed Corners', importance: 5 },
-      { stat: 'cooling', label: 'Cooling', importance: 5 },
-      { stat: 'lifespan', label: 'Reliability', importance: 4 },
-      { stat: 'braking', label: 'Braking', importance: 3 },
-    ],
-  },
-];
+const TRACK_FOCUS_PROFILES: Record<string, TrackCharacteristic['keyStats']> = {
+  'austin-gp': [
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 4 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 3 },
+  ],
+  'abu-dhabi-gp': [
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 4 },
+    { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 3 },
+  ],
+  'bahrain-gp': [
+    { stat: 'braking', label: 'Braking', importance: 5 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 5 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 4 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 3 },
+  ],
+  'baku-gp': [
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 5 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 3 },
+  ],
+  'catalunya-gp': [
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 5 },
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 4 },
+    { stat: 'drag_reduction', label: 'Efficiency', importance: 2 },
+  ],
+  'china-gp': [
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 4 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 4 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 3 },
+  ],
+  'hungaroring-gp': [
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 5 },
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 4 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 3 },
+  ],
+  'imola-gp': [
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 4 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'lifespan', label: 'Reliability', importance: 3 },
+  ],
+  'interlagos-gp': [
+    { stat: 'acceleration', label: 'Acceleration', importance: 5 },
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 4 },
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 3 },
+  ],
+  'jeddah-gp': [
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 5 },
+    { stat: 'cooling', label: 'Cooling', importance: 4 },
+    { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 3 },
+  ],
+  'las-vegas-gp': [
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 5 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 2 },
+  ],
+  'melbourne-gp': [
+    { stat: 'braking', label: 'Braking', importance: 4 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 4 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 3 },
+  ],
+  'mexico-city-gp': [
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 5 },
+    { stat: 'cooling', label: 'Cooling', importance: 5 },
+    { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 4 },
+    { stat: 'braking', label: 'Braking', importance: 3 },
+  ],
+  'miami-gp': [
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 4 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 3 },
+  ],
+  'monaco-gp': [
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 5 },
+    { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 3 },
+  ],
+  'montreal-gp': [
+    { stat: 'braking', label: 'Braking', importance: 5 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'ers_efficiency', label: 'ERS Efficiency', importance: 3 },
+  ],
+  'monza-gp': [
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 5 },
+    { stat: 'drs_efficiency', label: 'DRS Efficiency', importance: 5 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 3 },
+  ],
+  'qatar-gp': [
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 5 },
+    { stat: 'cooling', label: 'Cooling', importance: 4 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 2 },
+  ],
+  'silverstone-gp': [
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'lifespan', label: 'Tyre Degradation', importance: 5 },
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 3 },
+  ],
+  'singapore-gp': [
+    { stat: 'cornering_low', label: 'Low Speed Corners', importance: 5 },
+    { stat: 'cooling', label: 'Cooling', importance: 5 },
+    { stat: 'lifespan', label: 'Reliability', importance: 4 },
+    { stat: 'braking', label: 'Braking', importance: 3 },
+  ],
+  'spa-gp': [
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'lifespan', label: 'Reliability', importance: 4 },
+    { stat: 'acceleration', label: 'Acceleration', importance: 3 },
+  ],
+  'spielberg-gp': [
+    { stat: 'acceleration', label: 'Acceleration', importance: 5 },
+    { stat: 'braking', label: 'Braking', importance: 5 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 3 },
+  ],
+  'suzuka-gp': [
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 5 },
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 5 },
+    { stat: 'lifespan', label: 'Balance', importance: 4 },
+    { stat: 'cooling', label: 'Cooling', importance: 3 },
+  ],
+  'zandvoort-gp': [
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 5 },
+    { stat: 'cornering_high', label: 'High Speed Corners', importance: 4 },
+    { stat: 'braking', label: 'Braking', importance: 3 },
+    { stat: 'lifespan', label: 'Tyre Life', importance: 3 },
+  ],
+};
+
+const buildTrackKeyStats = (trackId: string | undefined, trackName: string): TrackCharacteristic['keyStats'] => {
+  if (trackId && TRACK_FOCUS_PROFILES[trackId]) {
+    return TRACK_FOCUS_PROFILES[trackId];
+  }
+
+  return [
+    { stat: 'acceleration', label: 'Acceleration', importance: 4 },
+    { stat: 'drag_reduction', label: 'Drag Reduction', importance: 4 },
+    { stat: 'cornering_mid', label: 'Mid Speed Corners', importance: 4 },
+    { stat: 'braking', label: 'Braking', importance: 3 },
+  ];
+};
 
 const PROJECTS: ResearchProjectDefinition[] = [
   {
@@ -215,6 +323,9 @@ export const ResearchDevelopment: React.FC = () => {
   const teamId = useChampionshipStore((state) => state.teamId);
   const teamName = useChampionshipStore((state) => state.teamName);
   const activeLocalChampionship = useChampionshipStore((state) => state.activeChampionship);
+  const setActiveLocalContext = useChampionshipStore((state) => state.setActiveLocalContext);
+  const currentRound = useChampionshipStore((state) => state.currentRound);
+  const constructorStandings = useChampionshipStore((state) => state.constructorStandings);
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [researchState, setResearchState] = useState<ResearchDepartmentState | null>(null);
@@ -224,6 +335,7 @@ export const ResearchDevelopment: React.FC = () => {
   const [cashBalance, setCashBalance] = useState(0);
   const [cashLedger, setCashLedger] = useState<any[]>([]);
   const [cashError, setCashError] = useState<string | null>(null);
+  const [upcomingCalendar, setUpcomingCalendar] = useState<TrackCharacteristic[]>([]);
 
   // Modal state
   const [selectedProject, setSelectedProject] = useState<ResearchProjectDefinition | null>(null);
@@ -269,9 +381,19 @@ export const ResearchDevelopment: React.FC = () => {
         return;
       }
 
-      if (mode === 'local' && activeLocalChampionship) {
-        const playerTeam = activeLocalChampionship.teams.find(
-          (entry) => entry.teamId === activeLocalChampionship.selectedTeamId
+      if (mode === 'local') {
+        const saveGame = loadSaveGame();
+        const localChampionship = saveGame.championship ?? activeLocalChampionship;
+        if (!localChampionship) {
+          setTeam(null);
+          setResearchState(null);
+          setCashBalance(0);
+          setCashLedger([]);
+          return;
+        }
+
+        const playerTeam = localChampionship.teams.find(
+          (entry) => entry.teamId === localChampionship.selectedTeamId
         );
         if (playerTeam) {
           setTeam({
@@ -287,7 +409,7 @@ export const ResearchDevelopment: React.FC = () => {
               drivers: 0,
             },
             specs: playerTeam.specs,
-            championship_id: activeLocalChampionship.id,
+            championship_id: localChampionship.id,
           } as Team);
           setCashBalance(TEAM_TEMPLATES.find((template) => template.name === playerTeam.teamName)?.budget ?? 0);
           setCashLedger([]);
@@ -311,6 +433,71 @@ export const ResearchDevelopment: React.FC = () => {
   useEffect(() => {
     loadTeamData();
   }, [loadTeamData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadUpcomingCalendar = async () => {
+      if (mode === 'online') {
+        if (!championshipId) {
+          if (!cancelled) setUpcomingCalendar([]);
+          return;
+        }
+
+        try {
+          const { data, error } = await TCC_API.getChampionshipWeekends(championshipId);
+          if (error) throw error;
+          if (cancelled) return;
+
+          const nextRounds = (data || [])
+            .filter((weekend) => weekend.status !== 'completed' && weekend.status !== 'cancelled')
+            .slice(0, 6)
+            .map((weekend) => {
+              const track = TRACKS.find((entry) => entry.id === weekend.track_id);
+              const trackName = weekend.name || track?.name || 'Unknown GP';
+              return {
+                trackId: weekend.track_id,
+                trackName,
+                round: weekend.round_number,
+                keyStats: buildTrackKeyStats(weekend.track_id, trackName),
+              } satisfies TrackCharacteristic;
+            });
+
+          setUpcomingCalendar(nextRounds);
+        } catch (error) {
+          console.error('Failed to load championship calendar', error);
+          if (!cancelled) setUpcomingCalendar([]);
+        }
+        return;
+      }
+
+      if (mode === 'local' && activeLocalChampionship) {
+        const nextRounds = activeLocalChampionship.trackOrder
+          .slice(Math.max(0, currentRound - 1), Math.max(0, currentRound - 1) + 6)
+          .map((trackId, index) => {
+            const track = TRACKS.find((entry) => entry.id === trackId);
+            const trackName = track?.name || 'Unknown GP';
+            return {
+              trackId,
+              trackName,
+              round: currentRound + index,
+              keyStats: buildTrackKeyStats(trackId, trackName),
+            } satisfies TrackCharacteristic;
+          });
+
+        if (!cancelled) setUpcomingCalendar(nextRounds);
+        return;
+      }
+
+      if (!cancelled) setUpcomingCalendar([]);
+    };
+
+    loadUpcomingCalendar();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeLocalChampionship, championshipId, currentRound, mode]);
 
   const teamKey = team?.name || teamName || 'default';
   const scopedStorageContext = useMemo(() => {
@@ -339,9 +526,16 @@ export const ResearchDevelopment: React.FC = () => {
       return;
     }
 
-    if (mode === 'local' && activeLocalChampionship) {
-      const playerTeam = activeLocalChampionship.teams.find(
-        (entry) => entry.teamId === activeLocalChampionship.selectedTeamId
+    if (mode === 'local') {
+      const saveGame = loadSaveGame();
+      const localChampionship = saveGame.championship ?? activeLocalChampionship;
+      if (!localChampionship) {
+        setResearchState(null);
+        return;
+      }
+
+      const playerTeam = localChampionship.teams.find(
+        (entry) => entry.teamId === localChampionship.selectedTeamId
       );
       setResearchState(playerTeam?.researchDepartment ?? null);
       return;
@@ -375,9 +569,9 @@ export const ResearchDevelopment: React.FC = () => {
         teams: updatedTeams,
         updatedAt: new Date().toISOString(),
       };
-      saveSaveGame(saveGame);
+      setActiveLocalContext(saveGame.championship);
     }
-  }, [baseSpecs, mode, researchState, scopedStorageContext]);
+  }, [baseSpecs, mode, researchState, scopedStorageContext, setActiveLocalContext]);
 
   const normalizedBiases = useMemo(() => {
     if (!selectedProject) return [];
@@ -399,6 +593,17 @@ export const ResearchDevelopment: React.FC = () => {
   }, [selectedProject, money, windTunnel, cfd]);
 
   const nowMs = Date.now();
+
+  const playerConstructorStanding = useMemo(() => {
+    if (mode === 'online' && teamId) {
+      const onlineStanding = constructorStandings.findIndex((entry) => entry.entityId === teamId);
+      if (onlineStanding >= 0) return onlineStanding + 1;
+    }
+
+    return researchState?.atr.constructorStanding ?? 5;
+  }, [constructorStandings, mode, researchState?.atr.constructorStanding, teamId]);
+
+  const currentAtrCaps = useMemo(() => getAtrCapsForStanding(playerConstructorStanding), [playerConstructorStanding]);
 
   const getDesignDueAt = (design: PartDesign) => new Date(design.startedAt).getTime() + (design.projectedDurationWeeks * 7 * 24 * 60 * 60 * 1000);
   const isDesignReady = (design: PartDesign) => nowMs >= getDesignDueAt(design);
@@ -683,10 +888,10 @@ export const ResearchDevelopment: React.FC = () => {
           ) : (
             <div className="space-y-2">
               {cashLedger.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-sm">
+                <div key={entry.id} className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5">
                   <div>
-                    <div className="font-semibold text-white">{entry.description || entry.entry_type}</div>
-                    <div className="text-xs text-gray-500">{new Date(entry.created_at).toLocaleString()}</div>
+                    <div className="font-semibold text-zinc-900 dark:text-white">{entry.description || entry.entry_type}</div>
+                    <div className="text-xs text-zinc-500 dark:text-gray-500">{new Date(entry.created_at).toLocaleString()}</div>
                   </div>
                   <div className={entry.amount_cash >= 0 ? 'font-bold text-green-400' : 'font-bold text-red-400'}>
                     {entry.amount_cash >= 0 ? '+' : ''}{Number(entry.amount_cash || 0).toLocaleString()} CASH
@@ -857,8 +1062,8 @@ export const ResearchDevelopment: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MOCK_CALENDAR.map((race) => (
-            <div key={race.trackName} className="bg-black/40 border border-white/10 rounded-lg p-4">
+          {upcomingCalendar.map((race) => (
+            <div key={`${race.round}-${race.trackId ?? race.trackName}`} className="bg-black/40 border border-white/10 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h4 className="text-sm font-bold text-white">{race.trackName}</h4>
@@ -935,6 +1140,12 @@ export const ResearchDevelopment: React.FC = () => {
           ))}
         </div>
 
+        {upcomingCalendar.length === 0 && (
+          <div className="mt-4 rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-6 text-sm text-gray-500">
+            No upcoming championship rounds are available yet.
+          </div>
+        )}
+
         <p className="text-xs text-gray-500 mt-4">
           <span className="text-yellow-400">★★★★★</span> = Critical importance for this circuit
           <span className="ml-4 inline-flex items-center gap-1">
@@ -953,13 +1164,13 @@ export const ResearchDevelopment: React.FC = () => {
             <div className="flex justify-between text-sm mb-2">
               <span className="text-gray-400">Wind Tunnel Hours</span>
               <span className="text-white font-mono">
-                {researchState.atr.windTunnelHoursUsed} / {researchState.atr.windTunnelHoursCap}
+                {researchState.atr.windTunnelHoursUsed} / {currentAtrCaps.windTunnelHours}
               </span>
             </div>
             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-500 transition-all"
-                style={{ width: `${(researchState.atr.windTunnelHoursUsed / researchState.atr.windTunnelHoursCap) * 100}%` }}
+                style={{ width: `${(researchState.atr.windTunnelHoursUsed / currentAtrCaps.windTunnelHours) * 100}%` }}
               />
             </div>
           </div>
@@ -967,19 +1178,19 @@ export const ResearchDevelopment: React.FC = () => {
             <div className="flex justify-between text-sm mb-2">
               <span className="text-gray-400">CFD Hours</span>
               <span className="text-white font-mono">
-                {researchState.atr.cfdHoursUsed} / {researchState.atr.cfdHoursCap}
+                {researchState.atr.cfdHoursUsed} / {currentAtrCaps.cfdHours}
               </span>
             </div>
             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full bg-purple-500 transition-all"
-                style={{ width: `${(researchState.atr.cfdHoursUsed / researchState.atr.cfdHoursCap) * 100}%` }}
+                style={{ width: `${(researchState.atr.cfdHoursUsed / currentAtrCaps.cfdHours) * 100}%` }}
               />
             </div>
           </div>
         </div>
         <p className="text-xs text-gray-500 mt-3">
-          Constructor Standing: P{researchState.atr.constructorStanding} · {researchState.atr.periodLabel}
+          Constructor Standing: P{playerConstructorStanding} · {researchState.atr.periodLabel}
         </p>
       </GlassCard>
 

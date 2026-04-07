@@ -1,15 +1,137 @@
-import { RaceState, VehicleState, Track, Driver, TeamSpecs, DryTyreCompound, VehicleExecutionState } from '../../types';
+import { RaceState, VehicleState, Track, Driver, TeamSpecs, DryTyreCompound, VehicleExecutionState, TelemetryDataPoint } from '../../types';
 import { SeededRNG } from '../rng';
 import { StrategySystem } from './StrategySystem';
 import { TYRE_COMPOUNDS } from './TyreModel';
+import { buildTrackProfile, lookupTrackProfileSpeed } from '../trackProfile';
 
 const createExecutionState = (): VehicleExecutionState => ({
     lap: 0,
     sectorOffsets: {},
     lastSectorId: undefined,
     lastSafetyCarStatus: 'none',
-    wasInPit: false
+    wasInPit: false,
+    lastPositionConcentrationImpactAt: -Infinity
 });
+
+const MIN_GAP_REFERENCE_SPEED = 20;
+const MIN_PROFILE_POINTS = 6;
+
+interface GapTimeProfilePoint {
+  distance: number;
+  elapsedTime: number;
+}
+
+interface GapTimeProfile {
+  totalDistance: number;
+  lapTime: number;
+  points: GapTimeProfilePoint[];
+}
+
+const clampGapSpeed = (value: number) => Math.max(MIN_GAP_REFERENCE_SPEED, value);
+
+const normalizeGapDistance = (distance: number, totalDistance: number) => {
+  const wrapped = distance % totalDistance;
+  return wrapped < 0 ? wrapped + totalDistance : wrapped;
+};
+
+const buildGapTimeProfile = (track: Track, telemetryTrace: TelemetryDataPoint[]): GapTimeProfile | null => {
+  if (telemetryTrace.length < MIN_PROFILE_POINTS) return null;
+
+  const sorted = [...telemetryTrace]
+    .filter((point) => Number.isFinite(point.distance) && Number.isFinite(point.speed))
+    .sort((a, b) => a.distance - b.distance);
+
+  if (sorted.length < MIN_PROFILE_POINTS) return null;
+
+  const deduped = sorted.filter((point, index) => index === 0 || Math.abs(point.distance - sorted[index - 1].distance) > 1e-3);
+  if (deduped.length < MIN_PROFILE_POINTS) return null;
+
+  const points: GapTimeProfilePoint[] = [{ distance: 0, elapsedTime: 0 }];
+  let elapsedTime = 0;
+
+  for (let index = 1; index < deduped.length; index += 1) {
+    const previous = deduped[index - 1];
+    const current = deduped[index];
+    const segmentDistance = current.distance - previous.distance;
+    if (segmentDistance <= 1e-3) continue;
+    const averageSpeed = clampGapSpeed((previous.speed + current.speed) / 2);
+    elapsedTime += segmentDistance / averageSpeed;
+    points.push({ distance: current.distance, elapsedTime });
+  }
+
+  const lastDistance = points[points.length - 1]?.distance ?? 0;
+  if (track.totalDistance - lastDistance > 1) {
+    const finalSpeed = clampGapSpeed(deduped[deduped.length - 1]?.speed ?? 55);
+    elapsedTime += (track.totalDistance - lastDistance) / finalSpeed;
+  }
+
+  if (!Number.isFinite(elapsedTime) || elapsedTime <= 0 || points.length < 2) return null;
+  return { totalDistance: track.totalDistance, lapTime: elapsedTime, points };
+};
+
+const buildFallbackGapTimeProfile = (track: Track): GapTimeProfile => {
+  const profile = buildTrackProfile(track, 20);
+  const points: GapTimeProfilePoint[] = [{ distance: 0, elapsedTime: 0 }];
+  let elapsedTime = 0;
+
+  for (let index = 1; index < profile.samples.length; index += 1) {
+    const previous = profile.samples[index - 1];
+    const current = profile.samples[index];
+    const segmentDistance = current.distance - previous.distance;
+    if (segmentDistance <= 1e-3) continue;
+    const averageSpeed = clampGapSpeed((previous.speed + current.speed) / 2);
+    elapsedTime += segmentDistance / averageSpeed;
+    points.push({ distance: current.distance, elapsedTime });
+  }
+
+  const lastDistance = points[points.length - 1]?.distance ?? 0;
+  if (track.totalDistance - lastDistance > 1) {
+    const tailSpeed = clampGapSpeed(lookupTrackProfileSpeed(profile, Math.max(0, track.totalDistance - 1)));
+    elapsedTime += (track.totalDistance - lastDistance) / tailSpeed;
+  }
+
+  return { totalDistance: track.totalDistance, lapTime: Math.max(elapsedTime, track.totalDistance / 55), points };
+};
+
+const lookupGapTimeAtDistance = (profile: GapTimeProfile, distance: number): number => {
+  const wrapped = normalizeGapDistance(distance, profile.totalDistance);
+  const points = profile.points;
+  if (points.length === 0) return 0;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const left = points[index - 1];
+    const right = points[index];
+    if (wrapped <= right.distance) {
+      const span = Math.max(1e-6, right.distance - left.distance);
+      const ratio = (wrapped - left.distance) / span;
+      return left.elapsedTime + ((right.elapsedTime - left.elapsedTime) * ratio);
+    }
+  }
+
+  const last = points[points.length - 1];
+  const remainingDistance = Math.max(0, wrapped - last.distance);
+  const remainingTime = Math.max(0, profile.lapTime - last.elapsedTime);
+  const ratio = last.distance >= profile.totalDistance - 1e-6
+    ? 0
+    : remainingDistance / Math.max(1e-6, profile.totalDistance - last.distance);
+  return last.elapsedTime + (remainingTime * ratio);
+};
+
+const estimateGapFromProfile = (profile: GapTimeProfile, fromRaceDistance: number, toRaceDistance: number): number => {
+  if (toRaceDistance <= fromRaceDistance) return 0;
+
+  const totalDistance = profile.totalDistance;
+  const raceDistanceDelta = toRaceDistance - fromRaceDistance;
+  const fullLaps = Math.floor(raceDistanceDelta / totalDistance);
+  const fromDistanceOnLap = normalizeGapDistance(fromRaceDistance, totalDistance);
+  const toDistanceOnLap = normalizeGapDistance(toRaceDistance, totalDistance);
+  const fromTime = lookupGapTimeAtDistance(profile, fromDistanceOnLap);
+  const toTime = lookupGapTimeAtDistance(profile, toDistanceOnLap);
+  const sameLapTimeDelta = toTime >= fromTime ? toTime - fromTime : (profile.lapTime - fromTime) + toTime;
+  const lapContribution = fullLaps > 0 ? Math.max(0, fullLaps - 1) * profile.lapTime : 0;
+
+  return Math.max(0, lapContribution + sameLapTimeDelta);
+};
 
 export class RaceLogicSystem {
   private rng: SeededRNG;
@@ -445,8 +567,7 @@ export class RaceLogicSystem {
            
            
            // --- CONCENTRATION LOGIC ---
-           // Slower dynamics for realism
-           let baseRecovery = 1.5 * dt; // Base recovery: ~1.5%/s (approx 60s to full recover)
+          let baseRecovery = 1.8 * dt;
            let currentDrain = 0;
 
            if (state.safetyCar !== 'none') {
@@ -457,36 +578,34 @@ export class RaceLogicSystem {
                // Racing Logic
                
                // 1. Start Chaos (First Lap, Sector 1)
-               if (state.currentLap === 1 && vehicle.currentSector === 1) {
-                   currentDrain += 5.0 * dt; // High drain, but manageable
+              if (state.currentLap === 1 && vehicle.currentSector === 1) {
+                  currentDrain += 1.8 * dt;
                }
 
                // 2. Battling vs Proximity
                if (vehicle.isBattling) {
-                   // Active fighting
-                   currentDrain += 2.0 * dt; 
+                  currentDrain += 0.8 * dt;
                } else if (vehicle.position > 1 && vehicle.gapToAhead < 1.5) {
-                   // Proximity Stress (DRS Train)
                    const proximity = Math.max(0, 1.5 - vehicle.gapToAhead) / 1.5;
-                   currentDrain += (proximity * 2.5) * dt;
+                  currentDrain += (proximity * 1.0) * dt;
                }
 
                // 3. Dirty Air (Frustration)
-               if (vehicle.inDirtyAir) {
-                   currentDrain += 1.0 * dt; 
+              if (vehicle.inDirtyAir) {
+                  currentDrain += 0.35 * dt;
                }
 
                // 4. Tyre State (New)
                // Old tyres require more mental capacity to manage grip
                if (vehicle.tyreWear > 50) {
-                   const tyreStress = (vehicle.tyreWear - 50) / 50; // 0 to 1
-                   currentDrain += tyreStress * 1.5 * dt;
+                  const tyreStress = (vehicle.tyreWear - 50) / 50;
+                  currentDrain += tyreStress * 0.8 * dt;
                }
 
                // 5. Weather (New)
                // Wet conditions are mentally taxing
                if (state.weather !== 'dry') {
-                   currentDrain += 1.0 * dt;
+                  currentDrain += 0.45 * dt;
                }
            }
            
@@ -960,6 +1079,7 @@ export class RaceLogicSystem {
   private updatePositions(state: RaceState, track: Track): void {
     const activeVehicles = state.vehicles.filter(v => v.damage < 100);
     const retiredVehicles = state.vehicles.filter(v => v.damage >= 100);
+    const fallbackProfile = buildFallbackGapTimeProfile(track);
 
     activeVehicles.sort((a, b) => {
         if (a.lapCount !== b.lapCount) return b.lapCount - a.lapCount;
@@ -983,21 +1103,23 @@ export class RaceLogicSystem {
         // Skip if in pit (Strategic position loss shouldn't affect confidence)
         if (v.isInPit) return;
 
+        const concentrationImpactWindowElapsed = (state.elapsedTime - (v.executionState.lastPositionConcentrationImpactAt ?? -Infinity)) >= 8;
+
         if (v.position < v.lastPosition) {
-            // Overtook someone! (Position number decreased)
-            // Big Boost
             v.morale = Math.min(100, v.morale + 10);
 
-            // Concentration Hit (Excitement/Adrenaline spike can lower focus temporarily)
-            v.concentration = Math.max(0, v.concentration - 5);
+            if (concentrationImpactWindowElapsed) {
+                v.concentration = Math.max(0, v.concentration - 1.5);
+                v.executionState.lastPositionConcentrationImpactAt = state.elapsedTime;
+            }
 
         } else if (v.position > v.lastPosition) {
-            // Got Overtaken!
-            // Big Drop
             v.morale = Math.max(0, v.morale - 10);
 
-            // Concentration Hit (Stress/Panic)
-            v.concentration = Math.max(0, v.concentration - 10);
+            if (concentrationImpactWindowElapsed) {
+                v.concentration = Math.max(0, v.concentration - 3.0);
+                v.executionState.lastPositionConcentrationImpactAt = state.elapsedTime;
+            }
         }
 
         // Calculate gap to ahead (Leaderboard sense)
@@ -1006,22 +1128,25 @@ export class RaceLogicSystem {
             v.gapToAhead = 0;
         } else {
             const ahead = state.vehicles[i - 1];
-
+            const leader = state.vehicles[0];
             const raceDist = (v.lapCount * track.totalDistance) + v.distanceOnLap;
             const raceDistAhead = (ahead.lapCount * track.totalDistance) + ahead.distanceOnLap;
-
-            const distDiffAhead = raceDistAhead - raceDist;
-
+            const raceDistLeader = (leader.lapCount * track.totalDistance) + leader.distanceOnLap;
             const lapAvgSpeed = v.lastLapTime > 0 ? (track.totalDistance / v.lastLapTime) : 55;
             const smoothedSpeed = Math.max(20, (lapAvgSpeed * 0.7) + (v.speed * 0.3));
-
-            v.gapToAhead = distDiffAhead / smoothedSpeed;
-
-            const leader = state.vehicles[0];
-            const raceDistLeader = (leader.lapCount * track.totalDistance) + leader.distanceOnLap;
+            const profile = buildGapTimeProfile(track, v.telemetry.lastLapSpeedTrace ?? [])
+              ?? buildGapTimeProfile(track, v.telemetry.currentLapSpeedTrace ?? [])
+              ?? fallbackProfile;
+            const distDiffAhead = raceDistAhead - raceDist;
             const distDiffLeader = raceDistLeader - raceDist;
 
-            v.gapToLeader = distDiffLeader / smoothedSpeed;
+            v.gapToAhead = profile === fallbackProfile && (!v.telemetry.lastLapSpeedTrace?.length && !v.telemetry.currentLapSpeedTrace?.length)
+              ? distDiffAhead / smoothedSpeed
+              : estimateGapFromProfile(profile, raceDist, raceDistAhead);
+
+            v.gapToLeader = profile === fallbackProfile && (!v.telemetry.lastLapSpeedTrace?.length && !v.telemetry.currentLapSpeedTrace?.length)
+              ? distDiffLeader / smoothedSpeed
+              : estimateGapFromProfile(profile, raceDist, raceDistLeader);
         }
     });
   }

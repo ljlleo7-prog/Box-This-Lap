@@ -1,5 +1,7 @@
 # Implementation Roadmap: 2026 Race Weekend Simulator MVP
 
+> Superseded direction: this roadmap captures an earlier offline-first MVP strategy. It is kept as historical planning material, but it is no longer the active championship direction. For the current online/Supabase-focused architecture, use `README.md`, `docs/technical_architecture.md`, and `docs/team_championship_architecture.md`.
+
 **Source PRD**: `docs/2026-race-weekend-simulator-mvp-prd.md`
 **Date**: 2026-03-20
 **Goal**: Turn the current browser-based race simulator into a race-weekend-first, offline-first 2026-era F1 management simulator MVP.

@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { loadSaveGame } from '../lib/localSaves';
 import { DRIVERS } from '../data/initialData';
 import type { OfflineDriverState, DriverTrainingPlan, TrainingIntensity, DriverTrainingType } from '../types/championship';
-import { getWearyState, getTotalXPForLevel, getTrainingDuration, getTrainingXP, getTrainingFatigue } from '../lib/driverDevelopment';
+import { getTotalXPForLevel, getTrainingDuration, getTrainingXP, getTrainingFatigue } from '../lib/driverDevelopment';
+import { useChampionshipStore } from '../store/championshipStore';
 
 export const DriverDevelopment = () => {
   const navigate = useNavigate();
+  const setActiveLocalContext = useChampionshipStore((state) => state.setActiveLocalContext);
   const [driverStates, setDriverStates] = useState<OfflineDriverState[]>([]);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
@@ -16,7 +18,7 @@ export const DriverDevelopment = () => {
   useEffect(() => {
     const saveGame = loadSaveGame();
     if (!saveGame.championship) {
-      navigate('/career');
+      navigate('/championships');
       return;
     }
 
@@ -67,7 +69,7 @@ export const DriverDevelopment = () => {
     playerTeam.drivers[driverIndex].trainingPlan = trainingPlan;
     saveGame.championship.updatedAt = new Date().toISOString();
 
-    localStorage.setItem('offline-save-game', JSON.stringify(saveGame));
+    setActiveLocalContext(saveGame.championship);
     setDriverStates([...playerTeam.drivers]);
     setShowTrainingModal(false);
   };
@@ -75,7 +77,7 @@ export const DriverDevelopment = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <button onClick={() => navigate('/career')} className="text-blue-600 hover:underline">
+        <button onClick={() => navigate('/championships')} className="text-blue-600 hover:underline">
           ← Back to Career
         </button>
         <h1 className="text-3xl font-bold mt-2">Driver Development</h1>

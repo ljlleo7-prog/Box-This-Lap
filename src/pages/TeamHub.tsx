@@ -6,6 +6,7 @@ import { TEAM_TEMPLATES } from '../data/teams';
 import { TCC_API } from '../lib/tcc-api';
 import { useChampionshipStore } from '../store/championshipStore';
 import { createEmptySchedule } from '../lib/driverDevelopment';
+import { useI18n } from '../i18n/I18nProvider';
 
 const countFilledSlots = (schedule: any[] = []) =>
   schedule.reduce((sum, day) => {
@@ -21,6 +22,7 @@ const getOnlineRound = (weekends: any[] | null | undefined): number => {
 };
 
 export const TeamHub: React.FC = () => {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const mode = useChampionshipStore((state) => state.mode);
   const championshipId = useChampionshipStore((state) => state.championshipId);
@@ -149,131 +151,131 @@ export const TeamHub: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Team Hub" description="Manage your team roster, staff, and training" />
+      <PageHeader title={t('teamHub.title')} description={t('teamHub.description')} />
 
       {trainingSummary && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-            <h3 className="text-lg font-bold text-white mb-2">Cash Available</h3>
-            <p className="text-3xl font-black text-white">{trainingSummary.cashBalance.toLocaleString()} CASH</p>
-            <p className="text-sm text-gray-400 mt-2">Working budget for development and facilities.</p>
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 mb-2 dark:text-white">{t('teamHub.cashAvailable')}</h3>
+            <p className="text-3xl font-black text-zinc-900 dark:text-white">{trainingSummary.cashBalance.toLocaleString()} {t('common.cashUnit')}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2">{t('teamHub.cashAvailableHint')}</p>
           </div>
-          <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-            <h3 className="text-lg font-bold text-white mb-2">Team Budget</h3>
-            <p className="text-3xl font-black text-white">{trainingSummary.teamBudget.toLocaleString()} CASH</p>
-            <p className="text-sm text-gray-400 mt-2">Initial allocation tied to the selected team.</p>
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 mb-2 dark:text-white">{t('teamHub.teamBudget')}</h3>
+            <p className="text-3xl font-black text-zinc-900 dark:text-white">{trainingSummary.teamBudget.toLocaleString()} {t('common.cashUnit')}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2">{t('teamHub.teamBudgetHint')}</p>
           </div>
         </div>
       )}
 
       {mode === 'online' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-            <h3 className="text-lg font-bold text-white mb-2">Active Online Team</h3>
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 mb-2 dark:text-white">{t('teamHub.activeOnlineTeam')}</h3>
             {loadingOnlineTeam ? (
-              <p className="text-gray-400">Loading team...</p>
+              <p className="text-zinc-500 dark:text-zinc-400">{t('teamHub.loadingTeam')}</p>
             ) : onlineTeam ? (
               <>
                 <p className="text-white font-semibold">{onlineTeam.name}</p>
-                <p className="text-gray-400 text-sm">Championship synced to {championshipId}</p>
-                <p className="text-gray-500 text-sm mt-2">Training round {onlineRound}</p>
+                <p className="text-gray-400 text-sm">{t('teamHub.syncedToChampionship')} {championshipId}</p>
+                <p className="text-gray-500 text-sm mt-2">{t('teamHub.trainingRound')} {onlineRound}</p>
               </>
             ) : (
               <>
-                <p className="text-gray-400">No team is linked to this championship yet.</p>
-                {teamName && <p className="text-gray-500 text-sm mt-2">Current context: {teamName}</p>}
+                <p className="text-zinc-500 dark:text-zinc-400">{t('teamHub.noLinkedTeam')}</p>
+                {teamName && <p className="text-gray-500 text-sm mt-2">{t('teamHub.currentContext')} {teamName}</p>}
               </>
             )}
           </div>
 
-          <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-            <h3 className="text-lg font-bold text-white mb-2">Development</h3>
-            <p className="text-gray-400 mb-4">R&D and facilities stay tied to this active online championship.</p>
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 mb-2 dark:text-white">{t('teamHub.development')}</h3>
+            <p className="text-gray-400 mb-4">{t('teamHub.developmentHint')}</p>
             <div className="flex gap-3">
               <button onClick={() => navigate('/research')} className="text-sm text-blue-400 hover:text-blue-300">
-                Open R&D
+                {t('teamHub.openResearch')}
               </button>
               <button onClick={() => navigate('/facilities')} className="text-sm text-blue-400 hover:text-blue-300">
-                Open Facilities
+                {t('teamHub.openFacilities')}
               </button>
             </div>
           </div>
 
-          <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
-            <h3 className="text-lg font-bold text-white mb-2">Championship</h3>
-            <p className="text-gray-400 mb-4">Use the current championship context across all online tabs.</p>
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 mb-2 dark:text-white">{t('teamHub.championship')}</h3>
+            <p className="text-gray-400 mb-4">{t('teamHub.championshipHint')}</p>
             <button
               onClick={() => championshipId && navigate(`/championships/${championshipId}`)}
               className="text-sm text-blue-400 hover:text-blue-300"
               disabled={!championshipId}
             >
-              Back to championship
+              {t('teamHub.backToChampionship')}
             </button>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white">Drivers</h3>
+            <h3 className="text-lg font-bold text-white">{t('teamHub.drivers')}</h3>
             <button
               onClick={() => navigate('/training-calendar')}
               className="text-sm text-blue-400 hover:text-blue-300"
             >
-              Open calendar
+              {t('teamHub.openCalendar')}
             </button>
           </div>
 
           {trainingSummary ? (
             <div className="space-y-3">
               {trainingSummary.driverSummaries.map((driver) => (
-                <div key={driver.id} className="bg-[#0d0d0d] rounded-lg border border-[#333] p-4">
+                <div key={driver.id} className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold text-white">{driver.name}</div>
                       <div className="text-sm text-gray-400">
-                        Strength {driver.strength} • Fatigue {driver.fatigue} • {driver.wearyState}
+                        {t('teamHub.strength')} {driver.strength} • {t('teamHub.fatigue')} {driver.fatigue} • {driver.wearyState}
                       </div>
                     </div>
-                    <div className="text-sm text-gray-300">{driver.filledSlots} slots planned</div>
+                    <div className="text-sm text-gray-300">{driver.filledSlots} {t('teamHub.slotsPlanned')}</div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-gray-400">No driver training data available yet.</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('teamHub.noDriverData')}</p>
           )}
         </div>
 
-        <div className="bg-[#111] p-6 rounded-lg border border-[#333]">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white">Pit Crew Training</h3>
+            <h3 className="text-lg font-bold text-white">{t('teamHub.pitCrewTraining')}</h3>
             <button
               onClick={() => navigate('/training-calendar')}
               className="text-sm text-blue-400 hover:text-blue-300"
             >
-              Open calendar
+              {t('teamHub.openCalendar')}
             </button>
           </div>
 
           {trainingSummary?.pitCrew ? (
             <div className="space-y-3">
-              <div className="bg-[#0d0d0d] rounded-lg border border-[#333] p-4">
-                <div className="font-semibold text-white">Pit Crew</div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="font-semibold text-white">{t('teamHub.pitCrew')}</div>
                 <div className="mt-2 text-sm text-gray-400">
-                  Level {trainingSummary.pitCrew.level} • Error Rate {trainingSummary.pitCrew.errorRate} • Speed Bonus +{trainingSummary.pitCrew.speedBonus.toFixed(1)}%
+                  {t('teamHub.level')} {trainingSummary.pitCrew.level} • {t('teamHub.errorRate')} {trainingSummary.pitCrew.errorRate} • {t('teamHub.speedBonus')} +{trainingSummary.pitCrew.speedBonus.toFixed(1)}%
                 </div>
                 <div className="mt-2 text-sm text-gray-300">
-                  {trainingSummary.pitCrew.filledSlots} slots planned this round
+                  {trainingSummary.pitCrew.filledSlots} {t('teamHub.slotsThisRound')}
                 </div>
               </div>
               <p className="text-sm text-gray-400">
-                Schedule drills, exercise, and recovery directly from the training calendar.
+                {t('teamHub.scheduleHint')}
               </p>
             </div>
           ) : (
-            <p className="text-gray-400">No pit crew training data available yet.</p>
+            <p className="text-zinc-500 dark:text-zinc-400">{t('teamHub.noPitCrewData')}</p>
           )}
         </div>
       </div>
